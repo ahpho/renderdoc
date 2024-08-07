@@ -634,6 +634,7 @@ static pid_t RunProcess(rdcstr appName, rdcstr workDir, const rdcstr &cmdLine, c
 
       chdir(workDir.c_str());
       RDCLOG("====> workDir=%s, appPath=%s", workDir.c_str(), appPath.c_str());
+
       RD_EXECVPE(appPath.c_str(), argv, envp);
       fprintf(stderr, "exec failed %s\n", strerror(errno));
       _exit(1);
