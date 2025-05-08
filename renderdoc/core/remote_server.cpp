@@ -880,8 +880,10 @@ static void ActiveRemoteClientThread(ClientThread *threadData,
       RDResult res;
       uint32_t ident = 0;
 
+      RDCLOG("[rf-rd] type=eRemoteServer_ExecuteAndInject");
       if(threadData->allowExecution)
       {
+        RDCLOG("[rf-rd] Process::LaunchAndInjectIntoProcess, app=%s, dir=%s, cmd=%s", app.c_str(), workingDir.c_str(), cmdLine.c_str());
         rdctie(res, ident) =
             Process::LaunchAndInjectIntoProcess(app, workingDir, cmdLine, env, "", opts, false);
       }
@@ -1509,6 +1511,7 @@ ExecuteResult RemoteServer::ExecuteAndInject(const rdcstr &app, const rdcstr &wo
     SERIALISE_ELEMENT(env);
   }
 
+  RDCLOG("[rf-rd] RemoteServer::ExecuteAndInject, app=%s, dir=%s, cmd=%s", app.c_str(), workingDir.c_str(), cmdline.c_str());
   ExecuteResult ret = {};
 
   {

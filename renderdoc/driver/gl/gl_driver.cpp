@@ -2190,6 +2190,7 @@ void WrappedOpenGL::SwapBuffers(WindowingSystem winSystem, void *windowHandle)
 
   if(RenderDoc::Inst().ShouldTriggerCapture(m_FrameCounter) && IsBackgroundCapturing(m_State))
   {
+    RDCLOG("[rf-rd] gl_driver.cpp, ShouldTriggerCapture! isBackground=%d", IsBackgroundCapturing(m_State));
     RenderDoc::Inst().StartFrameCapture(devWnd);
 
     m_AppControlledCapture = false;

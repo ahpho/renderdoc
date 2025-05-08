@@ -614,6 +614,12 @@ public:
   void CycleActiveWindow();
   uint32_t GetCapturableWindowCount();
 
+  //todo.ksh
+  bool CheckNamedPipeToCapture();
+  rdcstr GetWritableDir();
+  int fd_fifo = -1; // fifo handle to communicate with Unity native plugin(example)
+  int nSleepCount = 0;
+
 private:
   RenderDoc();
   ~RenderDoc();

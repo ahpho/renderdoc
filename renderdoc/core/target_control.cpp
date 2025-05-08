@@ -33,6 +33,17 @@
 #include "serialise/serialiser.h"
 #include "strings/string_utils.h"
 
+#if defined(__ANDROID__) || ENABLED(RDOC_ANDROID)
+#include <errno.h>
+#include <string.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <dlfcn.h>
+#include <unistd.h> // getcwd
+#endif
+
 static const uint32_t TargetControlProtocolVersion = 9;
 
 static bool IsProtocolVersionSupported(const uint32_t protocolVersion)
@@ -430,6 +441,131 @@ void RenderDoc::TargetControlClientThread(uint32_t version, Network::Socket *cli
   Threading::ReleaseModuleExitThread();
 }
 
+static rdcstr getCurrentSoPath()
+{
+  rdcstr result = "";
+#if defined(__ANDROID__) || ENABLED(RDOC_ANDROID)
+  rdcstr dir = "";
+  Dl_info dlInfo;
+  if(dladdr((void *)&getCurrentSoPath, &dlInfo) && dlInfo.dli_fname)
+  {
+    dir = dlInfo.dli_fname;
+    if(dir.endsWith(".so"))
+    {
+      int lastSlash = dir.find_last_of("/");
+      if(lastSlash > 0)
+        dir = dir.substr(0, lastSlash + 1);
+      else
+        RDCLOG("[rf-rd] lastSlash=%d", lastSlash);
+    }
+    else
+    {
+      RDCLOG("[rf-rd] find so path error, not ends with .so: %s", dlInfo.dli_fname);
+      dir = "";
+    }
+  }
+
+  const rdcstr prefix = "/data/app/";
+  const char *szStart = strstr(dir.c_str(), prefix.c_str());
+  if(!szStart)
+  {
+    RDCLOG("[rf-rd] strstr '/data/app/' failed.");
+    return result;
+  }
+  const char *szEnd = strstr(szStart + prefix.length() + 4, "-");
+  if(!szEnd)
+  {
+    RDCLOG("[rf-rd] strstr '-' after '/data/app/' failed.");
+    return result;
+  }
+
+  result.append("/sdcard/Android/data/");
+  result.append(szStart + prefix.length(), szEnd - szStart - prefix.length());
+  result.append("/files/");
+  RDCLOG("[rf-rd] result=%s", result.c_str());
+  return result;
+
+#endif
+  RDCLOG("[rf-rd] getCurrentSoPath=%s", result.c_str());
+  return result;
+}
+
+rdcstr RenderDoc::GetWritableDir()
+{
+  rdcstr result = "";
+  result.reserve(512);
+
+  char cwd[1024] = { 0 };
+#if defined(__ANDROID__) || ENABLED(RDOC_ANDROID)
+  if(getcwd(cwd, sizeof(cwd)) != NULL)
+    RDCLOG("[rf-rd] getcwd success, cwd=%s", cwd);
+#endif
+  if(cwd[0] == '\0')
+  {
+    RDCLOG("====> getcwd failed");
+    return result;
+  }
+  const rdcstr prefix = "/data/app/";
+  const char *szStart = strstr(cwd, prefix.c_str());
+  if(!szStart)
+  {
+    RDCLOG("[rf-rd] strstr '/data/app/' failed.");
+    return result;
+  }
+  const char *szEnd = strstr(szStart + prefix.length() + 4, "-");
+  if(!szEnd)
+  {
+    RDCLOG("[rf-rd] strstr '-' after '/data/app/' failed.");
+    return result;
+  }
+
+  result.append("/sdcard/Android/data/");
+  result.append(szStart + prefix.length(), szEnd - szStart - prefix.length());
+  result.append("/files/");
+  RDCLOG("[rf-rd] result=%s", result.c_str());
+  return result;
+}
+
+bool RenderDoc::CheckNamedPipeToCapture()
+{
+  rdcstr dir = /*GetWritableDir*/ getCurrentSoPath();
+  RDCLOG("[rf-rd] CheckNamedPipeToCapture, dir=%s", dir.c_str());
+
+#if defined(__ANDROID__) || ENABLED(RDOC_ANDROID)
+  if(RenderDoc::Inst().fd_fifo < 0)
+  {
+    rdcstr strFifo = dir;
+    strFifo.append("fifo_r_u");
+
+    umask(0);
+    int mk = mkfifo(strFifo.c_str(), S_IRUSR | S_IWUSR | S_IWGRP);
+    if(mk == -1)
+    {
+      RDCLOG("[rf-rd] fifo_r_u create failed:%s, errno=%d, err=%s", strFifo.c_str(), errno, strerror(errno));
+      return false;
+    }
+    RenderDoc::Inst().fd_fifo = open(strFifo.c_str(), O_RDONLY | O_NONBLOCK);
+    if(RenderDoc::Inst().fd_fifo < 0)
+    {
+      RDCLOG("[rf-rd] fifo_r_u open failed.");
+      return false;
+    }
+  }
+  if(RenderDoc::Inst().fd_fifo >= 0)
+  {
+    RDCLOG("[rf-rd] fd_fifo=%d", RenderDoc::Inst().fd_fifo);
+    char buf[256] = {0};
+    read(RenderDoc::Inst().fd_fifo, buf, sizeof(buf));
+    RDCLOG("[rf-rd] read=%s", buf);
+  }
+  else
+  {
+    RDCLOG("[rf-rd] fd_fifo is invalid!");
+  }
+#endif
+  return true;
+}
+
 void RenderDoc::TargetControlServerThread(Network::Socket *sock)
 {
   Threading::SetCurrentThreadName("TargetControlServerThread");
@@ -444,6 +580,20 @@ void RenderDoc::TargetControlServerThread(Network::Socket *sock)
 
   while(!RenderDoc::Inst().m_TargetControlThreadShutdown)
   {
+#if false
+    {
+      Threading::Sleep(1000);
+      if (++RenderDoc::Inst().nSleepCount > 30)
+      {
+        RDCLOG("[rf-rd] TriggerCapture after 30 sec.    ==========================================>");
+        RenderDoc::Inst().TriggerCapture(1);
+        RDCLOG("[rf-rd] TriggerCapture end.             ==========================================>");
+      }
+      else
+        continue;
+    }
+#endif
+
     Network::Socket *client = sock->AcceptClient(0);
 
     if(client == NULL)
@@ -548,6 +698,7 @@ void RenderDoc::TargetControlServerThread(Network::Socket *sock)
     }
   }
 
+  RDCLOG("[rf-rd] CloseThread, m_TargetControlThreadShutdown=true");
   RenderDoc::Inst().m_ControlClientThreadShutdown = true;
   // don't join, just close the thread, as we can't wait while in the middle of module unloading
   Threading::CloseThread(clientThread);

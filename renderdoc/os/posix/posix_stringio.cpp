@@ -236,12 +236,19 @@ void GetDefaultFiles(const rdcstr &logBaseName, rdcstr &capture_filename, rdcstr
 
   // set by UI when launching programs so all logging goes to the same file
   rdcstr logfile_override = Process::GetEnvVariable("RENDERDOC_DEBUG_LOG_FILE");
-  if(!logfile_override.empty())
+  if (!logfile_override.empty())
+  {
     logging_filename = logfile_override;
+    RDCLOG("[rf-rd] RENDERDOC_DEBUG_LOG_FILE, not empty=%s", logging_filename.c_str());
+  }
+    
   else
+  {
     logging_filename = StringFormat::Fmt(
         "%s/RenderDoc/%s_%04d.%02d.%02d_%02d.%02d.%02d.log", temp_folder, logBaseName.c_str(),
         1900 + now.tm_year, now.tm_mon + 1, now.tm_mday, now.tm_hour, now.tm_min, now.tm_sec);
+    RDCLOG("[rf-rd] RENDERDOC_DEBUG_LOG_FILE, empty=%s", logging_filename.c_str());
+  }
 }
 
 uint64_t GetModifiedTimestamp(const rdcstr &filename)

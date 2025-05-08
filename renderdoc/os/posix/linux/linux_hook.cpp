@@ -223,7 +223,7 @@ __attribute__((visibility("default"))) int execve(const char *pathname, char *co
     GetUnhookedEnvp(envp, envpStr, modifiedEnv);
 
     /*for(size_t i = 0; i < modifiedEnv.size(); i++)
-      RDCLOG("====> modifiedEnv[%d]=%s", i, modifiedEnv[i] ? modifiedEnv[i] : "n/a");*/
+      RDCLOG("[rf-rd] execve 0, modifiedEnv[%d]=%s", i, modifiedEnv[i] ? modifiedEnv[i] : "n/a");*/
 
     return realexecve(pathname, argv, modifiedEnv.data());
   }
@@ -234,7 +234,7 @@ __attribute__((visibility("default"))) int execve(const char *pathname, char *co
   GetHookedEnvp(envp, envpStr, modifiedEnv);
 
   /*for(size_t i = 0; i < modifiedEnv.size(); i++)
-    RDCLOG("====> modifiedEnv[%d]=%s", i, modifiedEnv[i] ? modifiedEnv[i] : "n/a");*/
+    RDCLOG("[rf-rd] execve 1, modifiedEnv[%d]=%s", i, modifiedEnv[i] ? modifiedEnv[i] : "n/a");*/
 
   return realexecve(pathname, argv, modifiedEnv.data());
 }
@@ -265,6 +265,10 @@ __attribute__((visibility("default"))) int execvpe(const char *pathname, char *c
       RDCLOG("unhooked execvpe(%s)", pathname);
 
     GetUnhookedEnvp(envp, envpStr, modifiedEnv);
+
+    /*for(size_t i = 0; i < modifiedEnv.size(); i++)
+      RDCLOG("[rf-rd] execvpe 0, modifiedEnv[%d]=%s", i, modifiedEnv[i] ? modifiedEnv[i] : "n/a");*/
+
     return realexecvpe(pathname, argv, modifiedEnv.data());
   }
 
@@ -272,6 +276,10 @@ __attribute__((visibility("default"))) int execvpe(const char *pathname, char *c
     RDCLOG("hooked execvpe(%s)", pathname);
 
   GetHookedEnvp(envp, envpStr, modifiedEnv);
+
+  /*for(size_t i = 0; i < modifiedEnv.size(); i++)
+    RDCLOG("[rf-rd] execvpe 1, modifiedEnv[%d]=%s", i, modifiedEnv[i] ? modifiedEnv[i] : "n/a");*/
+
   return realexecvpe(pathname, argv, modifiedEnv.data());
 }
 

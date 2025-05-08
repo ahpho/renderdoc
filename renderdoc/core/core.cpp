@@ -412,6 +412,11 @@ RenderDoc::RenderDoc()
 
 void RenderDoc::Initialise()
 {
+  RDCLOG("=================================================================================>");
+  RDCLOG("=================================================================================>");
+  RDCLOG("=================================================================================>");
+  RDCLOG("==    RenderDoc::Initialise    ==================================================>");
+
   Callstack::Init();
 
   Network::Init();
@@ -456,6 +461,7 @@ void RenderDoc::Initialise()
       m_RemoteIdent = port;
 
       m_TargetControlThreadShutdown = false;
+      RDCLOG("[rf-rd] CreateThread, TargetControlServerThread");
       m_RemoteThread = Threading::CreateThread([sock]() { TargetControlServerThread(sock); });
 
       RDCLOG("Listening for target control on %u", port);
@@ -473,6 +479,7 @@ void RenderDoc::Initialise()
 
     const rdcstr base = IsReplayApp() ? "RenderDoc" : "RenderDoc_app";
 
+    RDCLOG("[rf-rd] FileIO::GetDefaultFiles");
     FileIO::GetDefaultFiles(base, capture_filename, m_LoggingFilename, m_Target);
 
     if(m_CaptureFileTemplate.empty())
@@ -561,6 +568,7 @@ RenderDoc::~RenderDoc()
 
   if(m_RemoteThread)
   {
+    RDCLOG("[rf-rd] RenderDoc::~RenderDoc(), m_TargetControlThreadShutdown=true");
     m_TargetControlThreadShutdown = true;
     // On windows we can't join to this thread as it could lead to deadlocks, since we're
     // performing this destructor in the middle of module unloading. However we want to
@@ -593,6 +601,7 @@ void RenderDoc::RemoveHooks()
   {
     // explicitly wait for thread to shutdown, this call is not from module unloading and
     // we want to be sure everything is gone before we remove our module & hooks
+    RDCLOG("[rf-rd] RenderDoc::RemoveHooks(), m_TargetControlThreadShutdown=true");
     m_TargetControlThreadShutdown = true;
     Threading::JoinThread(m_RemoteThread);
     Threading::CloseThread(m_RemoteThread);
