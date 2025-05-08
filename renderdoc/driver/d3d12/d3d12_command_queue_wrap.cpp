@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,7 @@
 #include "d3d12_resources.h"
 
 RDOC_EXTERN_CONFIG(bool, D3D12_Debug_SingleSubmitFlushing);
+RDOC_EXTERN_CONFIG(bool, D3D12_Debug_RT_Auditing);
 
 template <typename SerialiserType>
 bool WrappedID3D12CommandQueue::Serialise_UpdateTileMappings(
@@ -473,7 +474,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
                ToStr(GetResourceManager()->GetOriginalID(m_PrevQueueId)).c_str(),
                ToStr(GetResourceManager()->GetOriginalID(GetResID(pQueue))).c_str());
       if(m_PrevQueueId != ResourceId())
-        m_pDevice->GPUSync(GetResourceManager()->GetCurrentAs<ID3D12CommandQueue>(m_PrevQueueId));
+        m_pDevice->DeviceWaitForIdle();
 
       m_PrevQueueId = GetResID(pQueue);
     }
@@ -491,15 +492,97 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
 
         ID3D12CommandList *list = Unwrap(ppCommandLists[i]);
         real->ExecuteCommandLists(1, &list);
-        if(D3D12_Debug_SingleSubmitFlushing())
-          m_pDevice->GPUSync();
+        if(D3D12_Debug_SingleSubmitFlushing() || D3D12_Debug_RT_Auditing())
+          m_pDevice->DeviceWaitForIdle();
 
         BakedCmdListInfo &info = m_Cmd.m_BakedCmdListInfo[cmd];
+
+        if(D3D12_Debug_RT_Auditing())
+        {
+          for(auto it = info.m_patchRaytracingInfo.begin(); it != info.m_patchRaytracingInfo.end();
+              ++it)
+          {
+            if(!it->second.unpatchedInstanceBufferReadback)
+            {
+              if(it->second.destinationAS != ResourceId())
+              {
+                D3D12AccelerationStructure *as =
+                    (D3D12AccelerationStructure *)GetResourceManager()->GetLiveResource(
+                        it->second.destinationAS);
+                as->seenReplayBuild = true;
+              }
+
+              continue;
+            }
+
+            const D3D12_RAYTRACING_INSTANCE_DESC *instances =
+                (const D3D12_RAYTRACING_INSTANCE_DESC *)
+                    it->second.unpatchedInstanceBufferReadback->Map();
+
+            ResourceId id = it->second.destinationAS;
+
+            RDCLOG("Verifying TLAS build of %s at relative %u in %s", ToStr(id).c_str(), it->first,
+                   ToStr(cmd).c_str());
+
+            for(UINT desc = 0; desc < it->second.numDescs; desc++)
+            {
+              // silently ignore NULL BLASs
+              if(instances[desc].AccelerationStructure == 0)
+                continue;
+
+              ResourceId blasId;
+              UINT64 blasOffs;
+              m_pDevice->GetResIDFromOrigAddr(instances[desc].AccelerationStructure, blasId,
+                                              blasOffs);
+
+              WrappedID3D12Resource *blas =
+                  GetResourceManager()->GetLiveAs<WrappedID3D12Resource>(blasId);
+
+              D3D12AccelerationStructure *blasCheck = NULL;
+              rdcstr invalid;
+
+              if(blasId == ResourceId() || blas == NULL)
+                invalid = StringFormat::Fmt("Address references non-existant buffer");
+              else if(!blas->GetAccStructIfExist(blasOffs, &blasCheck))
+                invalid = StringFormat::Fmt("No valid AS known at buffer location");
+              else if(blasCheck->Type() == D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL)
+                invalid = StringFormat::Fmt("TLAS referenced by TLAS");
+
+              if(!invalid.empty())
+              {
+                RDCERR("%s[%u]: %s", ToStr(id).c_str(), desc, invalid.c_str());
+                continue;
+              }
+
+              if(id < GetResourceManager()->GetOriginalID(blasCheck->GetResourceID()))
+              {
+                RDCERR("%s[%u]: BLAS referenced by TLAS is newer than TLAS", ToStr(id).c_str(), desc);
+                continue;
+              }
+
+              if(!blasCheck->seenReplayBuild)
+              {
+                RDCERR("%s[%u]: BLAS referenced by TLAS has not been built yet on replay",
+                       ToStr(id).c_str(), desc);
+                continue;
+              }
+
+              RDCLOG("%s[%u]: valid BLAS referenced at %llx (%llx on replay)", ToStr(id).c_str(),
+                     desc, instances[desc].AccelerationStructure,
+                     blas->GetGPUVirtualAddress() + blasOffs);
+
+              RDCASSERTEQUAL(blasCheck->GetVirtualAddress(), blas->GetGPUVirtualAddress() + blasOffs);
+            }
+
+            it->second.unpatchedInstanceBufferReadback->Unmap();
+            SAFE_RELEASE(it->second.unpatchedInstanceBufferReadback);
+          }
+        }
 
         if(!info.executeEvents.empty())
         {
           // ensure all GPU work has finished for readback of arguments
-          m_pDevice->GPUSync();
+          m_pDevice->DeviceWaitForIdle();
 
           if(m_pDevice->HasFatalError())
             return false;
@@ -695,7 +778,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
           for(size_t i = 0; i < rerecordedCmds.size(); i++)
           {
             real->ExecuteCommandLists(1, &rerecordedCmds[i]);
-            m_pDevice->GPUSync();
+            m_pDevice->DeviceWaitForIdle();
           }
         }
         else
@@ -760,6 +843,11 @@ void WrappedID3D12CommandQueue::ExecuteCommandListsInternal(UINT NumCommandLists
       WrappedID3D12GraphicsCommandList *wrapped =
           (WrappedID3D12GraphicsCommandList *)(ppCommandLists[i]);
 
+      if(D3D12_Debug_RT_Auditing())
+      {
+        RDCLOG("Submit-callbacks for %s", ToStr(wrapped->GetResourceID()).c_str());
+      }
+
       if(!wrapped->ExecuteImmediateASBuildCallbacks())
       {
         RDCERR("Unable to execute post build for acc struct");
@@ -776,17 +864,17 @@ void WrappedID3D12CommandQueue::ExecuteCommandListsInternal(UINT NumCommandLists
       // results are available, since we could submit a build on one queue and then a dependent
       // build on another queue later once it's finished without any intermediate submissions on the
       // first queue. For that reason we pass these to the RT handler to hold onto, and tick it
-      GetResourceManager()->GetRaytracingResourceAndUtilHandler()->AddPendingASBuilds(
-          fence, m_RayFenceValue, pendingASBuildCallbacks);
+      GetResourceManager()->GetRTManager()->AddPendingASBuilds(fence, m_RayFenceValue,
+                                                               pendingASBuildCallbacks);
 
       // add the signal for those callbacks to wait on
       HRESULT hr = m_pReal->Signal(fence, m_RayFenceValue++);
-      m_pDevice->CheckHRESULT(hr);
+      CHECK_HR(m_pDevice, hr);
       RDCASSERTEQUAL(hr, S_OK);
     }
 
     // check AS builds now
-    GetResourceManager()->GetRaytracingResourceAndUtilHandler()->CheckPendingASBuilds();
+    GetResourceManager()->GetRTManager()->TickASManagement();
   }
 
   if(IsCaptureMode(m_State))
@@ -802,6 +890,9 @@ void WrappedID3D12CommandQueue::ExecuteCommandListsInternal(UINT NumCommandLists
 
     bool capframe = IsActiveCapturing(m_State);
     std::unordered_set<ResourceId> refdIDs;
+    // did an event happen which could use arbitrary GPU VAs (like vulkan BDA) meaning we have to
+    // consider maps to that memory
+    bool forceMapsListEvent = false;
 
     for(UINT i = 0; i < NumCommandLists; i++)
     {
@@ -813,6 +904,8 @@ void WrappedID3D12CommandQueue::ExecuteCommandListsInternal(UINT NumCommandLists
         m_QueueRecord->ContainsExecuteIndirect = true;
 
       m_pDevice->ApplyBarriers(record->bakedCommands->cmdInfo->barriers);
+
+      forceMapsListEvent |= record->bakedCommands->cmdInfo->forceMapsListEvent;
 
       wrapped->AddRayDispatches(rayDispatches);
 
@@ -934,7 +1027,7 @@ void WrappedID3D12CommandQueue::ExecuteCommandListsInternal(UINT NumCommandLists
       m_RayDispatchesPending.append(rayDispatches);
 
       HRESULT hr = m_pReal->Signal(GetRayFence(), m_RayFenceValue++);
-      m_pDevice->CheckHRESULT(hr);
+      CHECK_HR(m_pDevice, hr);
       RDCASSERTEQUAL(hr, S_OK);
     }
 
@@ -946,7 +1039,9 @@ void WrappedID3D12CommandQueue::ExecuteCommandListsInternal(UINT NumCommandLists
       // mapped may not be the one that was bound but they may overlap, so we use the heap as
       // reference for non-committed resource.
       std::unordered_set<ResourceId> mappableIDs;
-      WrappedID3D12Resource::GetMappableIDs(GetResourceManager(), refdIDs, mappableIDs);
+
+      if(!forceMapsListEvent)
+        WrappedID3D12Resource::GetMappableIDs(GetResourceManager(), refdIDs, mappableIDs);
 
       for(auto it = maps.begin(); it != maps.end(); ++it)
       {
@@ -955,7 +1050,7 @@ void WrappedID3D12CommandQueue::ExecuteCommandListsInternal(UINT NumCommandLists
         size_t size = (size_t)it->totalSize;
 
         // only need to flush memory that could affect this submitted batch of work
-        if(mappableIDs.find(res->GetMappableID()) == mappableIDs.end())
+        if(!forceMapsListEvent && mappableIDs.find(res->GetMappableID()) == mappableIDs.end())
         {
           RDCDEBUG("Map of memory %s (mappable ID %s) not referenced in this queue - not flushing",
                    ToStr(res->GetResourceID()).c_str(), ToStr(res->GetMappableID()).c_str());
@@ -997,7 +1092,7 @@ void WrappedID3D12CommandQueue::ExecuteCommandListsInternal(UINT NumCommandLists
             queueReadback.list->Close();
             ID3D12CommandList *listptr = Unwrap(queueReadback.list);
             queueReadback.unwrappedQueue->ExecuteCommandLists(1, &listptr);
-            m_pDevice->GPUSync(queueReadback.unwrappedQueue, Unwrap(queueReadback.fence));
+            m_pDevice->QueueWaitForIdle(queueReadback.unwrappedQueue, Unwrap(queueReadback.fence));
 
             data = queueReadback.readbackMapped;
           }
@@ -1302,7 +1397,7 @@ bool WrappedID3D12CommandQueue::Serialise_Signal(SerialiserType &ser, ID3D12Fenc
   if(IsReplayingAndReading() && pFence)
   {
     m_pReal->Signal(Unwrap(pFence), Value);
-    m_pDevice->GPUSync(pQueue);
+    m_pDevice->DeviceWaitForIdle();
   }
 
   return true;
@@ -1340,7 +1435,7 @@ bool WrappedID3D12CommandQueue::Serialise_Wait(SerialiserType &ser, ID3D12Fence 
 
   if(IsReplayingAndReading() && pFence)
   {
-    m_pDevice->GPUSync(pQueue);
+    m_pDevice->DeviceWaitForIdle();
   }
 
   return true;

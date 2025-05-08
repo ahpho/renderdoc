@@ -29,7 +29,7 @@ Shader processing tools
 
 .. _shader-processing-tools:
 
-Each graphics API has a native shader format - for D3D11 and D3D12 this is DXBC bytecode, for Vulkan this is SPIR-V bytecode, and for OpenGL this is GLSL shader text. Additionally it's possible for the bytecode shaders to contain embedded debug information with the original source code and compilation settings.
+Each graphics API has a native shader format - for D3D11 and D3D12 this is DXBC bytecode as well as DXIL on D3D12, for Vulkan this is SPIR-V bytecode, and for OpenGL this is GLSL shader text. Additionally it's possible for the bytecode shaders to contain embedded debug information with the original source code and compilation settings.
 
 When editing a shader RenderDoc will display the original source if available, but otherwise it will attempt to invoke a shader processing tool to decompile the bytecode into a usable form. Multiple tools can be configured :ref:`in the settings window <shader-processing-tools-config>` and several for SPIR-V processing come with RenderDoc by default. If no tool is available RenderDoc displays a generated stub or default disassembly as a starting point.
 

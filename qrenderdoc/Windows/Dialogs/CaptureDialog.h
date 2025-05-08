@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -67,6 +67,7 @@ public:
 
   void SetWorkingDirectory(const rdcstr &dir) override;
   void SetCommandLine(const rdcstr &cmd) override;
+  QString GetCommandLine();
   void SetEnvironmentModifications(const rdcarray<EnvironmentModification> &modifications) override;
 
   void SetSettings(CaptureSettings settings) override;

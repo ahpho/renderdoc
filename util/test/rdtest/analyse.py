@@ -172,6 +172,10 @@ def get_postvs_attrs(controller: rd.ReplayController, mesh: rd.MeshFormat, data_
             if sig.stream != 0:
                 continue
 
+        # Ignore meshlet output indecies (they are not in postvs)
+        if sig.systemValue == rd.ShaderBuiltin.OutputIndices:
+            continue
+
         # Construct a resource format for this element
         attr.mesh.format = rd.ResourceFormat()
         attr.mesh.format.compByteWidth = rd.VarTypeByteSize(sig.varType)

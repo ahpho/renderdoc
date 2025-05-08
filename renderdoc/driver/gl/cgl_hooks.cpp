@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -205,7 +205,7 @@ DECL_HOOK_EXPORT(CGLFlushDrawable);
 extern void RegisterAppleGLSymbols();
 extern void AppleRegisterRealSymbol(const char *functionName, void *address);
 
-static void CGLHooked(void *handle)
+static void CGLHooked(void *handle, const char *)
 {
   RDCDEBUG("CGL library hooked");
 

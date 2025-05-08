@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -57,7 +57,7 @@ VkDynamicState ConvertDynamicState(VulkanDynamicStateIndex idx)
     case VkDynamicExclusiveScissorNV: return VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV;
     case VkDynamicExclusiveScissorEnableNV: return VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_ENABLE_NV;
     case VkDynamicShadingRateKHR: return VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR;
-    case VkDynamicLineStippleKHR: return VK_DYNAMIC_STATE_LINE_STIPPLE_KHR;
+    case VkDynamicLineStipple: return VK_DYNAMIC_STATE_LINE_STIPPLE;
     case VkDynamicCullMode: return VK_DYNAMIC_STATE_CULL_MODE;
     case VkDynamicFrontFace: return VK_DYNAMIC_STATE_FRONT_FACE;
     case VkDynamicPrimitiveTopology: return VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY;
@@ -115,6 +115,7 @@ VkDynamicState ConvertDynamicState(VulkanDynamicStateIndex idx)
     case VkDynamicCoverageReductionModeEXT: return VK_DYNAMIC_STATE_COVERAGE_REDUCTION_MODE_NV;
     case VkDynamicAttachmentFeedbackLoopEnableEXT:
       return VK_DYNAMIC_STATE_ATTACHMENT_FEEDBACK_LOOP_ENABLE_EXT;
+    case VkDynamicAttachmentDepthClampRangeEXT: return VK_DYNAMIC_STATE_DEPTH_CLAMP_RANGE_EXT;
     case VkDynamicCount: break;
   }
 
@@ -150,7 +151,7 @@ VulkanDynamicStateIndex ConvertDynamicState(VkDynamicState state)
     case VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV: return VkDynamicExclusiveScissorNV;
     case VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_ENABLE_NV: return VkDynamicExclusiveScissorEnableNV;
     case VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR: return VkDynamicShadingRateKHR;
-    case VK_DYNAMIC_STATE_LINE_STIPPLE_KHR: return VkDynamicLineStippleKHR;
+    case VK_DYNAMIC_STATE_LINE_STIPPLE: return VkDynamicLineStipple;
     case VK_DYNAMIC_STATE_CULL_MODE: return VkDynamicCullMode;
     case VK_DYNAMIC_STATE_FRONT_FACE: return VkDynamicFrontFace;
     case VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY: return VkDynamicPrimitiveTopology;
@@ -208,6 +209,7 @@ VulkanDynamicStateIndex ConvertDynamicState(VkDynamicState state)
     case VK_DYNAMIC_STATE_COVERAGE_REDUCTION_MODE_NV: return VkDynamicCoverageReductionModeEXT;
     case VK_DYNAMIC_STATE_ATTACHMENT_FEEDBACK_LOOP_ENABLE_EXT:
       return VkDynamicAttachmentFeedbackLoopEnableEXT;
+    case VK_DYNAMIC_STATE_DEPTH_CLAMP_RANGE_EXT: return VkDynamicAttachmentDepthClampRangeEXT;
     case VK_DYNAMIC_STATE_MAX_ENUM: break;
   }
 
@@ -249,7 +251,7 @@ static VkGraphicsPipelineLibraryFlagsEXT DynamicStateValidState(VkDynamicState s
     case VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV: return vert;
     case VK_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_ENABLE_NV: return vert;
     case VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR: return vert | frag;
-    case VK_DYNAMIC_STATE_LINE_STIPPLE_KHR: return vert;
+    case VK_DYNAMIC_STATE_LINE_STIPPLE: return vert;
     case VK_DYNAMIC_STATE_CULL_MODE: return vert;
     case VK_DYNAMIC_STATE_FRONT_FACE: return vert;
     case VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY: return vinput;
@@ -301,6 +303,7 @@ static VkGraphicsPipelineLibraryFlagsEXT DynamicStateValidState(VkDynamicState s
     case VK_DYNAMIC_STATE_REPRESENTATIVE_FRAGMENT_TEST_ENABLE_NV: return frag;
     case VK_DYNAMIC_STATE_COVERAGE_REDUCTION_MODE_NV: return frag | colout;
     case VK_DYNAMIC_STATE_ATTACHMENT_FEEDBACK_LOOP_ENABLE_EXT: return colout;
+    case VK_DYNAMIC_STATE_DEPTH_CLAMP_RANGE_EXT: return vert;
     case VK_DYNAMIC_STATE_MAX_ENUM: break;
   }
 
@@ -329,8 +332,8 @@ void DescSetLayout::Init(VulkanResourceManager *resourceMan, VulkanCreationInfo 
 
   anyStageFlags = 0;
 
-  VkDescriptorSetLayoutBindingFlagsCreateInfo *bindingFlags =
-      (VkDescriptorSetLayoutBindingFlagsCreateInfo *)FindNextStruct(
+  const VkDescriptorSetLayoutBindingFlagsCreateInfo *bindingFlags =
+      (const VkDescriptorSetLayoutBindingFlagsCreateInfo *)FindNextStruct(
           pCreateInfo, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO);
 
   // ignore degenerate struct
@@ -921,7 +924,8 @@ void VulkanCreationInfo::ShaderEntry::ProcessStaticDescriptorAccess(
     access.index = i;
     access.byteSize = bind.fixedBindSetOrSpace;
     access.byteOffset =
-        setLayoutInfos[bind.fixedBindSetOrSpace]->bindings[bind.fixedBindNumber].elemOffset;
+        setLayoutInfos[bind.fixedBindSetOrSpace]->bindings[bind.fixedBindNumber].elemOffset +
+        setLayoutInfos[bind.fixedBindSetOrSpace]->inlineByteSize;
     descriptorAccess.push_back(access);
   }
 
@@ -949,7 +953,8 @@ void VulkanCreationInfo::ShaderEntry::ProcessStaticDescriptorAccess(
     access.index = i;
     access.byteSize = bind.fixedBindSetOrSpace;
     access.byteOffset =
-        setLayoutInfos[bind.fixedBindSetOrSpace]->bindings[bind.fixedBindNumber].elemOffset;
+        setLayoutInfos[bind.fixedBindSetOrSpace]->bindings[bind.fixedBindNumber].elemOffset +
+        setLayoutInfos[bind.fixedBindSetOrSpace]->inlineByteSize;
     descriptorAccess.push_back(access);
   }
 
@@ -977,7 +982,8 @@ void VulkanCreationInfo::ShaderEntry::ProcessStaticDescriptorAccess(
     access.index = i;
     access.byteSize = bind.fixedBindSetOrSpace;
     access.byteOffset =
-        setLayoutInfos[bind.fixedBindSetOrSpace]->bindings[bind.fixedBindNumber].elemOffset;
+        setLayoutInfos[bind.fixedBindSetOrSpace]->bindings[bind.fixedBindNumber].elemOffset +
+        setLayoutInfos[bind.fixedBindSetOrSpace]->inlineByteSize;
     descriptorAccess.push_back(access);
   }
 }
@@ -1069,7 +1075,12 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan,
                                         VulkanCreationInfo &info, ResourceId id,
                                         const VkGraphicsPipelineCreateInfo *pCreateInfo)
 {
-  flags = pCreateInfo->flags;
+  const VkPipelineCreateFlags2CreateInfo *createFlags2 =
+      (const VkPipelineCreateFlags2CreateInfo *)FindNextStruct(
+          pCreateInfo, VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO);
+
+  flags = createFlags2 ? createFlags2->flags : pCreateInfo->flags;
+  useCreateFlags2 = createFlags2 != NULL;
 
   graphicsPipe = true;
 
@@ -1086,7 +1097,7 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan,
   if(graphicsLibraryCreate)
     availStages = graphicsLibraryCreate->flags;
 
-  vertLayout = fragLayout = GetResID(pCreateInfo->layout);
+  ownLayout = vertLayout = fragLayout = GetResID(pCreateInfo->layout);
   renderpass = GetResID(pCreateInfo->renderPass);
   subpass = pCreateInfo->subpass;
 
@@ -1108,6 +1119,8 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan,
     depthFormat = VK_FORMAT_UNDEFINED;
     stencilFormat = VK_FORMAT_UNDEFINED;
   }
+
+  dynamicRenderingLocalRead.Init((const VkBaseInStructure *)pCreateInfo);
 
   RDCEraseEl(dynamicStates);
   if(pCreateInfo->pDynamicState)
@@ -1143,8 +1156,8 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan,
 
     ShaderEntry &shad = shaders[stageIndex];
 
-    VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *subgroupSize =
-        (VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *)FindNextStruct(
+    const VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *subgroupSize =
+        (const VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *)FindNextStruct(
             &pCreateInfo->pStages[i],
             VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO);
     if(subgroupSize)
@@ -1153,6 +1166,7 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan,
     shad.module = shadid;
     shad.entryPoint = pCreateInfo->pStages[i].pName;
     shad.stage = ShaderStage(stageIndex);
+    shad.flags = pCreateInfo->pStages[i].flags;
 
     ShaderModuleReflectionKey key(shad.stage, shad.entryPoint, ResourceId());
 
@@ -1201,15 +1215,15 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan,
     }
 
     // if there's a divisors struct, apply them now
-    const VkPipelineVertexInputDivisorStateCreateInfoKHR *divisors =
-        (const VkPipelineVertexInputDivisorStateCreateInfoKHR *)FindNextStruct(
+    const VkPipelineVertexInputDivisorStateCreateInfo *divisors =
+        (const VkPipelineVertexInputDivisorStateCreateInfo *)FindNextStruct(
             pCreateInfo->pVertexInputState,
-            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_KHR);
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO);
     if(divisors)
     {
       for(uint32_t b = 0; b < divisors->vertexBindingDivisorCount; b++)
       {
-        const VkVertexInputBindingDivisorDescriptionKHR &div = divisors->pVertexBindingDivisors[b];
+        const VkVertexInputBindingDivisorDescription &div = divisors->pVertexBindingDivisors[b];
 
         if(div.binding < vertexBindings.size())
           vertexBindings[div.binding].instanceDivisor = div.divisor;
@@ -1368,15 +1382,15 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan,
     extraPrimitiveOverestimationSize = conservRast->extraPrimitiveOverestimationSize;
   }
 
-  // VkPipelineRasterizationLineStateCreateInfoKHR
-  lineRasterMode = VK_LINE_RASTERIZATION_MODE_DEFAULT_KHR;
+  // VkPipelineRasterizationLineStateCreateInfo
+  lineRasterMode = VK_LINE_RASTERIZATION_MODE_DEFAULT;
   stippleEnabled = false;
   stippleFactor = stipplePattern = 0;
 
-  const VkPipelineRasterizationLineStateCreateInfoKHR *lineRasterState =
-      (const VkPipelineRasterizationLineStateCreateInfoKHR *)FindNextStruct(
+  const VkPipelineRasterizationLineStateCreateInfo *lineRasterState =
+      (const VkPipelineRasterizationLineStateCreateInfo *)FindNextStruct(
           pCreateInfo->pRasterizationState,
-          VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO_KHR);
+          VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO);
   if(lineRasterState)
   {
     lineRasterMode = lineRasterState->lineRasterizationMode;
@@ -1578,6 +1592,11 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan,
           shaders[i] = pipeInfo.shaders[i];
           info.m_ShaderModule[shaders[i].module].m_PipeReferences[id] = pipeid;
         }
+        for(uint32_t i : {(uint32_t)ShaderStage::Task, (uint32_t)ShaderStage::Mesh})
+        {
+          shaders[i] = pipeInfo.shaders[i];
+          info.m_ShaderModule[shaders[i].module].m_PipeReferences[id] = pipeid;
+        }
 
         vertLayout = pipeInfo.vertLayout;
 
@@ -1645,6 +1664,8 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan,
         shadingRateCombiners[0] = pipeInfo.shadingRateCombiners[0];
         shadingRateCombiners[1] = pipeInfo.shadingRateCombiners[1];
 
+        dynamicRenderingLocalRead.CopyInputIndices(pipeInfo.dynamicRenderingLocalRead);
+
         flags |= pipeInfo.flags;
       }
 
@@ -1673,6 +1694,8 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan,
         colorFormats = pipeInfo.colorFormats;
         depthFormat = pipeInfo.depthFormat;
         stencilFormat = pipeInfo.stencilFormat;
+
+        dynamicRenderingLocalRead.CopyLocations(pipeInfo.dynamicRenderingLocalRead);
 
         flags |= pipeInfo.flags;
       }
@@ -1750,7 +1773,12 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan,
 void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan, VulkanCreationInfo &info,
                                         ResourceId id, const VkComputePipelineCreateInfo *pCreateInfo)
 {
-  flags = pCreateInfo->flags;
+  const VkPipelineCreateFlags2CreateInfo *createFlags2 =
+      (const VkPipelineCreateFlags2CreateInfo *)FindNextStruct(
+          pCreateInfo, VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO);
+
+  flags = createFlags2 ? createFlags2->flags : pCreateInfo->flags;
+  useCreateFlags2 = createFlags2 != NULL;
 
   graphicsPipe = false;
 
@@ -1765,8 +1793,8 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan, Vulk
     ResourceId shadid = GetResID(pCreateInfo->stage.module);
     ShaderEntry &shad = shaders[5];    // 5 is the compute shader's index (VS, TCS, TES, GS, FS, CS)
 
-    VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *subgroupSize =
-        (VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *)FindNextStruct(
+    const VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *subgroupSize =
+        (const VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *)FindNextStruct(
             &pCreateInfo->stage,
             VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO);
     if(subgroupSize)
@@ -1775,6 +1803,7 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan, Vulk
     shad.module = shadid;
     shad.entryPoint = pCreateInfo->stage.pName;
     shad.stage = ShaderStage::Compute;
+    shad.flags = pCreateInfo->stage.flags;
 
     ShaderModuleReflectionKey key(ShaderStage::Compute, shad.entryPoint, ResourceId());
 
@@ -1861,7 +1890,12 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan,
                                         VulkanCreationInfo &info, ResourceId id,
                                         const VkRayTracingPipelineCreateInfoKHR *pCreateInfo)
 {
-  flags = pCreateInfo->flags;
+  const VkPipelineCreateFlags2CreateInfo *createFlags2 =
+      (const VkPipelineCreateFlags2CreateInfo *)FindNextStruct(
+          pCreateInfo, VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO);
+
+  flags = createFlags2 ? createFlags2->flags : pCreateInfo->flags;
+  useCreateFlags2 = createFlags2 != NULL;
 
   graphicsPipe = false;
 
@@ -2940,6 +2974,8 @@ void DescUpdateTemplate::Apply(const void *pData, DescUpdateTemplateApplication 
       void *dst = application.inlineData.data() + inlineOffset;
       memcpy(dst, src, inlineWrite.dataSize);
       inlineWrite.pData = dst;
+      inlineOffset += inlineWrite.dataSize;
+      inlineOffset = AlignUp4(inlineOffset);
 
       write.pNext = &inlineWrite;
       write.descriptorCount = entry.descriptorCount;

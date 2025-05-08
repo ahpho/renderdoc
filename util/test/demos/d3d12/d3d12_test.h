@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -77,8 +77,15 @@ struct D3D12GraphicsTest : public GraphicsTest
     BufUAVType = 0xf00,
   };
 
+  enum CompileOptionFlags
+  {
+    None = 0,
+    SkipOptimise = 1 << 0,
+    Enable16BitTypes = 1 << 1,
+  };
+
   ID3DBlobPtr Compile(std::string src, std::string entry, std::string profile,
-                      bool skipoptimise = true);
+                      uint32_t compileOptions = CompileOptionFlags::SkipOptimise);
   void WriteBlob(std::string name, ID3DBlobPtr blob, bool compress);
 
   void SetBlobPath(std::string name, ID3DBlobPtr &blob);
@@ -120,6 +127,11 @@ struct D3D12GraphicsTest : public GraphicsTest
     return D3D12ViewCreator(dev, m_CBVUAVSRV, NULL, ViewType::SRV, res);
   }
   template <typename T>
+  D3D12ViewCreator MakeAS(T res)
+  {
+    return D3D12ViewCreator(dev, m_CBVUAVSRV, NULL, ViewType::AS, res);
+  }
+  template <typename T>
   D3D12ViewCreator MakeRTV(T res)
   {
     return D3D12ViewCreator(dev, m_RTV, NULL, ViewType::RTV, res);
@@ -158,6 +170,7 @@ struct D3D12GraphicsTest : public GraphicsTest
                        D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after);
   void ResourceBarrier(ID3D12ResourcePtr res, D3D12_RESOURCE_STATES before,
                        D3D12_RESOURCE_STATES after);
+  void ResourceBarrier(ID3D12GraphicsCommandListPtr cmd);
 
   void IASetVertexBuffer(ID3D12GraphicsCommandListPtr cmd, ID3D12ResourcePtr vb, UINT stride,
                          UINT offset);
@@ -218,6 +231,8 @@ struct D3D12GraphicsTest : public GraphicsTest
 
   bool gpuva = false, m_12On7 = false, m_DXILSupport = false;
   IDXGIFactory1Ptr m_Factory;
+
+  bool m_SingletonDevice;
 
   ID3D12DebugPtr d3d12Debug;
   ID3D12InfoQueuePtr infoqueue;

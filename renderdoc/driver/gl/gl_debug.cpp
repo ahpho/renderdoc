@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -1345,10 +1345,17 @@ GLReplay::TextureSamplerState GLReplay::SetSamplerParams(GLenum target, GLuint t
   GL.glGetTextureParameterivEXT(texname, target, eGL_TEXTURE_WRAP_T, (GLint *)&ret.wrapT);
   GL.glGetTextureParameterivEXT(texname, target, eGL_TEXTURE_WRAP_R, (GLint *)&ret.wrapR);
   GL.glGetTextureParameterivEXT(texname, target, eGL_TEXTURE_COMPARE_MODE, (GLint *)&ret.compareMode);
+  if(!IsGLES)
+    GL.glGetTextureParameterfvEXT(texname, target, eGL_TEXTURE_LOD_BIAS, &ret.lodBias);
 
   // disable depth comparison
   GLenum compareMode = eGL_NONE;
   GL.glTextureParameterivEXT(texname, target, eGL_TEXTURE_COMPARE_MODE, (GLint *)&compareMode);
+
+  // disable LOD bias, we control our own sampling
+  float lodBias = 0.0f;
+  if(!IsGLES)
+    GL.glTextureParameterfvEXT(texname, target, eGL_TEXTURE_LOD_BIAS, &lodBias);
 
   // always want to clamp
   GLenum param = eGL_CLAMP_TO_EDGE;
@@ -1394,6 +1401,8 @@ void GLReplay::RestoreSamplerParams(GLenum target, GLuint texname, TextureSample
   GL.glTextureParameterivEXT(texname, target, eGL_TEXTURE_MIN_FILTER, (GLint *)&state.minFilter);
   GL.glTextureParameterivEXT(texname, target, eGL_TEXTURE_MAG_FILTER, (GLint *)&state.magFilter);
   GL.glTextureParameterivEXT(texname, target, eGL_TEXTURE_COMPARE_MODE, (GLint *)&state.compareMode);
+  if(!IsGLES)
+    GL.glTextureParameterfvEXT(texname, target, eGL_TEXTURE_LOD_BIAS, &state.lodBias);
 }
 
 void GLReplay::FillWithDiscardPattern(DiscardType type, GLuint framebuffer, GLsizei numAttachments,

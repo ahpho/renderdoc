@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -114,6 +114,8 @@ struct DescSetLayout
     {
       if(variableSize)
         return varDescriptorSize;
+      if(layoutDescType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
+        return 1;
       return descriptorCount;
     }
   };
@@ -238,6 +240,8 @@ struct VulkanCreationInfo
     ShaderReflection *refl = NULL;
     SPIRVPatchData *patchData = NULL;
 
+    VkPipelineShaderStageCreateFlags flags;
+
     rdcarray<SpecConstant> specialization;
 
     // VkPipelineShaderStageRequiredSubgroupSizeCreateInfo
@@ -265,6 +269,10 @@ struct VulkanCreationInfo
 
     ResourceId compLayout;
 
+    // the pipeline's own specified layout, independent of vertLayout/fragLayout below when linking
+    // graphics pipeline libraries
+    ResourceId ownLayout;
+
     // these will be the same in some cases, but can be different if the application is using
     // INDEPENDENT_SETS_BIT_KHR
     ResourceId vertLayout;
@@ -288,12 +296,18 @@ struct VulkanCreationInfo
     VkFormat depthFormat;
     VkFormat stencilFormat;
 
+    // VkRenderingAttachmentLocationInfo and VkRenderingInputAttachmentIndexInfo
+    DynamicRenderingLocalRead dynamicRenderingLocalRead;
+
     // a variant of the pipeline that uses subpass 0, used for when we are replaying in isolation.
     // See loadRPs in the RenderPass info
     VkPipeline subpass0pipe;
 
     // VkGraphicsPipelineCreateInfo
-    VkPipelineCreateFlags flags;
+    uint64_t flags;
+
+    // VkPipelineCreateFlags2CreateInfo
+    bool useCreateFlags2;
 
     // VkPipelineShaderStageCreateInfo
     ShaderEntry shaders[NumShaderStages];
@@ -311,7 +325,7 @@ struct VulkanCreationInfo
       uint32_t bytestride;
       bool perInstance;
 
-      // VkVertexInputBindingDivisorDescriptionEXT
+      // VkVertexInputBindingDivisorDescription
       uint32_t instanceDivisor;
     };
     rdcarray<VertBinding> vertexBindings;
@@ -362,8 +376,8 @@ struct VulkanCreationInfo
     VkConservativeRasterizationModeEXT conservativeRasterizationMode;
     float extraPrimitiveOverestimationSize;
 
-    // VkPipelineRasterizationLineStateCreateInfoKHR
-    VkLineRasterizationModeKHR lineRasterMode;
+    // VkPipelineRasterizationLineStateCreateInfo
+    VkLineRasterizationMode lineRasterMode;
     bool stippleEnabled;
     uint32_t stippleFactor;
     uint16_t stipplePattern;
@@ -590,7 +604,7 @@ struct VulkanCreationInfo
     void Init(VulkanResourceManager *resourceMan, VulkanCreationInfo &info,
               const VkBufferCreateInfo *pCreateInfo, VkMemoryRequirements origMrq);
 
-    VkBufferUsageFlags usage;
+    uint64_t usage;
     uint64_t size;
     uint64_t gpuAddress;
     bool external;

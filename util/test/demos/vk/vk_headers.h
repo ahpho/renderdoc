@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -84,6 +84,13 @@
 
 // then include volk
 #include "3rdparty/volk/volk.h"
+
+#if defined(__linux__) && defined(__GLIBCXX__) && defined(_GLIBCXX_HAVE_ALIGNED_ALLOC)
+#define VMA_SYSTEM_ALIGNED_MALLOC(size, alignment) aligned_alloc(alignment, size)
+#endif
+
+// avoid warning about unused variables
+#define VMA_DEBUG_LOG_FORMAT(format, ...) (void)(#__VA_ARGS__)
 
 // finally VMA
 #include "3rdparty/VulkanMemoryAllocator/vk_mem_alloc.h"

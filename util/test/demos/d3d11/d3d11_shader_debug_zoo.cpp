@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -261,8 +261,8 @@ float4 main(v2f IN) : SV_Target0
     // use this to ensure the compiler doesn't know we're using fixed locations
     uint z = intval - IN.tri - 7;
 
-    return float4(asfloat(byterotest.Load(z+40).x), asfloat(byterotest.Load(z+44).x),
-                  asfloat(byterotest.Load(z+48).x), float(byterotest.Load(z+4096).x));
+    return float4(asfloat(byterotest.Load(z+88).x), asfloat(byterotest.Load(z+92).x),
+                  asfloat(byterotest.Load(z+96).x), float(byterotest.Load(z+4096).x));
   }
   // 4-uint load
   if(IN.tri == 37)
@@ -280,7 +280,7 @@ float4 main(v2f IN) : SV_Target0
     uint z = intval - IN.tri - 7;
 
     // test a 4-uint load
-    return asfloat(byterotest.Load4(z+40));
+    return asfloat(byterotest.Load4(z+88));
   }
   // 4-uint load out of view bounds
   if(IN.tri == 39)
@@ -289,7 +289,7 @@ float4 main(v2f IN) : SV_Target0
     uint z = intval - IN.tri - 7;
 
     // test a 4-uint load
-    return asfloat(byterotest.Load4(z+48));
+    return asfloat(byterotest.Load4(z+96));
   }
 
   // mis-aligned store
@@ -325,13 +325,13 @@ float4 main(v2f IN) : SV_Target0
     uint z = intval - IN.tri - 7;
     uint z2 = uint(zero);
 
-    byterwtest.Store(z+40, asuint(1.2345f));
-    byterwtest.Store(z+44, asuint(9.8765f));
-    byterwtest.Store(z+48, asuint(1.81818f));
+    byterwtest.Store(z+88, asuint(1.2345f));
+    byterwtest.Store(z+92, asuint(9.8765f));
+    byterwtest.Store(z+96, asuint(1.81818f));
     byterwtest.Store(z+4096, asuint(5.55555f));
 
-    return float4(asfloat(byterwtest.Load(z2+40).x), asfloat(byterwtest.Load(z2+44).x),
-                  asfloat(byterwtest.Load(z2+48).x), float(byterwtest.Load(z2+4096).x));
+    return float4(asfloat(byterwtest.Load(z2+88).x), asfloat(byterwtest.Load(z2+92).x),
+                  asfloat(byterwtest.Load(z2+96).x), float(byterwtest.Load(z2+4096).x));
   }
   // 4-uint store
   if(IN.tri == 43)
@@ -342,7 +342,7 @@ float4 main(v2f IN) : SV_Target0
 
     byterwtest.Store4(z+24, uint4(99, 88, 77, 66));
 
-    return asfloat(byterotest.Load4(z2+24));
+    return asfloat(byterwtest.Load4(z2+24));
   }
   // 4-uint store crossing view bounds
   if(IN.tri == 44)
@@ -351,9 +351,9 @@ float4 main(v2f IN) : SV_Target0
     uint z = intval - IN.tri - 7;
     uint z2 = uint(zero);
 
-    byterwtest.Store4(z+40, uint4(99, 88, 77, 66));
+    byterwtest.Store4(z+88, uint4(99, 88, 77, 66));
 
-    return asfloat(byterotest.Load4(z2+40));
+    return asfloat(byterwtest.Load4(z2+88));
   }
   // 4-uint store out of view bounds
   if(IN.tri == 45)
@@ -362,9 +362,9 @@ float4 main(v2f IN) : SV_Target0
     uint z = intval - IN.tri - 7;
     uint z2 = uint(zero);
 
-    byterwtest.Store4(z+48, uint4(99, 88, 77, 66));
+    byterwtest.Store4(z+96, uint4(99, 88, 77, 66));
 
-    return asfloat(byterotest.Load4(z2+48));
+    return asfloat(byterwtest.Load4(z2+96));
   }
 
   // test reading/writing structured data
@@ -751,6 +751,71 @@ float4 main(v2f IN) : SV_Target0
     float2 uv = posone * float2(0.55f, 0.48f);
     return smiley.SampleBias(unboundsamp, uv, 0.5f);
   }
+  // test UAV loads and stores only write the data they should
+#ifdef TYPED_UAV_EXT
+  if(IN.tri == 93)
+  {
+    // typed UAVs have to write all components so this is a fairly degenerate test
+    typedrwtest[uint(zero) + 20] = 9.99999f.xxxx;
+    return typedrwtest[uint(posone) + 19];
+  }
+#endif
+  if(IN.tri == 94)
+  {
+    uint z = intval - IN.tri - 7;
+    uint z2 = uint(zero);
+    uint z3 = uint(posone) - 1;
+
+    // fill the first component, to ensure we return the real result and not a trashed-zero
+    byterwtest.Store(z3+48, asuint(1.1f));
+
+    // unaligned raw store of less than float4
+    byterwtest.Store3(z+52, asuint(float3(9.9f, 8.8f, 7.7f)));
+
+    return asfloat(byterwtest.Load4(z2+48));
+  }
+  if(IN.tri == 95)
+  {
+    uint z = intval - IN.tri - 7;
+    uint z2 = uint(zero);
+    uint z3 = uint(posone) - 1;
+
+    // fill the last component, to ensure we return the real result and not a trashed-zero
+    byterwtest.Store(z3+44, asuint(1.1f));
+
+    // unaligned raw store of less than float4
+    byterwtest.Store3(z+32, asuint(float3(9.9f, 8.8f, 7.7f)));
+
+    return asfloat(byterwtest.Load4(z2+32));
+  }
+  if(IN.tri == 96)
+  {
+    uint z = intval - IN.tri - 7;
+    uint z2 = uint(zero);
+    uint z3 = uint(posone) - 1;
+
+    // fill the last component, to ensure we return the real result and not a trashed-zero
+    structrwtest[z+4].b.w = 1.1f;
+
+    // aligned store of float3
+    structrwtest[z3+4].b.xzy = float3(1.234f, 5.678f, 9.999f);
+
+    return structrwtest[z2+4].b;
+  }
+  if(IN.tri == 97)
+  {
+    uint z = intval - IN.tri - 7;
+    uint z2 = uint(zero);
+    uint z3 = uint(posone) - 1;
+
+    // fill the first component, to ensure we return the real result and not a trashed-zero
+    structrwtest[z+5].b.x = 1.1f;
+
+    // unaligned store of float3
+    structrwtest[z3+5].b.wzy = float3(1.234f, 5.678f, 9.999f);
+
+    return structrwtest[z2+5].b;
+  }
 
   return float4(0.4f, 0.4f, 0.4f, 0.4f);
 }
@@ -943,7 +1008,6 @@ float4 main(v2f IN, uint samp : SV_SampleIndex) : SV_Target0
       common += "\n#define TYPED_UAV_EXT 1\n";
 
     ID3DBlobPtr vsblob = Compile(common + vertex, "main", "vs_5_0");
-    ID3DBlobPtr psblob = Compile(common + pixel, "main", "ps_5_0");
 
     D3D11_INPUT_ELEMENT_DESC layoutdesc[] = {
         {
@@ -989,12 +1053,13 @@ float4 main(v2f IN, uint samp : SV_SampleIndex) : SV_Target0
                                     vsblob->GetBufferSize(), &layout));
 
     ID3D11VertexShaderPtr vs = CreateVS(vsblob);
-    ID3D11PixelShaderPtr ps = CreatePS(psblob);
+    ID3D11PixelShaderPtr ps = CreatePS(Compile(common + pixel, "main", "ps_5_0", true));
+    ID3D11PixelShaderPtr psopt = CreatePS(Compile(common + pixel, "main", "ps_5_0", false));
     ID3D11PixelShaderPtr flowps = CreatePS(Compile(common + flowPixel, "main", "ps_5_0"));
 
     static const uint32_t texDim = AlignUp(numTests, 64U) * 4;
 
-    ID3D11Texture2DPtr fltTex = MakeTexture(DXGI_FORMAT_R32G32B32A32_FLOAT, texDim, 8).RTV();
+    ID3D11Texture2DPtr fltTex = MakeTexture(DXGI_FORMAT_R32G32B32A32_FLOAT, texDim, 12).RTV();
     ID3D11RenderTargetViewPtr fltRT = MakeRTV(fltTex);
 
     float triWidth = 8.0f / float(texDim);
@@ -1035,7 +1100,7 @@ float4 main(v2f IN, uint samp : SV_SampleIndex) : SV_Target0
 
     ID3D11BufferPtr rawBuf2 = MakeBuffer().UAV().ByteAddressed().Size(1024);
     ID3D11UnorderedAccessViewPtr rawuav =
-        MakeUAV(rawBuf2).Format(DXGI_FORMAT_R32_TYPELESS).FirstElement(4).NumElements(12);
+        MakeUAV(rawBuf2).Format(DXGI_FORMAT_R32_TYPELESS).FirstElement(4).NumElements(24);
 
     float structdata[220];
     for(int i = 0; i < 220; i++)
@@ -1050,7 +1115,7 @@ float4 main(v2f IN, uint samp : SV_SampleIndex) : SV_Target0
 
     ID3D11BufferPtr structBuf2 = MakeBuffer().UAV().Structured(11 * sizeof(float)).Size(880);
     ID3D11UnorderedAccessViewPtr structuav =
-        MakeUAV(structBuf2).Format(DXGI_FORMAT_UNKNOWN).FirstElement(3).NumElements(5);
+        MakeUAV(structBuf2).Format(DXGI_FORMAT_UNKNOWN).FirstElement(3).NumElements(6);
 
     ID3D11BufferPtr rgbuavBuf = MakeBuffer().UAV().Data(structdata);
     ID3D11UnorderedAccessViewPtr typeuav = MakeUAV(rgbuavBuf).Format(DXGI_FORMAT_R32G32B32A32_FLOAT);
@@ -1121,6 +1186,11 @@ float4 main(v2f IN, uint samp : SV_SampleIndex) : SV_Target0
       ctx->DrawInstanced(3, numTests, 0, 0);
 
       RSSetViewport({0.0f, 4.0f, (float)texDim, 4.0f, 0.0f, 1.0f});
+      ctx->PSSetShader(psopt, NULL, 0);
+      setMarker("Optimised Test");
+      ctx->DrawInstanced(3, numTests, 0, 0);
+
+      RSSetViewport({0.0f, 8.0f, (float)texDim, 4.0f, 0.0f, 1.0f});
       ctx->PSSetShader(flowps, NULL, 0);
       setMarker("Flow Test");
       ctx->DrawInstanced(3, 1, 0, 0);

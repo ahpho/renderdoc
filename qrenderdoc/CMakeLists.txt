@@ -224,12 +224,18 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     file(APPEND
         ${CMAKE_BINARY_DIR}/qrenderdoc/qrenderdoc_cmake.pri
         "QMAKE_CXXFLAGS+=-Wno-shadow -Wno-shorten-64-to-32\n")
-endif()
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 3.9)
-    file(APPEND
-        ${CMAKE_BINARY_DIR}/qrenderdoc/qrenderdoc_cmake.pri
-        "QMAKE_CXXFLAGS+=-Wno-comma\n")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 3.9)
+        file(APPEND
+            ${CMAKE_BINARY_DIR}/qrenderdoc/qrenderdoc_cmake.pri
+            "QMAKE_CXXFLAGS+=-Wno-comma\n")
+    endif()
+
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 19)
+        file(APPEND
+            ${CMAKE_BINARY_DIR}/qrenderdoc/qrenderdoc_cmake.pri
+            "QMAKE_CXXFLAGS+=-Wno-cast-function-type\n")
+    endif()
 endif()
 
 

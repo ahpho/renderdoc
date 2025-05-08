@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -26,11 +26,15 @@
 #include "dxbc_debug.h"
 #include <algorithm>
 #include "common/formatting.h"
+#include "core/settings.h"
 #include "driver/dxgi/dxgi_common.h"
 #include "maths/formatpacking.h"
 #include "replay/replay_driver.h"
 #include "dxbc_bytecode.h"
 #include "dxbc_container.h"
+
+RDOC_DEBUG_CONFIG(bool, D3D_Hack_EnableGroups, false,
+                  "Work in progress allow shaders to be debugged with workgroup requirements.");
 
 using namespace DXBCBytecode;
 using namespace DXDebug;
@@ -1243,6 +1247,55 @@ void ThreadState::SetDst(ShaderDebugState *state, const Operand &dstoper, const 
   }
 }
 
+void ThreadState::SetGroupsharedDst(ShaderDebugState *state, uint32_t gsmIndex,
+                                    const uint32_t byteOffset, ShaderVariable &val)
+{
+  const uint32_t gsmStride = global.groupshared[gsmIndex].bytestride;
+
+  const uint32_t regIndex = byteOffset / gsmStride;
+  const uint32_t component = AlignUp4(byteOffset % gsmStride) / 4;
+
+  ShaderVariable *v = NULL;
+
+  uint32_t idx = program->GetRegisterIndex(TYPE_THREAD_GROUP_SHARED_MEMORY, gsmIndex);
+
+  if(idx < variables.size())
+    v = &variables[idx];
+
+  if(!v)
+  {
+    RDCERR("Couldn't find groupshared register %u", gsmIndex);
+  }
+  else
+  {
+    ShaderVariable *changeVar = v;
+
+    v = &v->members[regIndex];
+
+    ShaderVariableChange change = {*changeVar};
+
+    if(gsmStride <= 16)
+    {
+      // if the stride is less than a float4, the groupshared storage is a simple array of N
+      // float4 registers so we can just assign
+      for(uint32_t i = 0; i < val.columns; i++)
+        v->value.u32v[component + i] = val.value.u32v[i];
+    }
+    else
+    {
+      // otherwise each entry in the groupshared storage array is a series of N
+      // component-sized registers so unroll that here and assign to the first component
+      RDCASSERT(component + val.columns <= v->members.size(), component + val.columns,
+                v->members.size());
+      for(uint32_t i = 0; i < val.columns; i++)
+        v->members[component + i].value.u32v[0] = val.value.u32v[i];
+    }
+
+    change.after = *changeVar;
+    state->changes.push_back(change);
+  }
+}
+
 ShaderVariable ThreadState::DDX(bool fine, const rdcarray<ThreadState> &quad,
                                 const DXBCBytecode::Operand &oper,
                                 const DXBCBytecode::Operation &op) const
@@ -1529,6 +1582,7 @@ ShaderVariable ThreadState::GetSrc(const Operand &oper, const Operation &op, boo
           numthreads[0] = decl.groupSize[0];
           numthreads[1] = decl.groupSize[1];
           numthreads[2] = decl.groupSize[2];
+          break;
         }
       }
 
@@ -1637,25 +1691,6 @@ ShaderVariable ThreadState::GetSrc(const Operand &oper, const Operation &op, boo
   }
 
   return v;
-}
-
-static uint32_t BitwiseReverseLSB16(uint32_t x)
-{
-  // Reverse the bits in x, then discard the lower half
-  // https://graphics.stanford.edu/~seander/bithacks.html#ReverseParallel
-  x = ((x >> 1) & 0x55555555) | ((x & 0x55555555) << 1);
-  x = ((x >> 2) & 0x33333333) | ((x & 0x33333333) << 2);
-  x = ((x >> 4) & 0x0F0F0F0F) | ((x & 0x0F0F0F0F) << 4);
-  x = ((x >> 8) & 0x00FF00FF) | ((x & 0x00FF00FF) << 8);
-  return x << 16;
-}
-
-static uint32_t PopCount(uint32_t x)
-{
-  // https://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
-  x = x - ((x >> 1) & 0x55555555);
-  x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
-  return (((x + (x >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
 }
 
 void FlattenSingleVariable(const rdcstr &cbufferName, uint32_t byteOffset, const rdcstr &basename,
@@ -2568,13 +2603,71 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
       /////////////////////////////////////////////////////////////////////////////////////////////////////
       // Misc
 
+    case OPCODE_SYNC:
+    {
+      // fully refresh all groupshared registers from backing store
+      if(state)
+      {
+        for(uint32_t gsmIndex = 0; gsmIndex < global.groupshared.size(); gsmIndex++)
+        {
+          const uint32_t gsmStride = global.groupshared[gsmIndex].bytestride;
+
+          uint32_t idx = program->GetRegisterIndex(TYPE_THREAD_GROUP_SHARED_MEMORY, gsmIndex);
+
+          ShaderVariable *v = NULL;
+          if(idx < variables.size())
+            v = &variables[idx];
+
+          if(!v)
+          {
+            RDCERR("Couldn't find groupshared register %u", gsmIndex);
+            continue;
+          }
+
+          ShaderVariable *changeVar = v;
+
+          ShaderVariableChange change = {*changeVar};
+
+          byte *data = global.groupshared[gsmIndex].data.data();
+          RDCASSERT(global.groupshared[gsmIndex].count <= v->members.size(),
+                    global.groupshared[gsmIndex].count, v->members.size());
+          for(uint32_t i = 0; i < global.groupshared[gsmIndex].count; i++)
+          {
+            if(gsmStride <= 16)
+            {
+              // if the stride is less than a float4, the groupshared storage is a simple array of N
+              // float4 registers so we can just memcpy
+              memcpy(v->members[i].value.u32v.data(), data, gsmStride);
+              data += gsmStride;
+            }
+            else
+            {
+              // otherwise each entry in the groupshared storage array is a series of N
+              // component-sized registers so unroll that here and copy into each's first component
+              RDCASSERT(gsmStride <= v->members[i].members.size(), gsmStride,
+                        v->members[i].members.size());
+              for(uint32_t c = 0; c < gsmStride; c += sizeof(uint32_t))
+              {
+                memcpy(v->members[i].members[c].value.u32v.data(), data, sizeof(uint32_t));
+
+                data += sizeof(uint32_t);
+              }
+            }
+          }
+
+          RDCASSERTEQUAL(data, global.groupshared[gsmIndex].data.end());
+
+          change.after = *changeVar;
+          state->changes.push_back(change);
+        }
+      }
+      break;
+    }
     case OPCODE_NOP:
     case OPCODE_CUSTOMDATA:
     case OPCODE_OPAQUE_CUSTOMDATA:
     case OPCODE_SHADER_MESSAGE:
     case OPCODE_DCL_IMMEDIATE_CONSTANT_BUFFER: break;
-    case OPCODE_SYNC:    // might never need to implement this. Who knows!
-      break;
     case OPCODE_DMOV:
     case OPCODE_MOV: SetDst(state, op.operands[0], op, srcOpers[0]); break;
     case OPCODE_DMOVC:
@@ -2992,6 +3085,7 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
       bool structured = false;
 
       byte *data = NULL;
+      byte *gsm_base = NULL;
 
       if(gsm)
       {
@@ -3006,7 +3100,7 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
         {
           numElems = global.groupshared[resIndex].count;
           stride = global.groupshared[resIndex].bytestride;
-          data = &global.groupshared[resIndex].data[0];
+          gsm_base = data = &global.groupshared[resIndex].data[0];
           structured = global.groupshared[resIndex].structured;
         }
       }
@@ -3106,6 +3200,15 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
           case OPCODE_IMM_ATOMIC_UMIN:
           case OPCODE_ATOMIC_UMIN: *udst = RDCMIN(*udst, *usrc0); break;
           default: break;
+        }
+
+        if(gsm && state)
+        {
+          // only one uint
+          ShaderVariable val = ShaderVariable(rdcstr(), *udst, *udst, *udst, *udst);
+          val.columns = 1;
+
+          SetGroupsharedDst(state, resIndex, uint32_t(data - gsm_base), val);
         }
       }
 
@@ -3231,6 +3334,7 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
       RDCASSERT(stride != 0);
 
       byte *data = NULL;
+      byte *gsm_base = NULL;
       size_t dataSize = 0;
       bool texData = false;
       uint32_t rowPitch = 0;
@@ -3244,6 +3348,7 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
         firstElem = 0;
         if(resIndex > global.groupshared.size())
         {
+          RDCERR("Invalid dxbc bytecode - garbage groupshared register being referenced");
           numElems = 0;
           stride = 4;
           data = NULL;
@@ -3252,7 +3357,7 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
         {
           numElems = global.groupshared[resIndex].count;
           stride = global.groupshared[resIndex].bytestride;
-          data = global.groupshared[resIndex].data.data();
+          gsm_base = data = global.groupshared[resIndex].data.data();
           dataSize = global.groupshared[resIndex].data.size();
           fmt.fmt = CompType::UInt;
           fmt.byteWidth = 4;
@@ -3341,34 +3446,95 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
       {
         data += dataOffset;
 
-        int maxIndex = fmt.numComps;
+        int boundsClampedComps = 4;
 
         uint32_t srcIdx = 1;
-        if(op.operation == OPCODE_STORE_STRUCTURED || op.operation == OPCODE_LD_STRUCTURED)
+        if(op.operation == OPCODE_LD_STRUCTURED)
         {
           srcIdx = 2;
-          maxIndex = (stride - structOffset) / sizeof(uint32_t);
           fmt.byteWidth = 4;
+
           fmt.numComps = 4;
+          boundsClampedComps =
+              RDCMIN(boundsClampedComps, int((stride - structOffset) / sizeof(uint32_t)));
+          fmt.numComps = RDCMIN(fmt.numComps, boundsClampedComps);
+
           if(op.operands[0].comps[0] != 0xff && op.operands[0].comps[1] == 0xff &&
              op.operands[0].comps[2] == 0xff && op.operands[0].comps[3] == 0xff)
             fmt.numComps = 1;
+        }
+        else if(op.operation == OPCODE_STORE_STRUCTURED)
+        {
+          srcIdx = 2;
+          fmt.byteWidth = 4;
+
+          // set number of components based on output register write mask
+          if(op.operands[0].comps[1] == 0xff)
+            fmt.numComps = 1;
+          else if(op.operands[0].comps[2] == 0xff)
+            fmt.numComps = 2;
+          else if(op.operands[0].comps[3] == 0xff)
+            fmt.numComps = 3;
+          else
+            fmt.numComps = 4;
+
+          // do not allow writing beyond the stride (we don't expect fxc to emit writes like this anyway)
+          boundsClampedComps =
+              RDCMIN(boundsClampedComps, int((stride - structOffset) / sizeof(uint32_t)));
+          fmt.numComps = RDCMIN(fmt.numComps, boundsClampedComps);
+
+          for(int c = 0; c < 4; c++)
+          {
+            if(c < fmt.numComps)
+              RDCASSERTEQUAL(op.operands[0].comps[c], c);
+            else
+              RDCASSERT(op.operands[0].comps[c] == 0xff, c, op.operands[0].comps[c]);
+          }
+
           fmt.fmt = CompType::UInt;
         }
         // raw loads/stores can come from any component (as long as it's within range of the data!)
-        if(op.operation == OPCODE_LD_RAW || op.operation == OPCODE_STORE_RAW)
+        else if(op.operation == OPCODE_LD_RAW)
         {
           fmt.byteWidth = 4;
 
           // normally we can read 4 elements
           fmt.numComps = 4;
+
           // clamp to out of bounds based on numElems
-          fmt.numComps = RDCMIN(fmt.numComps, int(numElems - elemIdx) / 4);
-          maxIndex = fmt.numComps;
+          boundsClampedComps = RDCMIN(boundsClampedComps, int(numElems - elemIdx) / 4);
+          fmt.numComps = RDCMIN(fmt.numComps, boundsClampedComps);
 
           if(op.operands[0].comps[0] != 0xff && op.operands[0].comps[1] == 0xff &&
              op.operands[0].comps[2] == 0xff && op.operands[0].comps[3] == 0xff)
             fmt.numComps = 1;
+        }
+        else if(op.operation == OPCODE_STORE_RAW)
+        {
+          fmt.byteWidth = 4;
+
+          // set number of components based on output register write mask
+          if(op.operands[0].comps[1] == 0xff)
+            fmt.numComps = 1;
+          else if(op.operands[0].comps[2] == 0xff)
+            fmt.numComps = 2;
+          else if(op.operands[0].comps[3] == 0xff)
+            fmt.numComps = 3;
+          else
+            fmt.numComps = 4;
+
+          // clamp to out of bounds based on numElems
+          boundsClampedComps = RDCMIN(boundsClampedComps, int(numElems - elemIdx) / 4);
+          fmt.numComps = RDCMIN(fmt.numComps, boundsClampedComps);
+
+          for(int c = 0; c < boundsClampedComps; c++)
+          {
+            if(c < fmt.numComps)
+              RDCASSERTEQUAL(op.operands[0].comps[c], c);
+            else
+              RDCASSERT(op.operands[0].comps[c] == 0xff, c, op.operands[0].comps[c]);
+          }
+
           fmt.fmt = CompType::UInt;
         }
 
@@ -3376,9 +3542,16 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
         {
           ShaderVariable result = TypedUAVLoad(fmt, data);
 
+          // clamp the result to any out of bounds loads so that we don't fill in with w=1
+          for(int c = boundsClampedComps; c < 4; c++)
+            result.value.u32v[c] = 0;
+
           // apply the swizzle on the resource operand
           ShaderVariable fetch("", 0U, 0U, 0U, 0U);
 
+          // always process all 4 components, as this is applying a swizzle to the returned resource
+          // data, and we could swizzle a 1-component texture result into .y with .yxzw if we then
+          // go on to scalar-assign it to .y of the output
           for(int c = 0; c < 4; c++)
           {
             uint8_t comp = resComps[c];
@@ -3402,14 +3575,24 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
         }
         else if(!Finished())    // helper/inactive pixels can't modify UAVs
         {
-          for(int i = 0; i < 4; i++)
-          {
-            uint8_t comp = op.operands[0].comps[i];
-            // masks must be contiguous from x, if we reach the 'end' we're done
-            if(comp == 0xff || comp >= maxIndex)
-              break;
+          // from the spec on a typed UAV store:
+          // dstUAV always has a .xyzw write mask.
+          // All components must be written.
+          //
+          // for raw/structured stores, we've already set the format to be the right number of
+          // components
+          //
+          // so we can ignore op.operands[0].comps[] entirely and just write the data
+          TypedUAVStore(fmt, data, srcOpers[srcIdx]);
 
-            TypedUAVStore(fmt, data, srcOpers[srcIdx]);
+          if(gsm && state)
+          {
+            // read the variable
+            ShaderVariable val = srcOpers[srcIdx];
+            // adjust the number of components
+            val.columns = fmt.numComps & 0xff;
+
+            SetGroupsharedDst(state, resIndex, uint32_t(data - gsm_base), val);
           }
         }
       }
@@ -3424,7 +3607,7 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
       // opcodes only seem to be supported for regular inputs
       RDCASSERT(op.operands[1].type == TYPE_INPUT);
 
-      GlobalState::SampleEvalCacheKey key;
+      DXDebug::SampleEvalCacheKey key;
 
       RDCASSERT(program->GetShaderType() == DXBC::ShaderType::Pixel);
 
@@ -4414,8 +4597,8 @@ void GlobalState::PopulateGroupshared(const DXBCBytecode::Program *pBytecode)
         }
         else
         {
-          mem.count = decl.tgsmCount;
-          mem.bytestride = 4;    // raw groupshared is implicitly uint32s
+          mem.count = decl.tgsmCount / 4;    // convert from bytes to elements
+          mem.bytestride = 4;                // raw groupshared is implicitly uint32s
         }
 
         mem.data.resize(mem.bytestride * mem.count);
@@ -4514,174 +4697,6 @@ void AddCBufferToGlobalState(const DXBCBytecode::Program &program, GlobalState &
 
       return;
     }
-  }
-}
-
-void ApplyDerivatives(GlobalState &global, rdcarray<ThreadState> &quad, int reg, int element,
-                      int numWords, float *data, float signmul, int32_t quadIdxA, int32_t quadIdxB)
-{
-  for(int w = 0; w < numWords; w++)
-  {
-    quad[quadIdxA].inputs[reg].value.f32v[element + w] += signmul * data[w];
-    if(quadIdxB >= 0)
-      quad[quadIdxB].inputs[reg].value.f32v[element + w] += signmul * data[w];
-  }
-
-  // quick check to see if this register was evaluated
-  if(global.sampleEvalRegisterMask & (1ULL << reg))
-  {
-    // apply derivative to any cached sample evaluations on these quad indices
-    for(auto it = global.sampleEvalCache.begin(); it != global.sampleEvalCache.end(); ++it)
-    {
-      if((it->first.quadIndex == quadIdxA || it->first.quadIndex == quadIdxB) &&
-         reg == it->first.inputRegisterIndex)
-      {
-        for(int w = 0; w < numWords; w++)
-          it->second.value.f32v[element + w] += data[w];
-      }
-    }
-  }
-}
-
-void ApplyAllDerivatives(GlobalState &global, rdcarray<ThreadState> &quad, int destIdx,
-                         const rdcarray<PSInputElement> &initialValues, float *data)
-{
-  // We make the assumption that the coarse derivatives are generated from (0,0) in the quad, and
-  // fine derivatives are generated from the destination index and its neighbours in X and Y.
-  // This isn't spec'd but we must assume something and this will hopefully get us closest to
-  // reproducing actual results.
-  //
-  // For debugging, we need members of the quad to be able to generate coarse and fine
-  // derivatives.
-  //
-  // For (0,0) we only need the coarse derivatives to get our neighbours (1,0) and (0,1) which
-  // will give us coarse and fine derivatives being identical.
-  //
-  // For the others we will need to use a combination of coarse and fine derivatives to get the
-  // diagonal element in the quad. In the examples below, remember that the quad indices are:
-  //
-  // +---+---+
-  // | 0 | 1 |
-  // +---+---+
-  // | 2 | 3 |
-  // +---+---+
-  //
-  // And that we have definitions of the derivatives:
-  //
-  // ddx_coarse = (1,0) - (0,0)
-  // ddy_coarse = (0,1) - (0,0)
-  //
-  // i.e. the same for all members of the quad
-  //
-  // ddx_fine   = (x,y) - (1-x,y)
-  // ddy_fine   = (x,y) - (x,1-y)
-  //
-  // i.e. the difference to the neighbour of our desired invocation (the one we have the actual
-  // inputs for, from gathering above).
-  //
-  // So e.g. if our thread is at (1,1) destIdx = 3
-  //
-  // (1,0) = (1,1) - ddx_fine
-  // (0,1) = (1,1) - ddy_fine
-  // (0,0) = (1,1) - ddy_fine - ddx_coarse
-  //
-  // and ddy_coarse is unused. For (1,0) destIdx = 1:
-  //
-  // (1,1) = (1,0) + ddy_fine
-  // (0,1) = (1,0) - ddx_coarse + ddy_coarse
-  // (0,0) = (1,0) - ddx_coarse
-  //
-  // and ddx_fine is unused (it's identical to ddx_coarse anyway)
-
-  // this is the value of input[1] - input[0]
-  float *ddx_coarse = (float *)data;
-
-  for(size_t i = 0; i < initialValues.size(); i++)
-  {
-    if(!initialValues[i].included)
-      continue;
-
-    if(initialValues[i].reg >= 0)
-    {
-      if(destIdx == 0)
-        ApplyDerivatives(global, quad, initialValues[i].reg, initialValues[i].elem,
-                         initialValues[i].numwords, ddx_coarse, 1.0f, 1, 3);
-      else if(destIdx == 1)
-        ApplyDerivatives(global, quad, initialValues[i].reg, initialValues[i].elem,
-                         initialValues[i].numwords, ddx_coarse, -1.0f, 0, 2);
-      else if(destIdx == 2)
-        ApplyDerivatives(global, quad, initialValues[i].reg, initialValues[i].elem,
-                         initialValues[i].numwords, ddx_coarse, 1.0f, 1, -1);
-      else if(destIdx == 3)
-        ApplyDerivatives(global, quad, initialValues[i].reg, initialValues[i].elem,
-                         initialValues[i].numwords, ddx_coarse, -1.0f, 0, -1);
-    }
-
-    ddx_coarse += initialValues[i].numwords;
-  }
-
-  // this is the value of input[2] - input[0]
-  float *ddy_coarse = ddx_coarse;
-
-  for(size_t i = 0; i < initialValues.size(); i++)
-  {
-    if(!initialValues[i].included)
-      continue;
-
-    if(initialValues[i].reg >= 0)
-    {
-      if(destIdx == 0)
-        ApplyDerivatives(global, quad, initialValues[i].reg, initialValues[i].elem,
-                         initialValues[i].numwords, ddy_coarse, 1.0f, 2, 3);
-      else if(destIdx == 1)
-        ApplyDerivatives(global, quad, initialValues[i].reg, initialValues[i].elem,
-                         initialValues[i].numwords, ddy_coarse, 1.0f, 2, -1);
-      else if(destIdx == 2)
-        ApplyDerivatives(global, quad, initialValues[i].reg, initialValues[i].elem,
-                         initialValues[i].numwords, ddy_coarse, -1.0f, 0, 1);
-    }
-
-    ddy_coarse += initialValues[i].numwords;
-  }
-
-  float *ddxfine = ddy_coarse;
-
-  for(size_t i = 0; i < initialValues.size(); i++)
-  {
-    if(!initialValues[i].included)
-      continue;
-
-    if(initialValues[i].reg >= 0)
-    {
-      if(destIdx == 2)
-        ApplyDerivatives(global, quad, initialValues[i].reg, initialValues[i].elem,
-                         initialValues[i].numwords, ddxfine, 1.0f, 3, -1);
-      else if(destIdx == 3)
-        ApplyDerivatives(global, quad, initialValues[i].reg, initialValues[i].elem,
-                         initialValues[i].numwords, ddxfine, -1.0f, 2, -1);
-    }
-
-    ddxfine += initialValues[i].numwords;
-  }
-
-  float *ddyfine = ddxfine;
-
-  for(size_t i = 0; i < initialValues.size(); i++)
-  {
-    if(!initialValues[i].included)
-      continue;
-
-    if(initialValues[i].reg >= 0)
-    {
-      if(destIdx == 1)
-        ApplyDerivatives(global, quad, initialValues[i].reg, initialValues[i].elem,
-                         initialValues[i].numwords, ddyfine, 1.0f, 3, -1);
-      else if(destIdx == 3)
-        ApplyDerivatives(global, quad, initialValues[i].reg, initialValues[i].elem,
-                         initialValues[i].numwords, ddyfine, -1.0f, 0, 1);
-    }
-
-    ddyfine += initialValues[i].numwords;
   }
 }
 
@@ -4794,9 +4809,41 @@ ShaderDebugTrace *InterpretDebugger::BeginDebug(const DXBC::DXBCContainer *dxbcC
   this->dxbc = dxbcContainer;
   this->activeLaneIndex = activeIndex;
 
+  uint32_t numthreads[3] = {0, 0, 0};
+
+  for(size_t i = 0; i < dxbcContainer->GetDXBCByteCode()->GetNumDeclarations(); i++)
+  {
+    const Declaration &decl = dxbcContainer->GetDXBCByteCode()->GetDeclaration(i);
+
+    if(decl.declaration == OPCODE_DCL_THREAD_GROUP)
+    {
+      numthreads[0] = decl.groupSize[0];
+      numthreads[1] = decl.groupSize[1];
+      numthreads[2] = decl.groupSize[2];
+      break;
+    }
+  }
+
   int workgroupSize = dxbc->m_Type == DXBC::ShaderType::Pixel ? 4 : 1;
+
+  if(dxbc->m_Type == DXBC::ShaderType::Compute &&
+     dxbcContainer->GetThreadScope() == DXBC::ThreadScope::Workgroup)
+  {
+    if(D3D_Hack_EnableGroups())
+      workgroupSize = numthreads[0] * numthreads[1] * numthreads[2];
+  }
+
   for(int i = 0; i < workgroupSize; i++)
+  {
     workgroup.push_back(ThreadState(i, global, dxbc));
+
+    if(dxbc->m_Type == DXBC::ShaderType::Compute && workgroupSize > 1)
+    {
+      workgroup[i].semantics.ThreadID[0] = (i) % numthreads[0];
+      workgroup[i].semantics.ThreadID[1] = (i / numthreads[0]) % numthreads[1];
+      workgroup[i].semantics.ThreadID[2] = (i / numthreads[0] / numthreads[1]) % numthreads[2];
+    }
+  }
 
   if(dxbc->m_Type == DXBC::ShaderType::Compute)
     global.PopulateGroupshared(dxbc->GetDXBCByteCode());
@@ -5139,7 +5186,54 @@ void InterpretDebugger::CalcActiveMask(rdcarray<bool> &activeMask)
   for(bool &active : activeMask)
     active = true;
 
-  // only pixel shaders automatically converge workgroups, compute shaders need explicit sync
+  // only compute and pixel need any divergence/convergence info
+  if(dxbc->m_Type != DXBC::ShaderType::Pixel && dxbc->m_Type != DXBC::ShaderType::Compute)
+    return;
+
+  // see if we've diverged
+  bool differentNext = false;
+  for(size_t i = 1; i < workgroup.size(); i++)
+    differentNext |= (workgroup[0].nextInstruction != workgroup[i].nextInstruction);
+
+  // if we're all in lockstep, return!
+  if(!differentNext)
+    return;
+
+  // for compute shaders, we hold up any threads that are behind if one thread is on a SYNC opcode
+  if(dxbc->m_Type == DXBC::ShaderType::Compute)
+  {
+    bool anySync = false;
+    uint32_t minInst = workgroup[0].nextInstruction, syncPoint = ~0U;
+    for(size_t i = 0; i < workgroup.size(); i++)
+    {
+      DXBCBytecode::OpcodeType op =
+          dxbc->GetDXBCByteCode()->GetInstruction(workgroup[i].nextInstruction).operation;
+
+      if(op == DXBCBytecode::OPCODE_SYNC)
+      {
+        anySync = true;
+        RDCASSERT(syncPoint == ~0U || syncPoint == workgroup[i].nextInstruction);
+        syncPoint = workgroup[i].nextInstruction;
+      }
+      minInst = RDCMIN(minInst, workgroup[i].nextInstruction);
+    }
+
+    // we've diverged, and at least one thread is on a sync. Only threads before that sync are
+    // active. Check that we're not about to deadlock and that some threads are behind. We should
+    // never be in the situation where threads are on different sync operations provided that sync
+    // operations only exist in uniform control flow, and similarly it should not be possible to get
+    // diverged ahead of the sync point
+    RDCASSERT(!anySync || minInst < syncPoint);
+
+    if(anySync)
+    {
+      for(size_t i = 0; i < workgroup.size(); i++)
+        if(workgroup[i].nextInstruction == syncPoint)
+          activeMask[i] = false;
+    }
+  }
+
+  // only pixel shaders automatically converge workgroups, compute shaders are handled above
   if(dxbc->m_Type != DXBC::ShaderType::Pixel)
     return;
 
@@ -5166,60 +5260,52 @@ void InterpretDebugger::CalcActiveMask(rdcarray<bool> &activeMask)
   // all threads as active.
   // if we've converged, or we were never diverged, this keeps everything ticking
 
-  // see if we've diverged
-  bool differentNext = false;
-  for(size_t i = 1; i < workgroup.size(); i++)
-    differentNext |= (workgroup[0].nextInstruction != workgroup[i].nextInstruction);
+  // this isn't *perfect* but it will still eventually continue. We look for the most advanced
+  // thread, and check to see if it's just finished a control flow. If it has then we assume it's
+  // at the convergence point and wait for every other thread to catch up, pausing any threads
+  // that reach the convergence point before others.
 
-  if(differentNext)
+  // Note this might mean we don't have any threads paused even within divergent flow. This is
+  // fine and all we care about is pausing to make sure threads don't run ahead into code that
+  // should be lockstep. We don't care at all about what they do within the code that is
+  // divergent.
+
+  // The reason this isn't perfect is that the most advanced thread could be on an inner loop or
+  // inner if, not the convergence point, and we could be pausing it fruitlessly. Worse still - it
+  // could be on a branch none of the other threads will take so they will never reach that exact
+  // instruction.
+  // But we know that all threads will eventually go through the convergence point, so even in
+  // that worst case if we didn't pick the right waiting point, another thread will overtake and
+  // become the new most advanced thread and the previous waiting thread will resume. So in this
+  // case we caused a thread to wait more than it should have but that's not a big deal as it's
+  // within divergent flow so they don't have to stay in lockstep. Also if all threads will
+  // eventually pass that point we picked, we just waited to converge even in technically
+  // divergent code which is also harmless.
+
+  // Phew!
+
+  uint32_t convergencePoint = 0;
+
+  // find which thread is most advanced
+  for(size_t i = 0; i < workgroup.size(); i++)
+    if(workgroup[i].nextInstruction > convergencePoint)
+      convergencePoint = workgroup[i].nextInstruction;
+
+  if(convergencePoint > 0)
   {
-    // this isn't *perfect* but it will still eventually continue. We look for the most advanced
-    // thread, and check to see if it's just finished a control flow. If it has then we assume it's
-    // at the convergence point and wait for every other thread to catch up, pausing any threads
-    // that reach the convergence point before others.
+    DXBCBytecode::OpcodeType op =
+        dxbc->GetDXBCByteCode()->GetInstruction(convergencePoint - 1).operation;
 
-    // Note this might mean we don't have any threads paused even within divergent flow. This is
-    // fine and all we care about is pausing to make sure threads don't run ahead into code that
-    // should be lockstep. We don't care at all about what they do within the code that is
-    // divergent.
-
-    // The reason this isn't perfect is that the most advanced thread could be on an inner loop or
-    // inner if, not the convergence point, and we could be pausing it fruitlessly. Worse still - it
-    // could be on a branch none of the other threads will take so they will never reach that exact
-    // instruction.
-    // But we know that all threads will eventually go through the convergence point, so even in
-    // that worst case if we didn't pick the right waiting point, another thread will overtake and
-    // become the new most advanced thread and the previous waiting thread will resume. So in this
-    // case we caused a thread to wait more than it should have but that's not a big deal as it's
-    // within divergent flow so they don't have to stay in lockstep. Also if all threads will
-    // eventually pass that point we picked, we just waited to converge even in technically
-    // divergent code which is also harmless.
-
-    // Phew!
-
-    uint32_t convergencePoint = 0;
-
-    // find which thread is most advanced
-    for(size_t i = 0; i < workgroup.size(); i++)
-      if(workgroup[i].nextInstruction > convergencePoint)
-        convergencePoint = workgroup[i].nextInstruction;
-
-    if(convergencePoint > 0)
-    {
-      DXBCBytecode::OpcodeType op =
-          dxbc->GetDXBCByteCode()->GetInstruction(convergencePoint - 1).operation;
-
-      // if the most advnaced thread hasn't just finished control flow, then all
-      // threads are still running, so don't converge
-      if(op != OPCODE_ENDIF && op != OPCODE_ENDLOOP && op != OPCODE_ENDSWITCH)
-        convergencePoint = 0;
-    }
-
-    // pause any threads at that instruction (could be none)
-    for(size_t i = 0; i < workgroup.size(); i++)
-      if(workgroup[i].nextInstruction == convergencePoint)
-        activeMask[i] = false;
+    // if the most advnaced thread hasn't just finished control flow, then all
+    // threads are still running, so don't converge
+    if(op != OPCODE_ENDIF && op != OPCODE_ENDLOOP && op != OPCODE_ENDSWITCH)
+      convergencePoint = 0;
   }
+
+  // pause any threads at that instruction (could be none)
+  for(size_t i = 0; i < workgroup.size(); i++)
+    if(workgroup[i].nextInstruction == convergencePoint)
+      activeMask[i] = false;
 }
 
 rdcarray<ShaderDebugState> InterpretDebugger::ContinueDebug(DXBCDebug::DebugAPIWrapper *apiWrapper)

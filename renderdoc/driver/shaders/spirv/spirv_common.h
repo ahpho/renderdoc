@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -238,14 +238,14 @@ struct OpExtInstHelper
   rdcarray<uint32_t> params;
 
   template <typename T>
-  T arg(uint32_t idx)
+  T arg(uint32_t idx) const
   {
     return T(params[idx]);
   }
 };
 
 template <>
-inline Id OpExtInstHelper::arg<Id>(uint32_t idx)
+inline Id OpExtInstHelper::arg<Id>(uint32_t idx) const
 {
   return Id::fromWord(params[idx]);
 }
@@ -455,3 +455,32 @@ enum class ShaderBuiltin : uint32_t;
 
 ShaderStage MakeShaderStage(rdcspv::ExecutionModel model);
 ShaderBuiltin MakeShaderBuiltin(ShaderStage stage, const rdcspv::BuiltIn el);
+
+enum class BufferStorageMode : uint32_t
+{
+  Unknown,
+  // patched in plain descriptor
+  Descriptor,
+  // legacy path - EXT_buffer_device_address only
+  EXT_bda,
+  // KHR_buffer_device_address, but with uint2 addresses to not require int64 types/maths
+  KHR_bda32,
+  // like above, but requiring int64
+  KHR_bda64,
+};
+
+constexpr bool IsBDA(BufferStorageMode mode)
+{
+  return mode == BufferStorageMode::EXT_bda || mode == BufferStorageMode::KHR_bda32 ||
+         mode == BufferStorageMode::KHR_bda64;
+}
+
+constexpr bool IsKHRBDA(BufferStorageMode mode)
+{
+  return mode == BufferStorageMode::KHR_bda32 || mode == BufferStorageMode::KHR_bda64;
+}
+
+constexpr bool IsBinding(BufferStorageMode mode)
+{
+  return mode == BufferStorageMode::Descriptor;
+}

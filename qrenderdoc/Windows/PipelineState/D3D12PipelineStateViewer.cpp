@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1051,6 +1051,7 @@ void D3D12PipelineStateViewer::clearState()
   ui->iaLayouts->clear();
   ui->iaBuffers->clear();
   ui->topology->setText(QString());
+  ui->primRestart->setVisible(false);
   ui->topologyDiagram->setPixmap(QPixmap());
 
   clearShaderState(ui->asShader, ui->asRootSig, ui->asResources, ui->asSamplers, ui->asCBuffers,
@@ -1349,6 +1350,20 @@ void D3D12PipelineStateViewer::setState()
     m_Common.setTopologyDiagram(ui->topologyDiagram, state.inputAssembly.topology);
 
     bool ibufferUsed = action && (action->flags & ActionFlags::Indexed);
+
+    if(ibufferUsed)
+    {
+      ui->primRestart->setVisible(true);
+      if(state.inputAssembly.indexStripCutValue != 0)    // D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED
+        ui->primRestart->setText(
+            tr("Restart Idx: 0x%1").arg(Formatter::Format(state.inputAssembly.indexStripCutValue, true)));
+      else
+        ui->primRestart->setText(tr("Restart Idx: Disabled"));
+    }
+    else
+    {
+      ui->primRestart->setVisible(false);
+    }
 
     m_VBNodes.clear();
     m_EmptyNodes.clear();

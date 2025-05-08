@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -166,6 +166,36 @@ public:
   // to flag if some context-sensitive members might be invalid
   void SetStructArg(uint64_t arg) { m_StructArg = arg; }
   uint64_t GetStructArg() { return m_StructArg; }
+
+  // in rare cases it is necessary to pass side-band data even further than the small context
+  // allowed by SetStructArg, from serialisation users all the way down to child structs. We allow
+  // adding side-band data indexed by 'GUID' here for those rare cases.
+  template <typename T>
+  T GetSidebandData(uint64_t guid)
+  {
+    RDCCOMPILE_ASSERT(sizeof(T) <= sizeof(uint64_t), "Side-band data is at most 64-bit");
+
+    T ret;
+    for(rdcpair<uint64_t, uint64_t> &kv : m_SidebandKV)
+    {
+      if(kv.first == guid)
+      {
+        memcpy(&ret, &kv.second, sizeof(T));
+        return ret;
+      }
+    }
+
+    return ret;
+  }
+  template <typename T>
+  void SetSidebandData(uint64_t guid, const T &t)
+  {
+    RDCCOMPILE_ASSERT(sizeof(T) <= sizeof(uint64_t), "Side-band data is at most 64-bit");
+    uint64_t data = 0;
+    memcpy(&data, &t, sizeof(T));
+    m_SidebandKV.push_back({guid, data});
+  }
+
   //////////////////////////////////////////
   // Public serialisation interface
 
@@ -1026,7 +1056,9 @@ public:
   Serialiser &SerialiseStream(const rdcstr &name, StreamReader &stream,
                               RENDERDOC_ProgressCallback progress = RENDERDOC_ProgressCallback())
   {
-    RDCCOMPILE_ASSERT(IsWriting(), "Can't read into a StreamReader");
+    // we don't make this a compile-time assert so this code can be compiled in a
+    // templated-serialisation function (but we still assert as this will not be valid to execute
+    RDCASSERTMSG("Can't read into a StreamReader", IsWriting());
 
     uint64_t totalSize = stream.GetSize();
 
@@ -1578,6 +1610,7 @@ private:
   uint64_t m_Version = 0;
 
   uint64_t m_StructArg = 0;
+  rdcarray<rdcpair<uint64_t, uint64_t>> m_SidebandKV;
 
   StreamWriter *m_Write = NULL;
   StreamReader *m_Read = NULL;

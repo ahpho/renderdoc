@@ -119,6 +119,7 @@ set(VULKAN_SRC
         vk/vk_ext_buffer_address.cpp
         vk/vk_extended_dyn_state.cpp
         vk/vk_graphics_pipeline.cpp
+        vk/vk_groupshared.cpp
         vk/vk_image_layouts.cpp
         vk/vk_imageless_framebuffer.cpp
         vk/vk_indirect.cpp
@@ -131,6 +132,7 @@ set(VULKAN_SRC
         vk/vk_load_store_none.cpp
         vk/vk_mem_bench.cpp
         vk/vk_mesh_zoo.cpp
+        vk/vk_mesh_shader.cpp
         vk/vk_misaligned_dirty.cpp
         vk/vk_multi_entry.cpp
         vk/vk_multi_present.cpp
@@ -141,6 +143,7 @@ set(VULKAN_SRC
         vk/vk_pixel_history.cpp
         vk/vk_postponed.cpp
         vk/vk_query_pool.cpp
+        vk/vk_ray_query.cpp
         vk/vk_read_before_overwrite.cpp
         vk/vk_resource_lifetimes.cpp
         vk/vk_robustness2.cpp
@@ -154,6 +157,7 @@ set(VULKAN_SRC
         vk/vk_simple_triangle.cpp
         vk/vk_spec_constants.cpp
         vk/vk_spirv_13_shaders.cpp
+        vk/vk_subgroup_zoo.cpp
         vk/vk_structured_buffer_nested.cpp
         vk/vk_sync2.cpp
         vk/vk_texture_zoo.cpp
@@ -161,7 +165,8 @@ set(VULKAN_SRC
         vk/vk_validation_use.cpp
         vk/vk_vertex_attr_zoo.cpp
         vk/vk_video_textures.cpp
-        vk/vk_vs_max_desc_set.cpp)
+        vk/vk_vs_max_desc_set.cpp
+        vk/vk_workgroup_zoo.cpp)
 
 set(OPENGL_SRC
         3rdparty/glad/glad.c

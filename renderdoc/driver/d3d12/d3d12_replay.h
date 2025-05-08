@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -39,6 +39,15 @@ class NVD3D12Counters;
 class D3D12DebugManager;
 
 struct PortableHandle;
+
+namespace DXBC
+{
+class DXBCContainer;
+};
+namespace DXDebug
+{
+struct InputFetcher;
+};
 
 enum TexDisplayFlags
 {
@@ -172,7 +181,6 @@ public:
   void DestroyOutputWindow(uint64_t id);
   bool CheckResizeOutputWindow(uint64_t id);
   void GetOutputWindowDimensions(uint64_t id, int32_t &w, int32_t &h);
-  void SetOutputWindowDimensions(uint64_t id, int32_t w, int32_t h);
   void GetOutputWindowData(uint64_t id, bytebuf &retData);
   void ClearOutputWindowColor(uint64_t id, FloatVector col);
   void ClearOutputWindowDepth(uint64_t id, float depth, uint8_t stencil);
@@ -217,6 +225,7 @@ public:
                          rdcstr &errors);
   void ReplaceResource(ResourceId from, ResourceId to);
   void RemoveReplacement(ResourceId id);
+  void ClearReplayCache();
 
   rdcarray<GPUCounter> EnumerateCounters();
   CounterDescription DescribeCounter(GPUCounter counterID);
@@ -245,12 +254,20 @@ public:
 
   rdcarray<PixelModification> PixelHistory(rdcarray<EventUsage> events, ResourceId target, uint32_t x,
                                            uint32_t y, const Subresource &sub, CompType typeCast);
+
+  ID3DBlob *CompileShaderDebugFetcher(DXBC::DXBCContainer *dxbc, const rdcstr &hlsl);
+  ID3D12Resource *CreateInputFetchBuffer(DXDebug::InputFetcher &fetcher, uint64_t &laneDataOffset,
+                                         uint64_t &evalDataOffset);
+  ID3D12RootSignature *CreateInputFetchRootSig(bool compute, uint32_t &uavspace, uint32_t &sigElem);
+
   ShaderDebugTrace *DebugVertex(uint32_t eventId, uint32_t vertid, uint32_t instid, uint32_t idx,
                                 uint32_t view);
   ShaderDebugTrace *DebugPixel(uint32_t eventId, uint32_t x, uint32_t y,
                                const DebugPixelInputs &inputs);
   ShaderDebugTrace *DebugThread(uint32_t eventId, const rdcfixedarray<uint32_t, 3> &groupid,
                                 const rdcfixedarray<uint32_t, 3> &threadid);
+  ShaderDebugTrace *DebugMeshThread(uint32_t eventId, const rdcfixedarray<uint32_t, 3> &groupid,
+                                    const rdcfixedarray<uint32_t, 3> &threadid);
   rdcarray<ShaderDebugState> ContinueDebug(ShaderDebugger *debugger);
   void FreeDebugger(ShaderDebugger *debugger);
 

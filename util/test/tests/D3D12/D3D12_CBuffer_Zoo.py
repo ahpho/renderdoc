@@ -5,6 +5,7 @@ class D3D12_CBuffer_Zoo(rdtest.TestCase):
     demos_test_name = 'D3D12_CBuffer_Zoo'
 
     def check_capture(self):
+        rdtest.log.begin_section("DXBC Draw")
         action = self.find_action("DXBC Draw")
 
         self.check(action is not None)
@@ -24,14 +25,16 @@ class D3D12_CBuffer_Zoo(rdtest.TestCase):
         self.check_event()
 
         rdtest.log.success("DXBC action is as expected")
+        rdtest.log.end_section("DXBC Draw")
 
-        # Move to the DXIL action
-        action = self.find_action("DXIL Draw")
+        # Move to the SM6.0 action
+        action = self.find_action("SM6.0")
 
         if action is None:
-            rdtest.log.print("No DXIL action to test")
+            rdtest.log.print("No SM6.0 action to test")
             return
 
+        rdtest.log.begin_section("SM6.0 Draw")
         self.controller.SetFrameEvent(action.next.eventId, False)
 
         pipe: rd.PipeState = self.controller.GetPipelineState()
@@ -40,10 +43,28 @@ class D3D12_CBuffer_Zoo(rdtest.TestCase):
                                                    '')
 
         self.check('SM6.0' in disasm)
-
         self.check_event()
+        rdtest.log.success("SM 6.0 action is as expected")
+        rdtest.log.end_section("SM6.0 Draw")
 
-        rdtest.log.success("DXIL action is as expected")
+        # Move to the SM6.6 action
+        action = self.find_action("SM6.6")
+
+        if action is None:
+            rdtest.log.print("No SM6.6 action to test")
+            return
+
+        rdtest.log.begin_section("SM6.6 Draw")
+        self.controller.SetFrameEvent(action.next.eventId, False)
+
+        pipe: rd.PipeState = self.controller.GetPipelineState()
+
+        disasm = self.controller.DisassembleShader(pipe.GetGraphicsPipelineObject(), pipe.GetShaderReflection(stage),
+                                                   '')
+        self.check('SM6.6' in disasm)
+        self.check_event()
+        rdtest.log.success("SM 6.6 action is as expected")
+        rdtest.log.end_section("SM6.6 Draw")
 
     def check_event(self):
         pipe: rd.PipeState = self.controller.GetPipelineState()

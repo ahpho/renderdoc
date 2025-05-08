@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -489,6 +489,8 @@ struct CmdListRecordingInfo
 
   BarrierSet barriers;
 
+  bool forceMapsListEvent = false;
+
   // a list of all resources dirtied by this command list
   std::set<ResourceId> dirtied;
 
@@ -655,6 +657,7 @@ struct D3D12ResourceRecord : public ResourceRecord
     cmdInfo->dirtied.swap(bakedCommands->cmdInfo->dirtied);
     cmdInfo->boundDescs.swap(bakedCommands->cmdInfo->boundDescs);
     cmdInfo->bundles.swap(bakedCommands->cmdInfo->bundles);
+    bakedCommands->cmdInfo->forceMapsListEvent = cmdInfo->forceMapsListEvent;
     bakedCommands->cmdInfo->alloc = cmdInfo->alloc;
     bakedCommands->cmdInfo->allocRecord = cmdInfo->allocRecord;
   }
@@ -700,6 +703,8 @@ private:
   };
   rdcarray<Bind> binds;
 };
+
+struct ASBuildData;
 
 struct D3D12InitialContents
 {
@@ -764,7 +769,9 @@ struct D3D12InitialContents
         srcData(NULL),
         dataSize(0),
         sparseTable(NULL),
-        sparseBinds(NULL)
+        sparseBinds(NULL),
+        buildData(NULL),
+        cachedBuiltAS(NULL)
   {
   }
 
@@ -775,6 +782,8 @@ struct D3D12InitialContents
     SAFE_DELETE(sparseTable);
     SAFE_RELEASE(resource);
     FreeAlignedBuffer(srcData);
+    SAFE_RELEASE(buildData);
+    SAFE_RELEASE(cachedBuiltAS);
   }
 
   Tag tag;
@@ -784,6 +793,7 @@ struct D3D12InitialContents
   ID3D12DeviceChild *resource;
   byte *srcData;
   size_t dataSize;
+  rdcarray<rdcstr> descriptorNames;
 
   rdcarray<uint32_t> subresources;
 
@@ -791,6 +801,10 @@ struct D3D12InitialContents
   Sparse::PageTable *sparseTable;
   // only valid on replay, the table above converted into a set of binds
   SparseBinds *sparseBinds;
+
+  ASBuildData *buildData;
+  // only on replay, we cache the result of the build so we can copy it instead to save time
+  D3D12GpuBuffer *cachedBuiltAS;
 };
 
 class WrappedID3D12GraphicsCommandList;
@@ -846,28 +860,37 @@ private:
 
     bool SubAllocationInRange(D3D12_GPU_VIRTUAL_ADDRESS gpuAddress) const
     {
-      if(m_resourceGpuAddressRange.start <= gpuAddress &&
-         gpuAddress < m_resourceGpuAddressRange.realEnd)
-
-      {
-        return true;
-      }
-
-      return false;
+      return (m_resourceGpuAddressRange.start <= gpuAddress &&
+              gpuAddress < m_resourceGpuAddressRange.realEnd);
     }
 
-    bool Free(D3D12_GPU_VIRTUAL_ADDRESS gpuAddress)
+    bool Free(D3D12_GPU_VIRTUAL_ADDRESS gpuAddress, uint64_t size, uint64_t alignment)
     {
       uint64_t offset = gpuAddress - m_resourceGpuAddressRange.start;
       auto iter = m_subRanges.find(offset);
       if(iter != m_subRanges.end() && iter->value() == D3D12SubRangeFlag::Used)
       {
+        uint64_t iterOffset = iter->start();
+        uint64_t alignedOffset = iterOffset;
+        if(alignment)
+          alignedOffset = AlignUp(m_resourceGpuAddressRange.start + alignedOffset, alignment) -
+                          m_resourceGpuAddressRange.start;
+
+        uint64_t padding = alignedOffset - iterOffset;
+
+        m_bytesFree += size + padding;
         iter->setValue(D3D12SubRangeFlag::Free);
         // Merging will only occur if the adjacent sub-ranges are also free
         iter->mergeLeft();
+        m_lastFree = iter;
+
         ++iter;
         if(iter != m_subRanges.end())
+        {
           iter->mergeLeft();
+          m_lastFree = iter;
+        }
+
         return true;
       }
       return false;
@@ -877,31 +900,35 @@ private:
     {
       uint64_t resourceWidth = m_resourceGpuAddressRange.realEnd - m_resourceGpuAddressRange.start;
 
-      for(auto iter = m_subRanges.begin(); iter != m_subRanges.end(); ++iter)
+      for(auto iter = m_lastFree; iter != m_subRanges.end(); ++iter)
       {
         if(iter->value() == D3D12SubRangeFlag::Free)
         {
-          uint64_t addr = iter->start() + m_resourceGpuAddressRange.start;
-          uint64_t end = RDCMIN(iter->finish(), resourceWidth) + m_resourceGpuAddressRange.start;
-          uint64_t alignedAddr = alignment != 0 ? AlignUp(addr, alignment) : addr;
+          uint64_t freeRangeStart = iter->start();
+          uint64_t freeRangeEnd = RDCMIN(iter->finish(), resourceWidth);
+          uint64_t alignedStart = freeRangeStart;
 
-          if(alignedAddr < end && size <= (end - alignedAddr))
+          if(alignment)
+            alignedStart = AlignUp(m_resourceGpuAddressRange.start + alignedStart, alignment) -
+                           m_resourceGpuAddressRange.start;
+
+          uint64_t padding = alignedStart - freeRangeStart;
+
+          if(alignedStart < freeRangeEnd && alignedStart + size <= freeRangeEnd)
           {
-            uint64_t offset = alignedAddr - m_resourceGpuAddressRange.start;
-            // Free the extra space from aligning
-            if(alignedAddr > addr)
-            {
-              iter->split(offset);
-            }
-
             iter->setValue(D3D12SubRangeFlag::Used);
-            address = alignedAddr;
+            address = m_resourceGpuAddressRange.start + alignedStart;
             // Split the sub-range if there's extra space beyond this allocation
-            if(size < (end - alignedAddr))
+            if(alignedStart + size < freeRangeEnd)
             {
-              iter->split(offset + size);
+              iter->split(alignedStart + size);
               iter->setValue(D3D12SubRangeFlag::Free);
             }
+
+            m_bytesFree -= size + padding;
+
+            m_lastFree = iter;
+
             return true;
           }
         }
@@ -916,10 +943,12 @@ private:
     };
 
     Intervals<D3D12SubRangeFlag> m_subRanges;
+    Intervals<D3D12SubRangeFlag>::iterator m_lastFree;
     GPUAddressRange m_resourceGpuAddressRange;
     ID3D12Resource *m_resource;
     D3D12_RESOURCE_DESC m_resDesc;
     D3D12_HEAP_TYPE m_heapType;
+    uint64_t m_bytesFree;
   };
 
   class D3D12GpuBufferPool
@@ -969,6 +998,15 @@ enum class D3D12PatchTLASBuildParam
   Count
 };
 
+enum class D3D12TLASInstanceCopyParam
+{
+  RootCB,
+  SourceSRV,
+  DestUAV,
+  RootAddressPairSrv,
+  Count
+};
+
 enum class D3D12IndirectPrepParam
 {
   GeneralCB,
@@ -995,10 +1033,11 @@ enum class D3D12PatchRayDispatchParam
 
 struct D3D12AccStructPatchInfo
 {
-  D3D12AccStructPatchInfo() : m_rootSignature(NULL), m_pipeline(NULL) {}
-  ID3D12RootSignature *m_rootSignature;
-  ID3D12PipelineState *m_pipeline;
+  ID3D12RootSignature *m_rootSignature = NULL;
+  ID3D12PipelineState *m_pipeline = NULL;
 };
+
+class WrappedID3D12CommandSignature;
 
 struct PatchedRayDispatch
 {
@@ -1011,58 +1050,217 @@ struct PatchedRayDispatch
     // the argument buffer used for indirect executes.
     D3D12GpuBuffer *argumentBuffer;
 
+    D3D12GpuBuffer *readbackBuffer;
+
+    uint32_t query;
+
     // for convenience, when these resources are referenced in a queue they get a fence value to
     // indicate when they're safe to release. This values are unset when returned from patching or
     // referenced in the list and is set in each queue's copy of the references.
     UINT64 fenceValue = 0;
+
+    void AddRef() const
+    {
+      SAFE_ADDREF(lookupBuffer);
+      SAFE_ADDREF(patchScratchBuffer);
+      SAFE_ADDREF(argumentBuffer);
+      SAFE_ADDREF(readbackBuffer);
+    }
+
+    void Release()
+    {
+      SAFE_RELEASE(lookupBuffer);
+      SAFE_RELEASE(patchScratchBuffer);
+      SAFE_RELEASE(argumentBuffer);
+      SAFE_RELEASE(readbackBuffer);
+    }
   };
 
   Resources resources;
 
   // the patched dispatch descriptor
   D3D12_DISPATCH_RAYS_DESC desc = {};
+  rdcarray<ResourceId> heaps;
+  // for auditing, from an indirect RT dispatch
+  UINT MaxCommands = 0;
+  WrappedID3D12CommandSignature *comSig = NULL;
+  bool HasDynamicCount = false;
 };
 
 struct D3D12ShaderExportDatabase;
 
-class D3D12RaytracingResourceAndUtilHandler
+struct ASStats
+{
+  struct
+  {
+    uint32_t msThreshold;
+    uint32_t count;
+    uint64_t bytes;
+  } bucket[4];
+
+  uint64_t overheadBytes;
+  uint64_t diskBytes;
+  uint32_t diskCached;
+};
+
+struct RTGPUPatchingStats
+{
+  uint32_t builds;
+  uint64_t buildBytes;
+  double totalBuildMS;
+
+  uint32_t dispatches;
+  double totalDispatchesMS;
+};
+
+struct DiskCachedAS
+{
+  size_t fileIndex = ~0U;
+  uint64_t offset = 0;
+  uint64_t size = 0;
+
+  bool Valid() const { return fileIndex != ~0U; }
+};
+
+// this is a refcounted GPU buffer with the build data, together with the metadata
+struct ASBuildData
+{
+  static const uint64_t NULLVA = ~0ULL;
+  // RVA equivalent of D3D12_GPU_VIRTUAL_ADDRESS_AND_STRIDE
+  struct RVAWithStride
+  {
+    uint64_t RVA;
+    UINT64 StrideInBytes;
+  };
+
+  // RVA equivalent of D3D12_RAYTRACING_GEOMETRY_TRIANGLES_DESC
+  struct RVATrianglesDesc
+  {
+    uint64_t Transform3x4;
+    DXGI_FORMAT IndexFormat;
+    DXGI_FORMAT VertexFormat;
+    UINT IndexCount;
+    UINT VertexCount;
+    uint64_t IndexBuffer;
+    RVAWithStride VertexBuffer;
+  };
+
+  // RVA equivalent of D3D12_RAYTRACING_GEOMETRY_AABBS_DESC
+  struct RVAAABBDesc
+  {
+    UINT AABBCount;
+    RVAWithStride AABBs;
+  };
+
+  // analogous struct to D3D12_RAYTRACING_GEOMETRY_DESC but contains plain uint64 offsets in place
+  // of GPU VAs - effectively RVAs in the internal buffer
+  struct RTGeometryDesc
+  {
+    RTGeometryDesc() = default;
+    RTGeometryDesc(const D3D12_RAYTRACING_GEOMETRY_DESC &desc)
+    {
+      RDCCOMPILE_ASSERT(sizeof(*this) == sizeof(D3D12_RAYTRACING_GEOMETRY_DESC),
+                        "Types should be entirely identical");
+      memcpy(this, &desc, sizeof(desc));
+    }
+
+    D3D12_RAYTRACING_GEOMETRY_TYPE Type;
+    D3D12_RAYTRACING_GEOMETRY_FLAGS Flags;
+
+    union
+    {
+      RVATrianglesDesc Triangles;
+      RVAAABBDesc AABBs;
+    };
+  };
+
+  // this struct is immutable, it's a snapshot of data and it's only referenced or deleted, never modified
+  ASBuildData(const ASBuildData &o) = delete;
+  ASBuildData(ASBuildData &&o) = delete;
+  ASBuildData &operator=(const ASBuildData &o) = delete;
+
+  D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE Type;
+  D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS Flags;
+
+  // for TLAS, the number of instance descriptors. For BLAS the number of geometries is given by
+  // the size of the array below
+  UINT NumBLAS;
+
+  // geometry GPU addresses have been de-based to contain only offsets
+  rdcarray<RTGeometryDesc> geoms;
+
+  void MarkWorkComplete();
+  bool IsWorkComplete() const { return complete; }
+
+  void AddRef();
+  void Release();
+
+  D3D12GpuBuffer *buffer = NULL;
+  DiskCachedAS diskCache;
+  uint32_t query = 0;
+
+  std::function<bool()> cleanupCallback;
+
+private:
+  ASBuildData() = default;
+
+  friend class D3D12RTManager;
+  friend class D3D12ResourceManager;
+
+  D3D12RTManager *rtManager = NULL;
+
+  // timestamp this build data was recorded on
+  double timestamp = 0;
+
+  // has the GPU work for this build data finished and synchronised?
+  bool complete = false;
+
+  // how many bytes of overhead are currently present, due to copying with strided vertex/AABB data
+  uint64_t bytesOverhead = 0;
+
+  unsigned int m_RefCount = 1;
+};
+
+DECLARE_REFLECTION_STRUCT(ASBuildData::RVAWithStride);
+DECLARE_REFLECTION_STRUCT(ASBuildData::RVATrianglesDesc);
+DECLARE_REFLECTION_STRUCT(ASBuildData::RVAAABBDesc);
+DECLARE_REFLECTION_STRUCT(ASBuildData::RTGeometryDesc);
+
+class D3D12RTManager
 {
 public:
-  D3D12RaytracingResourceAndUtilHandler(WrappedID3D12Device *device,
-                                        D3D12GpuBufferAllocator &gpuBufferAllocator);
-
-  void CreateInternalResources();
-
-  ID3D12GraphicsCommandListX *GetCmd() const { return m_cmdList; }
-  ID3D12CommandAllocator *GetCmdAlloc() const { return m_cmdAlloc; }
-  ID3D12CommandQueue *GetCmdQueue() const { return m_cmdQueue; }
-  ID3D12Fence *GetFence() const { return m_gpuFence; }
-  D3D12AccStructPatchInfo GetAccStructPatchInfo() const { return m_accStructPatchInfo; }
-  void SyncGpuForRtWork();
-
-  ~D3D12RaytracingResourceAndUtilHandler()
-  {
-    SAFE_RELEASE(m_cmdList);
-    SAFE_RELEASE(m_cmdAlloc);
-    SAFE_RELEASE(m_cmdQueue);
-    SAFE_RELEASE(m_gpuFence);
-    SAFE_RELEASE(m_accStructPatchInfo.m_rootSignature);
-    SAFE_RELEASE(m_accStructPatchInfo.m_pipeline);
-    SAFE_RELEASE(m_RayPatchingData.descPatchRootSig);
-    SAFE_RELEASE(m_RayPatchingData.descPatchPipe);
-    SAFE_RELEASE(m_RayPatchingData.indirectComSig);
-    SAFE_RELEASE(m_RayPatchingData.indirectPrepPipe);
-    SAFE_RELEASE(m_RayPatchingData.indirectPrepRootSig);
-  }
+  D3D12RTManager(WrappedID3D12Device *device, D3D12GpuBufferAllocator &gpuBufferAllocator);
+  ~D3D12RTManager();
 
   void InitInternalResources();
+
+  D3D12AccStructPatchInfo GetAccStructPatchInfo() const { return m_accStructPatchInfo; }
 
   uint32_t RegisterLocalRootSig(const D3D12RootSignature &sig);
 
   void RegisterExportDatabase(D3D12ShaderExportDatabase *db);
   void UnregisterExportDatabase(D3D12ShaderExportDatabase *db);
 
-  void PrepareRayDispatchBuffer(const GPUAddressRangeTracker *origAddresses);
+  void PrepareRayDispatchBuffer(GPUAddressRangeTracker *origAddresses);
+
+  ASBuildData *CopyBuildInputs(ID3D12GraphicsCommandList4 *unwrappedCmd,
+                               const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS &inputs);
+  void RemoveASBuildData(ASBuildData *data)
+  {
+    SCOPED_LOCK(m_ASBuildDataLock);
+    if(data->buffer)
+      m_InMemASBuildDatas.removeOne(data);
+    else
+      m_DiskCachedASBuildDatas.removeOne(data);
+  }
+
+  void GatherRTStatistics(ASStats &blasAges, ASStats &tlasAges, RTGPUPatchingStats &gpuStats);
+
+  D3D12GpuBuffer *UnrollBLASInstancesList(
+      ID3D12GraphicsCommandList4 *unwrappedCmd,
+      const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS &inputs,
+      D3D12_GPU_VIRTUAL_ADDRESS addressPairResAddress, uint64_t addressCount,
+      D3D12GpuBuffer *copyDestUAV);
 
   PatchedRayDispatch PatchRayDispatch(ID3D12GraphicsCommandList4 *unwrappedCmd,
                                       rdcarray<ResourceId> heaps,
@@ -1070,15 +1268,65 @@ public:
   PatchedRayDispatch PatchIndirectRayDispatch(ID3D12GraphicsCommandList *unwrappedCmd,
                                               rdcarray<ResourceId> heaps,
                                               ID3D12CommandSignature *pCommandSignature,
-                                              UINT MaxCommandCount, ID3D12Resource *pArgumentBuffer,
+                                              UINT &MaxCommandCount, ID3D12Resource *pArgumentBuffer,
                                               UINT64 ArgumentBufferOffset,
                                               ID3D12Resource *pCountBuffer, UINT64 CountBufferOffset);
 
   void AddPendingASBuilds(ID3D12Fence *fence, UINT64 waitValue,
                           const rdcarray<std::function<bool()>> &callbacks);
-  void CheckPendingASBuilds();
+  void TickASManagement();
 
-  void ResizeSerialisationBuffer(UINT64 size);
+  // this disk cache is primarily single threaded - either the disk cache thread owns
+  // seeking/writing to the files, or during initial states that thread owns seeking/reading.
+  // we lock around this access only for allocating from blocks
+  struct DiskCacheFile
+  {
+    FILE *file = NULL;
+
+    // each block is 1kB to split the difference between caching lots of tiny ASs and wasting space,
+    // vs tracking many blocks
+    static const uint64_t blockSize = 1 * 1024;
+    static const uint64_t blocksInFile = 64 * 1024;
+
+    // one per block
+    bool blocksUsed[blocksInFile] = {};
+  };
+  Threading::CriticalSection m_DiskCacheLock;
+  rdcarray<DiskCacheFile> m_DiskCache;
+
+  DiskCachedAS AllocDiskCache(uint64_t byteSize);
+  void FillDiskCache(DiskCachedAS diskCache, void *data);
+  void ReleaseDiskCache(DiskCachedAS diskCache);
+  template <typename SerialiserType>
+  void ReadDiskCache(SerialiserType &ser, rdcliteral name, DiskCachedAS diskCache)
+  {
+    if(!diskCache.Valid())
+      return;
+
+    // this lock should have no contention, we should only be doing this during initial state
+    // serialisation when nothing is allocating and the disk cache thread has been flushed
+    SCOPED_LOCK(m_DiskCacheLock);
+
+    if(diskCache.fileIndex >= m_DiskCache.size())
+    {
+      RDCERR("Invalid disk cache file %zu vs %zu", diskCache.fileIndex, m_DiskCache.size());
+      return;
+    }
+
+    FILE *f = m_DiskCache[diskCache.fileIndex].file;
+
+    FileIO::fseek64(f, diskCache.offset, SEEK_SET);
+
+    {
+      StreamReader reader(f, diskCache.size, Ownership::Nothing);
+      ser.SerialiseStream(name, reader);
+    }
+  }
+
+  void PushDiskCacheTask(std::function<void()> task);
+  void FlushDiskCacheThread();
+
+  void ResizeSerialisationBuffer(UINT64 ScratchDataSizeInBytes);
 
   // buffer in UAV state for emitting AS queries to, CPU accessible/mappable
   D3D12GpuBuffer *ASQueryBuffer = NULL;
@@ -1086,19 +1334,37 @@ public:
   // temp buffer for AS serialise copies
   D3D12GpuBuffer *ASSerialiseBuffer = NULL;
 
+  // readback buffer during auditing for evaluating postbuild information
+  D3D12GpuBuffer *PostbuildReadbackBuffer = NULL;
+
+  double GetCurrentASTimestamp() { return m_Timestamp.GetMilliseconds(); }
+
+  void Verify(PatchedRayDispatch &r);
+
+  void VerifyDispatch(D3D12_DISPATCH_RAYS_DESC desc, byte *wrappedRecords, byte *unwrappedRecords,
+                      WrappedID3D12DescriptorHeap *resHeap, WrappedID3D12DescriptorHeap *sampHeap);
+  void VerifyRecord(const uint64_t recordSize, byte *wrappedRecord, byte *unwrappedRef,
+                    WrappedID3D12DescriptorHeap *resHeap, WrappedID3D12DescriptorHeap *sampHeap);
+
+  void AddDispatchTimer(uint32_t q);
+  void AddBuildTimer(uint32_t q, uint64_t size);
+
 private:
   void InitRayDispatchPatchingResources();
+  void InitTLASInstanceCopyingResources();
   void InitReplayBlasPatchingResources();
+
+  void CheckASCaching();
+  void CheckPendingASBuilds();
+
+  void CopyFromVA(ID3D12GraphicsCommandList4 *unwrappedCmd, ID3D12Resource *dstRes,
+                  uint64_t dstOffset, D3D12_GPU_VIRTUAL_ADDRESS sourceVA, uint64_t byteSize);
 
   WrappedID3D12Device *m_wrappedDevice;
   D3D12GpuBufferAllocator &m_GPUBufferAllocator;
 
-  ID3D12GraphicsCommandListX *m_cmdList;
-  ID3D12CommandAllocator *m_cmdAlloc;
-  ID3D12CommandQueue *m_cmdQueue;
-  ID3D12Fence *m_gpuFence;
-  HANDLE m_gpuSyncHandle;
-  UINT64 m_gpuSyncCounter;
+  PerformanceTimer m_Timestamp;
+
   D3D12AccStructPatchInfo m_accStructPatchInfo;
 
   Threading::CriticalSection m_LookupBufferLock;
@@ -1115,18 +1381,51 @@ private:
   // export databases that are alive
   rdcarray<D3D12ShaderExportDatabase *> m_ExportDatabases;
 
+  Threading::CriticalSection m_ASBuildDataLock;
+  rdcarray<ASBuildData *> m_InMemASBuildDatas;
+  rdcarray<ASBuildData *> m_DiskCachedASBuildDatas;
+
   // is the lookup buffer dirty and needs to be recreated with the latest data?
   bool m_LookupBufferDirty = true;
+
+  // pipeline data for indirect-copying instances in a TLAS build
+  struct
+  {
+    D3D12GpuBuffer *ArgsBuffer = NULL;
+    D3D12GpuBuffer *ScratchBuffer = NULL;
+    ID3D12PipelineState *PreparePipe = NULL;
+    ID3D12PipelineState *CopyPipe = NULL;
+    ID3D12RootSignature *RootSig = NULL;
+    ID3D12CommandSignature *IndirectSig = NULL;
+  } m_TLASCopyingData;
 
   // pipeline data for patching ray dispatches
   struct
   {
-    ID3D12RootSignature *descPatchRootSig = NULL;
-    ID3D12PipelineState *descPatchPipe = NULL;
+    ID3D12RootSignature *shaderTablePatchRootSig = NULL;
+    ID3D12PipelineState *shaderTablePatchPipe = NULL;
+    ID3D12PipelineState *shaderTableCopyPipe = NULL;
     ID3D12RootSignature *indirectPrepRootSig = NULL;
     ID3D12PipelineState *indirectPrepPipe = NULL;
     ID3D12CommandSignature *indirectComSig = NULL;
   } m_RayPatchingData;
+
+  Threading::CriticalSection m_ASCacheThreadLock;
+  int32_t m_ASCacheThreadRunning = 0;
+  int32_t m_ASCacheThreadActive = 0;
+  Threading::Semaphore *m_ASCacheThreadSemaphore = NULL;
+  Threading::ThreadHandle m_ASCacheThread = {};
+  rdcarray<std::function<void()>> m_ASCacheTasks;
+
+  ID3D12QueryHeap *m_TimerQueryHeap = NULL;
+  D3D12GpuBuffer *m_TimerReadbackBuffer = NULL;
+  uint64_t *m_Timestamps = NULL;
+  uint64_t m_TimerFrequency;
+  Threading::CriticalSection m_TimerStatsLock;
+  rdcarray<uint32_t> m_FreeQueries;
+  RTGPUPatchingStats m_AccumulatedStats = {};
+
+  uint32_t GetFreeQuery();
 
   struct PendingASBuild
   {
@@ -1152,11 +1451,10 @@ public:
   D3D12ResourceManager(CaptureState &state, WrappedID3D12Device *dev)
       : ResourceManager(state), m_Device(dev), m_GPUBufferAllocator(dev)
   {
-    m_raytracingResourceManager =
-        new D3D12RaytracingResourceAndUtilHandler(m_Device, m_GPUBufferAllocator);
+    m_RTManager = new D3D12RTManager(m_Device, m_GPUBufferAllocator);
   }
 
-  ~D3D12ResourceManager() { SAFE_DELETE(m_raytracingResourceManager); }
+  ~D3D12ResourceManager() { SAFE_DELETE(m_RTManager); }
 
   template <class T>
   T *GetLiveAs(ResourceId id, bool optional = false)
@@ -1170,12 +1468,21 @@ public:
     return (T *)GetCurrentResource(id);
   }
 
+  template <typename D3D12Type>
+  D3D12Type *CreateDeferredHandle()
+  {
+    D3D12Type *ret = (D3D12Type *)(m_DummyHandle);
+
+    Atomic::Dec64((int64_t *)&m_DummyHandle);
+
+    return ret;
+  }
+
+  void ResolveDeferredWrappers();
+
   void ApplyBarriers(BarrierSet &barriers, std::map<ResourceId, SubresourceStateVector> &states);
 
-  D3D12RaytracingResourceAndUtilHandler *GetRaytracingResourceAndUtilHandler() const
-  {
-    return m_raytracingResourceManager;
-  }
+  D3D12RTManager *GetRTManager() const { return m_RTManager; }
 
   D3D12GpuBufferAllocator &GetGPUBufferAllocator() { return m_GPUBufferAllocator; }
 
@@ -1203,9 +1510,14 @@ private:
     return Serialise_InitialState<WriteSerialiser>(ser, id, record, initial);
   }
   void Create_InitialState(ResourceId id, ID3D12DeviceChild *live, bool hasData);
-  void Apply_InitialState(ID3D12DeviceChild *live, const D3D12InitialContents &data);
+  void Apply_InitialState(ID3D12DeviceChild *live, D3D12InitialContents &data);
+  rdcarray<ResourceId> InitialContentResources();
 
   WrappedID3D12Device *m_Device;
-  D3D12RaytracingResourceAndUtilHandler *m_raytracingResourceManager;
+  D3D12RTManager *m_RTManager;
   D3D12GpuBufferAllocator m_GPUBufferAllocator;
+
+  // dummy handle to use - starting from near highest valid pointer to minimise risk of overlap with real handles
+  static const uint64_t FirstDummyHandle = UINTPTR_MAX - 1024;
+  uint64_t m_DummyHandle = FirstDummyHandle;
 };

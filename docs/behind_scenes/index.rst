@@ -8,3 +8,4 @@ Behind the scenes
     opengl_support
     vulkan_support
     d3d12_support
+    raytracing

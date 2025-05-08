@@ -30,7 +30,6 @@ def get_tests():
     return testcases
 
 
-RUNNER_TIMEOUT = 90    # Require output every X seconds
 RUNNER_DEBUG = False   # Debug test runner running by printing messages to track it
 
 
@@ -45,7 +44,7 @@ def _enqueue_output(process: subprocess.Popen, out, q: queue.Queue):
         pass
 
 
-def _run_test(testclass, failedcases: list):
+def _run_test(testclass, runner_timeout, failedcases: list):
     name = testclass.__name__
 
     # Fork the interpreter to run the test, in case it crashes we can catch it.
@@ -88,7 +87,7 @@ def _run_test(testclass, failedcases: list):
             print("Checking runner output...")
 
         try:
-            out = test_stdout.get(timeout=RUNNER_TIMEOUT)
+            out = test_stdout.get(timeout=runner_timeout)
             while not test_stdout.empty():
                 out += test_stdout.get_nowait()
 
@@ -144,10 +143,10 @@ def _run_test(testclass, failedcases: list):
                 break
 
         if out is None and err is None and test_run.poll() is None:
-            log.error('Timed out, no output within {}s elapsed'.format(RUNNER_TIMEOUT))
+            log.error('Timed out, no output within {}s elapsed'.format(runner_timeout))
             test_run.kill()
             test_run.communicate()
-            raise subprocess.TimeoutExpired(' '.join(args), RUNNER_TIMEOUT)
+            raise subprocess.TimeoutExpired(' '.join(args), runner_timeout)
 
     if RUNNER_DEBUG:
         print("Test runner has finished")
@@ -189,7 +188,7 @@ def fetch_tests():
     return { x[0]: (x[1] == 'True', x[2]) for x in split_tests }
 
 
-def run_tests(test_include: str, test_exclude: str, in_process: bool, slow_tests: bool, debugger: bool):
+def run_tests(test_include: str, test_exclude: str, in_process: bool, slow_tests: bool, debugger: bool, test_timeout: int):
     start_time = datetime.datetime.now(datetime.timezone.utc)
 
     rd.InitialiseReplay(rd.GlobalEnvironment(), [])
@@ -314,7 +313,7 @@ def run_tests(test_include: str, test_exclude: str, in_process: bool, slow_tests
 
         instance = testclass()
 
-        supported, unsupported_reason = instance.check_support()
+        supported, unsupported_reason = instance.check_support(test_include=test_include)
 
         if not supported:
             log.print("Skipping {} as {}".format(name, unsupported_reason))
@@ -348,7 +347,7 @@ def run_tests(test_include: str, test_exclude: str, in_process: bool, slow_tests
             if in_process:
                 instance.invoketest(debugMode)
             else:
-                _run_test(testclass, failedcases)
+                _run_test(testclass, test_timeout, failedcases)
 
         if debugger:
             do(True)

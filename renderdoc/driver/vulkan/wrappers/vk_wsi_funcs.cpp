@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -346,7 +346,7 @@ bool WrappedVulkan::Serialise_vkCreateSwapchainKHR(SerialiserType &ser, VkDevice
 
     vkr = ObjDisp(device)->GetSwapchainImagesKHR(Unwrap(device), Unwrap(*pSwapChain), &NumImages,
                                                  NULL);
-    CheckVkResult(vkr);
+    CHECK_VKR(this, vkr);
   }
 
   SERIALISE_ELEMENT(NumImages);
@@ -406,7 +406,7 @@ bool WrappedVulkan::Serialise_vkCreateSwapchainKHR(SerialiserType &ser, VkDevice
       VkImage im = VK_NULL_HANDLE;
 
       VkResult vkr = ObjDisp(device)->CreateImage(Unwrap(device), &imInfo, NULL, &im);
-      CheckVkResult(vkr);
+      CHECK_VKR(this, vkr);
 
       if(vkr != VK_SUCCESS)
       {
@@ -429,8 +429,28 @@ bool WrappedVulkan::Serialise_vkCreateSwapchainKHR(SerialiserType &ser, VkDevice
           GetGPULocalMemoryIndex(mrq.memoryTypeBits),
       };
 
+      VkMemoryDedicatedAllocateInfo dedicated = {
+          VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+          NULL,
+          Unwrap(im),
+      };
+
+      // if the acceleration structures feature is enabled, we _must_ be on at least vulkan 1.1 (the
+      // extension requires it). Vulkan 1.1 unconditionally allows the use of dedicated image
+      // allocations without any feature bits (the original extension didn't have any either).
+      //
+      // we do this because without it, the extra memory allocation may be promoted to BDA by
+      // self-capturing and cause problems with address space clashes. We don't need the dedicated
+      // allocation but it avoids that behaviour as it may not be legal to query the address of a
+      // dedicated image memory allocation and in any case we know that it can't be legally used for
+      // BDA or AS backing memory
+      if(AccelerationStructures())
+      {
+        allocInfo.pNext = &dedicated;
+      }
+
       vkr = ObjDisp(device)->AllocateMemory(Unwrap(device), &allocInfo, NULL, &mem);
-      CheckVkResult(vkr);
+      CHECK_VKR(this, vkr);
 
       if(vkr != VK_SUCCESS)
       {
@@ -445,7 +465,7 @@ bool WrappedVulkan::Serialise_vkCreateSwapchainKHR(SerialiserType &ser, VkDevice
       GetResourceManager()->AddLiveResource(memid, mem);
 
       vkr = ObjDisp(device)->BindImageMemory(Unwrap(device), Unwrap(im), Unwrap(mem), 0);
-      CheckVkResult(vkr);
+      CHECK_VKR(this, vkr);
 
       // image live ID will be assigned separately in Serialise_vkGetSwapChainInfoWSI
       // memory doesn't have a live ID
@@ -563,7 +583,7 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
       };
 
       vkr = vt->CreateRenderPass(Unwrap(device), &rpinfo, NULL, &swapInfo.rp);
-      CheckVkResult(vkr);
+      CHECK_VKR(this, vkr);
 
       GetResourceManager()->WrapResource(Unwrap(device), swapInfo.rp);
       GetResourceManager()->SetInternalResource(GetResID(swapInfo.rp));
@@ -573,7 +593,7 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
     {
       uint32_t numSwapImages;
       vkr = vt->GetSwapchainImagesKHR(Unwrap(device), Unwrap(*pSwapChain), &numSwapImages, NULL);
-      CheckVkResult(vkr);
+      CHECK_VKR(this, vkr);
 
       swapInfo.lastPresent.imageIndex = 0;
       swapInfo.lastPresent.presentQueue = VK_NULL_HANDLE;
@@ -591,7 +611,7 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
 
       // go through our own function so we assign these images IDs
       vkr = vkGetSwapchainImagesKHR(device, *pSwapChain, &numSwapImages, images);
-      CheckVkResult(vkr);
+      CHECK_VKR(this, vkr);
 
       for(uint32_t i = 0; i < numSwapImages; i++)
       {
@@ -624,7 +644,7 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
                                          VK_FENCE_CREATE_SIGNALED_BIT};
 
           vkr = ObjDisp(device)->CreateFence(Unwrap(device), &fenceInfo, NULL, &swapImInfo.fence);
-          CheckVkResult(vkr);
+          CHECK_VKR(this, vkr);
 
           GetResourceManager()->WrapResource(Unwrap(device), swapImInfo.fence);
           GetResourceManager()->SetInternalResource(GetResID(swapImInfo.fence));
@@ -635,7 +655,7 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
 
           vkr = ObjDisp(device)->CreateSemaphore(Unwrap(device), &semInfo, NULL,
                                                  &swapImInfo.overlaydone);
-          CheckVkResult(vkr);
+          CHECK_VKR(this, vkr);
 
           GetResourceManager()->WrapResource(Unwrap(device), swapImInfo.overlaydone);
           GetResourceManager()->SetInternalResource(GetResID(swapImInfo.overlaydone));
@@ -655,7 +675,7 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
           };
 
           vkr = vt->CreateImageView(Unwrap(device), &info, NULL, &swapImInfo.view);
-          CheckVkResult(vkr);
+          CHECK_VKR(this, vkr);
 
           GetResourceManager()->WrapResource(Unwrap(device), swapImInfo.view);
           GetResourceManager()->SetInternalResource(GetResID(swapImInfo.view));
@@ -673,7 +693,7 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
           };
 
           vkr = vt->CreateFramebuffer(Unwrap(device), &fbinfo, NULL, &swapImInfo.fb);
-          CheckVkResult(vkr);
+          CHECK_VKR(this, vkr);
 
           GetResourceManager()->WrapResource(Unwrap(device), swapImInfo.fb);
           GetResourceManager()->SetInternalResource(GetResID(swapImInfo.fb));
@@ -990,7 +1010,7 @@ void WrappedVulkan::HandlePresent(VkQueue queue, const VkPresentInfoKHR *pPresen
       // If this ring has never been used the fence is signalled on creation.
       // this should generally be a no-op because we only get here when we've acquired the image
       VkResult vkr = vt->WaitForFences(Unwrap(m_Device), 1, UnwrapPtr(imfence), VK_TRUE, 50000000);
-      CheckVkResult(vkr);
+      CHECK_VKR(this, vkr);
 
       vkr = vt->ResetFences(Unwrap(m_Device), 1, UnwrapPtr(imfence));
 
@@ -1000,7 +1020,7 @@ void WrappedVulkan::HandlePresent(VkQueue queue, const VkPresentInfoKHR *pPresen
                                             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 
       vkr = vt->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-      CheckVkResult(vkr);
+      CHECK_VKR(this, vkr);
 
       VkImageMemoryBarrier bbBarrier = {
           VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -1052,12 +1072,12 @@ void WrappedVulkan::HandlePresent(VkQueue queue, const VkPresentInfoKHR *pPresen
         // wait for this queue ring to be free, but with a reasonably aggressive timeout (50ms). If
         // this ring has never been used the fence is signalled on creation
         vkr = vt->WaitForFences(Unwrap(m_Device), 1, UnwrapPtr(fence), VK_TRUE, 50000000);
-        CheckVkResult(vkr);
+        CHECK_VKR(this, vkr);
 
         vkr = vt->ResetFences(Unwrap(m_Device), 1, UnwrapPtr(fence));
 
         vkr = vt->BeginCommandBuffer(Unwrap(extQCmd), &beginInfo);
-        CheckVkResult(vkr);
+        CHECK_VKR(this, vkr);
 
         DoPipelineBarrier(extQCmd, 1, &bbBarrier);
 
@@ -1077,7 +1097,7 @@ void WrappedVulkan::HandlePresent(VkQueue queue, const VkPresentInfoKHR *pPresen
             UnwrapPtr(m_ExternalQueues[swapQueueIndex].ring[ringIdx].fromext);
 
         vkr = ObjDisp(q)->QueueSubmit(Unwrap(q), 1, &submitInfo, VK_NULL_HANDLE);
-        CheckVkResult(vkr);
+        CHECK_VKR(this, vkr);
 
         // next submit needs to wait on fromext
         unwrappedWaitSems.assign(submitInfo.pSignalSemaphores, 1);
@@ -1122,7 +1142,7 @@ void WrappedVulkan::HandlePresent(VkQueue queue, const VkPresentInfoKHR *pPresen
         submitInfo.pCommandBuffers = UnwrapPtr(cmd);
 
         vkr = ObjDisp(m_Queue)->QueueSubmit(Unwrap(m_Queue), 1, &submitInfo, Unwrap(imfence));
-        CheckVkResult(vkr);
+        CHECK_VKR(this, vkr);
       }
 
       if(swapQueueIndex != m_QueueFamilyIdx && !swapInfo.concurrent)
@@ -1131,7 +1151,7 @@ void WrappedVulkan::HandlePresent(VkQueue queue, const VkPresentInfoKHR *pPresen
         VkFence fence = m_ExternalQueues[swapQueueIndex].ring[ringIdx].fence;
 
         vkr = vt->BeginCommandBuffer(Unwrap(extQCmd), &beginInfo);
-        CheckVkResult(vkr);
+        CHECK_VKR(this, vkr);
 
         DoPipelineBarrier(extQCmd, 1, &bbBarrier);
 
@@ -1158,7 +1178,7 @@ void WrappedVulkan::HandlePresent(VkQueue queue, const VkPresentInfoKHR *pPresen
         // submit and signal the fence when we're done, so we know next time around that this is
         // safe to re-use
         vkr = ObjDisp(q)->QueueSubmit(Unwrap(q), 1, &submitInfo, Unwrap(fence));
-        CheckVkResult(vkr);
+        CHECK_VKR(this, vkr);
       }
 
       // the next thing waits on our new semaphore - whether a subsequent overlay render or the

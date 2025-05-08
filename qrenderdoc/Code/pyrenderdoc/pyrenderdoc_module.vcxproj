@@ -60,6 +60,7 @@
   <ImportGroup Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
+  <Import Project="$(SolutionDir)\util\WindowsSDKFix.props" />
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
     <IntDir>$(SolutionDir)$(Platform)\$(Configuration)\obj\$(ProjectName)\</IntDir>
@@ -80,9 +81,6 @@
   <PropertyGroup>
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\pymodules\</OutDir>
-    <LibraryPath>$(LibraryPath)</LibraryPath>
-    <ExecutablePath>$(ExecutablePath)</ExecutablePath>
-    <ExcludePath>$(ExcludePath)</ExcludePath>
     <TargetName>renderdoc</TargetName>
     <TargetExt>.pyd</TargetExt>
   </PropertyGroup>

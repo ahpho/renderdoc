@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2021-2024 Baldur Karlsson
+ * Copyright (c) 2021-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -274,7 +274,8 @@ bool WrappedID3D12Device::Serialise_CreateResource(
   if(desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
   {
     type = ResourceType::Buffer;
-    if(InitialLayout.ToStates() == D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE)
+    if((desc.Flags & D3D12_RESOURCE_FLAG_RAYTRACING_ACCELERATION_STRUCTURE) ||
+       InitialLayout.ToStates() == D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE)
     {
       prefix = "AS Buffer";
       ((WrappedID3D12Resource *)ret)->MarkAsAccelerationStructureResource();
@@ -437,7 +438,7 @@ HRESULT WrappedID3D12Device::CreateResource(
 
   if(FAILED(ret))
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
     return ret;
   }
 
@@ -541,9 +542,11 @@ HRESULT WrappedID3D12Device::CreateResource(
     wrapped->SetResourceRecord(record);
 
     if(desc0.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER &&
-       InitialLayout.ToStates() == D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE)
+       ((desc.Flags & D3D12_RESOURCE_FLAG_RAYTRACING_ACCELERATION_STRUCTURE) ||
+        InitialLayout.ToStates() == D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE))
     {
       wrapped->MarkAsAccelerationStructureResource();
+      m_UsedRT = true;
     }
     else
     {

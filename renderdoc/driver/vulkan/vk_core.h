@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -477,12 +477,14 @@ private:
   bool m_DynColorWrite = false;
   bool m_DynVertexInput = false;
   bool m_DynAttachmentLoop = false;
+  bool m_MultiView = false;
   bool m_MeshQueries = false;
   bool m_MeshShaders = false;
   bool m_TaskShaders = false;
   bool m_ListRestart = false;
   bool m_AccelerationStructures = false;
   bool m_ShaderObject = false;
+  bool m_Maintenance5 = false;
 
   uint32_t m_RTCaptureReplayHandleSize = 0;
 
@@ -738,7 +740,11 @@ private:
     // vkCmdNextSubpass for valid barrier counting.
     int activeSubpass = 0;
 
-    ResourceId pushDescriptorID[2][64];
+    ResourceId GetPushDescriptorID(VkPipelineBindPoint bindpoint, uint32_t set)
+    {
+      return pushDescriptorID[bindpoint == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR ? 2 : bindpoint][set];
+    }
+    ResourceId pushDescriptorID[3][64];
 
     VulkanActionTreeNode *action;    // the root action to copy from when submitting
     uint32_t eventCount;             // how many events are in this cmd buffer, for quick skipping
@@ -845,6 +851,12 @@ private:
   // determines whether we should track the open/close state of a renderpass.
   bool ShouldUpdateRenderpassActive(ResourceId cmdId, bool dynamicRendering = false);
 
+  // shifts the beginEvent of any command buffer nodes executed after targetEvent by eidShift.
+  // additionally updates the action and event counts for the corresponding BakedCmdBufferInfo.
+  // this function is used to account for events added by DrawIndirectCount calls
+  void ShiftSuccessiveCommandNodes(uint32_t targetEvent, uint32_t eidShift,
+                                   CommandBufferNode *current = NULL);
+
   // if we're replaying just a single action or a particular command
   // buffer subsection of command events, we don't go through the
   // whole original command buffers to set up the partial replay,
@@ -946,11 +958,7 @@ private:
     return ret;
   }
 
-  void AddForcedReference(VkResourceRecord *record)
-  {
-    SCOPED_LOCK(m_ForcedReferencesLock);
-    m_ForcedReferences.push_back(record);
-  }
+  void AddForcedReference(VkResourceRecord *record);
 
   // used on replay side to track the queue family of command buffers and pools
   std::map<ResourceId, uint32_t> m_commandQueueFamilies;
@@ -978,6 +986,12 @@ private:
   rdcarray<ResourceId> m_FeedbackRPs;
 
   bytebuf m_MaskedMapData;
+
+  Threading::CriticalSection m_PendingCmdBufferCallbacksLock;
+  rdcarray<VkPendingSubmissionCompleteCallbacks *> m_PendingCmdBufferCallbacks;
+  void InsertPendingCommandBufferCallbacksEvent(VkCommandBuffer commandBuffer);
+  void AddPendingCommandBufferCallbacks(VkCommandBuffer commandBuffer);
+  void CheckPendingCommandBufferCallbacks();
 
   GPUAddressRangeTracker m_AddressTracker;
   GPUAddressRange CreateAddressRange(VkDevice device, VkBuffer buffer);
@@ -1015,6 +1029,7 @@ private:
                        VkSampleCountFlagBits samples);
   void PatchImageViewUsage(VkImageViewUsageCreateInfo *usage, VkFormat imgFormat,
                            VkSampleCountFlagBits samples);
+  void PatchImageCreateInfo(VkImageCreateInfo *pInfo, VkFormat *newViewFormats);
 
   VkIndirectPatchData FetchIndirectData(VkIndirectPatchType type, VkCommandBuffer commandBuffer,
                                         VkBuffer dataBuffer, VkDeviceSize dataOffset, uint32_t count,
@@ -1042,6 +1057,8 @@ private:
   void AddImplicitResolveResourceUsage(uint32_t subpass = 0);
   rdcarray<VkImageMemoryBarrier> GetImplicitRenderPassBarriers(uint32_t subpass = 0);
   rdcstr MakeRenderPassOpString(bool store);
+  void ApplyRPStoreDiscards(VkCommandBuffer commandBuffer, VkRect2D renderArea,
+                            ResourceId currentRP, const rdcarray<ResourceId> &attachments);
   void ApplyRPLoadDiscards(VkCommandBuffer commandBuffer, VkRect2D renderArea);
 
   RDCDriver GetFrameCaptureDriver() { return RDCDriver::Vulkan; }
@@ -1078,6 +1095,9 @@ private:
 
   std::set<ResourceId> m_SparseBindResources;
 
+  Threading::CriticalSection m_DeferredResultLock;
+  RDResult m_DeferredResult = ResultCode::Succeeded;
+  double m_DeferredTime = 0.0;
   RDResult m_FailedReplayResult = ResultCode::APIReplayFailed;
 
   VulkanActionTreeNode m_ParentAction;
@@ -1205,11 +1225,12 @@ public:
   bool Serialise_InitialState(SerialiserType &ser, ResourceId id, VkResourceRecord *record,
                               const VkInitialContents *initial);
   void Create_InitialState(ResourceId id, WrappedVkRes *live, bool hasData);
-  void Apply_InitialState(WrappedVkRes *live, const VkInitialContents &initial);
+  void Apply_InitialState(WrappedVkRes *live, VkInitialContents &initial);
 
   void RemapQueueFamilyIndices(uint32_t &srcQueueFamily, uint32_t &dstQueueFamily);
   uint32_t GetQueueFamilyIndex() const { return m_QueueFamilyIdx; }
   bool ReleaseResource(WrappedVkRes *res);
+  const rdcarray<uint32_t> &GetQueueFamilyIndices() const { return m_QueueFamilyIndices; }
 
   void AddDebugMessage(MessageCategory c, MessageSeverity sv, MessageSource src, rdcstr d);
 
@@ -1260,6 +1281,7 @@ public:
 
   void TrackBufferAddress(VkDevice device, VkBuffer buffer);
   void UntrackBufferAddress(VkDevice device, VkBuffer buffer);
+  void GetResIDFromAddr(GPUAddressRange::Address addr, ResourceId &id, uint64_t &offs);
 
   EventFlags GetEventFlags(uint32_t eid) { return m_EventFlags[eid]; }
   rdcarray<EventUsage> GetUsage(ResourceId id) { return m_ResourceUses[id]; }
@@ -1314,13 +1336,16 @@ public:
   }
   RDResult FatalErrorCheck() { return m_FatalError; }
   bool HasFatalError() { return m_FatalError != ResultCode::Succeeded; }
-  inline void CheckVkResult(VkResult vkr)
+  inline void CheckVkResult(const char *file, int line, VkResult vkr)
   {
     if(vkr == VK_SUCCESS)
       return;
-    CheckErrorVkResult(vkr);
+    CheckErrorVkResult(file, line, vkr);
   }
-  void CheckErrorVkResult(VkResult vkr);
+  void CheckErrorVkResult(const char *file, int line, VkResult vkr);
+
+  void CheckDeferredResult(const RDResult &res);
+  void AddDeferredTime(double ms);
 
   bool SeparateDepthStencil() const { return m_SeparateDepthStencil; }
   bool NULLDescriptorsAllowed() const { return m_NULLDescriptorsAllowed; }
@@ -1352,12 +1377,14 @@ public:
   bool DynamicColorWrite() const { return m_DynColorWrite; }
   bool DynamicVertexInput() const { return m_DynVertexInput; }
   bool DynamicAttachmentLoop() const { return m_DynAttachmentLoop; }
+  bool MultiView() const { return m_MultiView; }
   bool MeshQueries() const { return m_MeshQueries; }
   bool TaskShaders() const { return m_TaskShaders; }
   bool MeshShaders() const { return m_MeshShaders; }
   bool ListRestart() const { return m_ListRestart; }
   bool AccelerationStructures() const { return m_AccelerationStructures; }
   bool ShaderObject() const { return m_ShaderObject; }
+  bool Maintenance5() const { return m_Maintenance5; }
   VulkanRenderState &GetRenderState() { return m_RenderState; }
   void SetActionCB(VulkanActionCallback *cb) { m_ActionCallback = cb; }
   void SetSubmitChain(void *submitChain) { m_SubmitChain = submitChain; }
@@ -2767,6 +2794,15 @@ public:
 
   IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdEndRendering, VkCommandBuffer commandBuffer);
 
+  // VK_KHR_dynamic_rendering_local_read
+
+  IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdSetRenderingAttachmentLocationsKHR,
+                                VkCommandBuffer commandBuffer,
+                                const VkRenderingAttachmentLocationInfo *pLocationInfo);
+  IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdSetRenderingInputAttachmentIndicesKHR,
+                                VkCommandBuffer commandBuffer,
+                                const VkRenderingInputAttachmentIndexInfo *pLocationInfo);
+
   // VK_KHR_fragment_shading_rate
 
   IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdSetFragmentShadingRateKHR, VkCommandBuffer commandBuffer,
@@ -2838,7 +2874,7 @@ public:
                                 VkCommandBuffer commandBuffer,
                                 float extraPrimitiveOverestimationSize);
   IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdSetLineRasterizationModeEXT, VkCommandBuffer commandBuffer,
-                                VkLineRasterizationModeKHR lineRasterizationMode);
+                                VkLineRasterizationMode lineRasterizationMode);
   IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdSetLineStippleEnableEXT, VkCommandBuffer commandBuffer,
                                 VkBool32 stippledLineEnable);
   IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdSetLogicOpEnableEXT, VkCommandBuffer commandBuffer,
@@ -2912,10 +2948,10 @@ public:
   IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdCopyMemoryToAccelerationStructureKHR,
                                 VkCommandBuffer commandBuffer,
                                 const VkCopyMemoryToAccelerationStructureInfoKHR *pInfo);
-  void vkCmdWriteAccelerationStructuresPropertiesKHR(
-      VkCommandBuffer commandBuffer, uint32_t accelerationStructureCount,
-      const VkAccelerationStructureKHR *pAccelerationStructures, VkQueryType queryType,
-      VkQueryPool queryPool, uint32_t firstQuery);
+  IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdWriteAccelerationStructuresPropertiesKHR,
+                                VkCommandBuffer commandBuffer, uint32_t accelerationStructureCount,
+                                const VkAccelerationStructureKHR *pAccelerationStructures,
+                                VkQueryType queryType, VkQueryPool queryPool, uint32_t firstQuery);
   VkResult vkCopyAccelerationStructureKHR(VkDevice device, VkDeferredOperationKHR deferredOperation,
                                           const VkCopyAccelerationStructureInfoKHR *pInfo);
   VkResult vkCopyAccelerationStructureToMemoryKHR(
@@ -2995,4 +3031,27 @@ public:
   VkDeviceSize vkGetRayTracingShaderGroupStackSizeKHR(VkDevice device, VkPipeline pipeline,
                                                       uint32_t group,
                                                       VkShaderGroupShaderKHR groupShader);
+
+  // VK_KHR_ray_tracing_maintenance1
+  IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdTraceRaysIndirect2KHR, VkCommandBuffer commandBuffer,
+                                VkDeviceAddress indirectDeviceAddress);
+
+  // VK_KHR_maintenance5
+  IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdBindIndexBuffer2KHR, VkCommandBuffer commandBuffer,
+                                VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size,
+                                VkIndexType indexType);
+  void vkGetDeviceImageSubresourceLayoutKHR(VkDevice device,
+                                            const VkDeviceImageSubresourceInfo *pInfo,
+                                            VkSubresourceLayout2 *pLayout);
+  void vkGetImageSubresourceLayout2KHR(VkDevice device, VkImage image,
+                                       const VkImageSubresource2 *pSubresource,
+                                       VkSubresourceLayout2 *pLayout);
+  void vkGetRenderingAreaGranularityKHR(VkDevice device,
+                                        const VkRenderingAreaInfo *pRenderingAreaInfo,
+                                        VkExtent2D *pGranularity);
+
+  // VK_EXT_image_compression_control
+  void vkGetImageSubresourceLayout2EXT(VkDevice device, VkImage image,
+                                       const VkImageSubresource2 *pSubresource,
+                                       VkSubresourceLayout2 *pLayout);
 };

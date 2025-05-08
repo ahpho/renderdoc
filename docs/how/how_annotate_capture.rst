@@ -168,6 +168,22 @@ In Vulkan you can enable the ``VK_EXT_debug_utils`` extension, which is provided
   nameInfo.pObjectName = "Off-screen color framebuffer";
   vkSetDebugUtilsObjectNameEXT(device, &nameInfo);
 
+On D3D12 there is a RenderDoc extension provided with this interface, queried from an ``ID3D12DescriptorHeap``:
+
+.. highlight:: c++
+.. code:: c++
+
+  MIDL_INTERFACE("52528c37-bfd9-4bbb-99ff-fdb7188619ce")
+  IRenderDocDescriptorNamer : public IUnknown
+  {
+  public:
+    virtual HRESULT STDMETHODCALLTYPE SetName(UINT DescriptorIndex, LPCSTR Name) = 0;
+  };
+
+
+This interface allows you to set a custom name for descriptors, if using SM6.6 style ``ResourceDescriptorHeap[]`` access for better debugging.
+
+
 Bookmarks
 ---------
 

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -61,12 +61,12 @@ static ShaderConstantType MakeShaderConstantType(bool cbufferPacking, DXBC::CBuf
      type.varClass == DXBC::CLASS_SCALAR)
     ret.flags |= ShaderVariableFlags::RowMajorMatrix;
 
-  uint32_t baseElemSize = (ret.baseType == VarType::Double) ? 8 : 4;
+  uint32_t baseElemSize = VarTypeByteSize(ret.baseType);
 
   // in D3D matrices in cbuffers always take up a float4 per row/column. Structured buffers in
   // SRVs/UAVs are tightly packed
   if(cbufferPacking)
-    ret.matrixByteStride = uint8_t(baseElemSize * 4);
+    ret.matrixByteStride = AlignUp16(uint8_t(baseElemSize * 4));
   else
     ret.matrixByteStride = uint8_t(baseElemSize * (ret.RowMajor() ? ret.columns : ret.rows));
 
@@ -132,6 +132,8 @@ static ShaderConstant MakeConstantBufferVariable(bool cbufferPacking, const DXBC
   ret.byteOffset = var.offset;
   ret.defaultValue = 0;
   ret.type = MakeShaderConstantType(cbufferPacking, var.type);
+  ret.bitFieldOffset = var.bitFieldOffset;
+  ret.bitFieldSize = var.bitFieldSize;
 
   // fxc emits negative values for offsets of empty structs sometimes. Replace that with a single
   // value so we can say 'use the previous value'
@@ -328,6 +330,12 @@ void MakeShaderReflection(DXBC::DXBCContainer *dxbc, const ShaderEntryPoint &ent
     refl->debugInfo.compileFlags = dxbc->GetDebugInfo()->GetShaderCompileFlags();
 
     refl->debugInfo.files = dxbc->GetDebugInfo()->Files;
+
+    // For DXIL ensure the entry point meta data has been parsed
+    if(dxbc->GetDXILByteCode())
+    {
+      dxbc->GetDXILByteCode()->FetchEntryPoint();
+    }
 
     dxbc->GetDebugInfo()->GetLineInfo(~0U, ~0U, refl->debugInfo.entryLocation);
 

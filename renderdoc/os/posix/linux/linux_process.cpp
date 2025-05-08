@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -402,7 +402,13 @@ bool StopChildAtMain(pid_t childPid, bool *exitWithNoExec)
     char line[512] = {0};
     if(fgets(line, 511, maps))
     {
-      if(strstr(line, "r-xp"))
+      char *sp = strchr(line, ' ');
+      if(sp == NULL)
+        continue;
+
+      sp++;
+
+      if(!strncmp(sp, "r-xp", 4))
       {
         RDCCOMPILE_ASSERT(sizeof(long) == sizeof(void *), "Expected long to be pointer sized");
         int pathOffset = 0;

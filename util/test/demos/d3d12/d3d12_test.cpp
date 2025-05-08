@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -30,6 +30,7 @@
 #include "../3rdparty/md5/md5.h"
 #include "../renderdoc_app.h"
 #include "../win32/win32_window.h"
+#include "3rdparty/fmt/core.h"
 #include "dx/official/dxcapi.h"
 
 typedef HRESULT(WINAPI *PFN_CREATE_DXGI_FACTORY1)(REFIID, void **);
@@ -64,6 +65,59 @@ struct DevicePointers
   ID3D12DeviceFactoryPtr factory;
   ID3D12DeviceConfigurationPtr config;
 };
+
+struct DLLFileVersion
+{
+  uint16_t major, minor, build, revision;
+};
+
+DLLFileVersion GetDLLFileVersion(HMODULE mod)
+{
+  DLLFileVersion ret = {};
+
+  using PFN_VerQueryValueA = decltype(&VerQueryValueA);
+
+  PFN_VerQueryValueA queryValue = NULL;
+
+  HMODULE version = LoadLibraryA("version.dll");
+  if(version)
+  {
+    queryValue = (PFN_VerQueryValueA)GetProcAddress(version, "VerQueryValueA");
+
+    if(queryValue)
+    {
+      HRSRC verRes = FindResource(mod, MAKEINTRESOURCE(1), RT_VERSION);
+      if(verRes)
+      {
+        DWORD sz = SizeofResource(mod, verRes);
+        HGLOBAL data = LoadResource(mod, verRes);
+
+        if(data && sz > 0)
+        {
+          void *buf = LockResource(data);
+
+          byte *tmpBuf = new byte[sz];
+          memcpy(tmpBuf, buf, sz);
+
+          VS_FIXEDFILEINFO *verInfo = NULL;
+          UINT size = 0;
+          if(queryValue(data, "\\", (void **)&verInfo, &size))
+          {
+            if(size > 0 && verInfo && verInfo->dwSignature == 0xFEEF04BD)
+            {
+              ret = {verInfo->dwFileVersionMS >> 16, verInfo->dwFileVersionMS & 0xffff,
+                     verInfo->dwFileVersionLS >> 16, verInfo->dwFileVersionLS & 0xffff};
+            }
+          }
+
+          delete[] tmpBuf;
+        }
+      }
+    }
+  }
+
+  return ret;
+}
 
 DevicePointers PrepareCreateDeviceFromDLL(const std::string &d3d12path, bool debug, bool gpuValidation)
 {
@@ -134,12 +188,24 @@ DevicePointers PrepareCreateDeviceFromDLL(const std::string &d3d12path, bool deb
 
       if(mod)
       {
-        DWORD *version = (DWORD *)GetProcAddress(mod, "D3D12SDKVersion");
+        DWORD *sdkVersion = (DWORD *)GetProcAddress(mod, "D3D12SDKVersion");
 
-        if(version)
+        DLLFileVersion version = GetDLLFileVersion(mod);
+
+        std::string d3d12CoreVersion;
+
+        if(version.major >= 1)
+          d3d12CoreVersion = fmt::format("{0}.{1}.{2}.{3}", version.major, version.minor,
+                                         version.build, version.revision);
+        else
+          d3d12CoreVersion = fmt::format("1.{0}", *sdkVersion);
+
+        TEST_LOG("Using D3D12Core.dll from %s (version %s)", path.c_str(), d3d12CoreVersion.c_str());
+
+        if(sdkVersion)
         {
-          hr = config1->CreateDeviceFactory(*version, path.c_str(), __uuidof(ID3D12DeviceFactory),
-                                            (void **)&devfactory);
+          hr = config1->CreateDeviceFactory(*sdkVersion, path.c_str(),
+                                            __uuidof(ID3D12DeviceFactory), (void **)&devfactory);
 
           if(FAILED(hr))
             devfactory = NULL;
@@ -223,7 +289,12 @@ void D3D12GraphicsTest::Prepare(int argc, char **argv)
       d3dcompiler = LoadLibraryA("d3dcompiler_44.dll");
     if(!d3dcompiler)
       d3dcompiler = LoadLibraryA("d3dcompiler_43.dll");
-    dxcompiler = LoadLibraryA("dxcompiler.dll");
+
+    // try loading dxcompiler from a local plugin folder first, since when building we copy the SDK
+    // version next to our exe and that may be old
+    dxcompiler = LoadLibraryA("D3D12/dxcompiler.dll");
+    if(!dxcompiler)
+      dxcompiler = LoadLibraryA("dxcompiler.dll");
 
     if(!d3d12)
     {
@@ -318,7 +389,10 @@ void D3D12GraphicsTest::Prepare(int argc, char **argv)
 
   if(d3d12path.empty())
   {
-    d3d12path = GetCWD() + "/D3D12/d3d12core.dll";
+    d3d12path = GetExecutableName();
+    d3d12path.erase(d3d12path.find_last_of("/\\"));
+    d3d12path += "/D3D12/d3d12core.dll";
+
     FILE *f = fopen(d3d12path.c_str(), "r");
     if(!f)
       d3d12path.clear();
@@ -347,7 +421,7 @@ void D3D12GraphicsTest::Prepare(int argc, char **argv)
       tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS6, &opts6, sizeof(opts6));
       tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &opts7, sizeof(opts7));
       D3D12_FEATURE_DATA_SHADER_MODEL oShaderModel = {};
-      oShaderModel.HighestShaderModel = D3D_SHADER_MODEL_6_6;
+      oShaderModel.HighestShaderModel = D3D_SHADER_MODEL_6_7;
       HRESULT hr = tmpdev->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &oShaderModel,
                                                sizeof(oShaderModel));
       if(SUCCEEDED(hr))
@@ -374,6 +448,8 @@ bool D3D12GraphicsTest::Init()
   devFactory = devPtrs.factory;
   devConfig = devPtrs.config;
   d3d12Debug = devPtrs.debug;
+
+  m_SingletonDevice = (devFactory == NULL);
 
   dev = CreateDevice(adapters, minFeatureLevel);
   if(!dev)
@@ -812,7 +888,7 @@ void D3D12GraphicsTest::Present()
     m_GPUSyncCounter++;
     queue->Signal(m_GPUSyncFence, m_GPUSyncCounter);
 
-    pendingCommandBuffers.push_back(std::make_pair(cmd, m_GPUSyncFence));
+    pendingCommandBuffers.push_back(std::make_pair(cmd, m_GPUSyncCounter));
   }
 
   for(auto it = pendingCommandBuffers.begin(); it != pendingCommandBuffers.end();)
@@ -1231,6 +1307,13 @@ void D3D12GraphicsTest::ResourceBarrier(ID3D12ResourcePtr res, D3D12_RESOURCE_ST
   Submit({cmd});
 }
 
+void D3D12GraphicsTest::ResourceBarrier(ID3D12GraphicsCommandListPtr cmd)
+{
+  D3D12_RESOURCE_BARRIER barrier = {};
+  barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+  cmd->ResourceBarrier(1, &barrier);
+}
+
 void D3D12GraphicsTest::IASetVertexBuffer(ID3D12GraphicsCommandListPtr cmd, ID3D12ResourcePtr vb,
                                           UINT stride, UINT offset)
 {
@@ -1323,9 +1406,11 @@ COM_SMARTPTR(IDxcOperationResult);
 COM_SMARTPTR(IDxcBlob);
 
 ID3DBlobPtr D3D12GraphicsTest::Compile(std::string src, std::string entry, std::string profile,
-                                       bool skipoptimise)
+                                       uint32_t compileOptions)
 {
   ID3DBlobPtr blob = NULL;
+  bool skipoptimise = ((compileOptions & CompileOptionFlags::SkipOptimise) != 0);
+  bool enable16BitTypes = ((compileOptions & CompileOptionFlags::Enable16BitTypes) != 0);
 
   if(profile[3] >= '6')
   {
@@ -1379,6 +1464,21 @@ ID3DBlobPtr D3D12GraphicsTest::Compile(std::string src, std::string entry, std::
       argStorage.push_back(L"-O1");
     }
     argStorage.push_back(L"-Zi");
+    if(enable16BitTypes)
+      argStorage.push_back(L"-enable-16bit-types");
+
+    DLLFileVersion version = GetDLLFileVersion(dxcompiler);
+
+    // if the version is new enough we can tell it to not load dxil.dll. Have to do this absolutely
+    // ridiculous dll version dance because if we pass this option on a dxc too early it will fail
+    // to compile.
+    //
+    // as extra fun, some versions are 1.7.x or 1.8.x and some are 10.0.y from SDKs. These versions
+    // are not comparable! ha ha ha.
+    if(version.major != 10 && (version.major > 1 || version.minor > 8 || version.build >= 2403))
+      argStorage.push_back(L"-select-validator internal");
+
+    // Must be the final option
     argStorage.push_back(L"-Qembed_debug");
 
     for(size_t i = 0; i < argStorage.size(); i++)
@@ -1427,7 +1527,8 @@ ID3DBlobPtr D3D12GraphicsTest::Compile(std::string src, std::string entry, std::
         hr = result->GetErrorBuffer(&dxcErrors);
         if(SUCCEEDED(hr) && dxcErrors)
         {
-          TEST_ERROR("Failed to compile DXC shader: %s", dxcErrors->GetBufferPointer());
+          TEST_ERROR("Failed to compile DXC shader: %.*s", (int)dxcErrors->GetBufferSize(),
+                     (char *)dxcErrors->GetBufferPointer());
         }
         else
         {
@@ -1450,14 +1551,15 @@ ID3DBlobPtr D3D12GraphicsTest::Compile(std::string src, std::string entry, std::
     if(skipoptimise)
       flags |= D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_OPTIMIZATION_LEVEL0;
     else
-      flags |= D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL0;
+      flags |= D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL1;
 
     HRESULT hr = dyn_D3DCompile(src.c_str(), src.length(), "", NULL, NULL, entry.c_str(),
                                 profile.c_str(), flags, 0, &blob, &error);
 
     if(FAILED(hr))
     {
-      TEST_ERROR("Failed to compile shader, error %x / %s", hr,
+      int numChars = error ? (int)error->GetBufferSize() : 1024;
+      TEST_ERROR("Failed to compile shader, error %x / %.*s", hr, numChars,
                  error ? (char *)error->GetBufferPointer() : "Unknown");
       return NULL;
     }

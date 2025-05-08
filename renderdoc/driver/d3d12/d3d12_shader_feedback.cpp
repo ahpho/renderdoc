@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2021-2024 Baldur Karlsson
+ * Copyright (c) 2021-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,6 +31,7 @@
 #include "d3d12_device.h"
 #include "d3d12_replay.h"
 #include "d3d12_resources.h"
+#include "d3d12_rootsig.h"
 #include "d3d12_shader_cache.h"
 
 RDOC_CONFIG(rdcstr, D3D12_Debug_FeedbackDumpDirPath, "",
@@ -1351,7 +1352,7 @@ bool D3D12Replay::FetchShaderFeedback(uint32_t eventId)
     pipestatsQueryDesc.Type = D3D12_QUERY_HEAP_TYPE_PIPELINE_STATISTICS;
     HRESULT hr = m_pDevice->CreateQueryHeap(&pipestatsQueryDesc, __uuidof(ID3D12QueryHeap),
                                             (void **)&m_BindlessFeedback.PipeStatsHeap);
-    m_pDevice->CheckHRESULT(hr);
+    CHECK_HR(m_pDevice, hr);
     if(FAILED(hr))
     {
       RDCERR("Failed to create shader feedback pipeline query heap HRESULT: %s", ToStr(hr).c_str());
@@ -1430,19 +1431,15 @@ bool D3D12Replay::FetchShaderFeedback(uint32_t eventId)
   ID3D12RootSignature *annotatedSig = NULL;
 
   {
-    ID3DBlob *root = m_pDevice->GetShaderCache()->MakeRootSig(modsig);
-    HRESULT hr =
-        m_pDevice->CreateRootSignature(0, root->GetBufferPointer(), root->GetBufferSize(),
-                                       __uuidof(ID3D12RootSignature), (void **)&annotatedSig);
+    bytebuf root = EncodeRootSig(m_pDevice->RootSigVersion(), modsig);
+    HRESULT hr = m_pDevice->CreateRootSignature(
+        0, root.data(), root.size(), __uuidof(ID3D12RootSignature), (void **)&annotatedSig);
 
     if(annotatedSig == NULL || FAILED(hr))
     {
-      SAFE_RELEASE(root);
       RDCERR("Couldn't create feedback modified root signature: %s", ToStr(hr).c_str());
       return false;
     }
-
-    SAFE_RELEASE(root);
   }
 
   ID3D12PipelineState *annotatedPipe = NULL;

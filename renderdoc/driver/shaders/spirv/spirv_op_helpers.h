@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -480,8 +480,6 @@ inline uint16_t ExtraWordCount(const LoopControl loopControl)
 
 inline uint16_t OptionalWordCount(const FunctionControl val) { return val != FunctionControl::None ? 1 : 0; }
 
-inline uint16_t OptionalWordCount(const MemorySemantics val) { return val != MemorySemantics::None ? 1 : 0; }
-
 template<>
 inline MemoryAccessAndParamDatas DecodeParam(const ConstIter &it, uint32_t &word)
 {
@@ -776,6 +774,19 @@ struct ExecutionModeParam<ExecutionMode::RoundingModeRTZ>
 };
 
 template<>
+struct ExecutionModeParam<ExecutionMode::IsApiEntryAMDX>
+{
+  Id isApiEntryAMDX;
+  ExecutionModeParam(Id isApiEntryAMDXParam) {  isApiEntryAMDX = isApiEntryAMDXParam; }
+  operator ExecutionModeAndParamData()
+  {
+    ExecutionModeAndParamData ret(ExecutionMode::IsApiEntryAMDX);
+    ret.isApiEntryAMDX = isApiEntryAMDX;
+    return ret;
+  }
+};
+
+template<>
 struct ExecutionModeParam<ExecutionMode::MaxNodeRecursionAMDX>
 {
   Id maxNodeRecursionAMDX;
@@ -827,6 +838,20 @@ struct ExecutionModeParam<ExecutionMode::MaxNumWorkgroupsAMDX>
     ret.maxNumWorkgroupsAMDX.xsize = maxNumWorkgroupsAMDX.xsize;
     ret.maxNumWorkgroupsAMDX.ysize = maxNumWorkgroupsAMDX.ysize;
     ret.maxNumWorkgroupsAMDX.zsize = maxNumWorkgroupsAMDX.zsize;
+    return ret;
+  }
+};
+
+template<>
+struct ExecutionModeParam<ExecutionMode::SharesInputWithAMDX>
+{
+  SharesInputWithAMDXParams sharesInputWithAMDX;
+  ExecutionModeParam(Id nodeName, Id shaderIndex) {  sharesInputWithAMDX.nodeName = nodeName; sharesInputWithAMDX.shaderIndex = shaderIndex; }
+  operator ExecutionModeAndParamData()
+  {
+    ExecutionModeAndParamData ret(ExecutionMode::SharesInputWithAMDX);
+    ret.sharesInputWithAMDX.nodeName = sharesInputWithAMDX.nodeName;
+    ret.sharesInputWithAMDX.shaderIndex = sharesInputWithAMDX.shaderIndex;
     return ret;
   }
 };
@@ -1134,6 +1159,10 @@ inline ExecutionModeAndParamData DecodeParam(const ConstIter &it, uint32_t &word
       ret.roundingModeRTZ = (uint32_t)it.word(word);
       word += 1;
       break;
+    case ExecutionMode::IsApiEntryAMDX:
+      ret.isApiEntryAMDX = Id::fromWord(it.word(word));
+      word += 1;
+      break;
     case ExecutionMode::MaxNodeRecursionAMDX:
       ret.maxNodeRecursionAMDX = Id::fromWord(it.word(word));
       word += 1;
@@ -1153,6 +1182,11 @@ inline ExecutionModeAndParamData DecodeParam(const ConstIter &it, uint32_t &word
       ret.maxNumWorkgroupsAMDX.ysize = Id::fromWord(it.word(word+1));
       ret.maxNumWorkgroupsAMDX.zsize = Id::fromWord(it.word(word+2));
       word += 3;
+      break;
+    case ExecutionMode::SharesInputWithAMDX:
+      ret.sharesInputWithAMDX.nodeName = Id::fromWord(it.word(word+0));
+      ret.sharesInputWithAMDX.shaderIndex = Id::fromWord(it.word(word+1));
+      word += 2;
       break;
     case ExecutionMode::OutputPrimitivesEXT:
       ret.outputPrimitivesEXT = (uint32_t)it.word(word);
@@ -1288,6 +1322,9 @@ inline void EncodeParam(rdcarray<uint32_t> &words, const ExecutionModeAndParamDa
     case ExecutionMode::RoundingModeRTZ:
       words.push_back((uint32_t)param.roundingModeRTZ);
       break;
+    case ExecutionMode::IsApiEntryAMDX:
+      words.push_back(param.isApiEntryAMDX.value());
+      break;
     case ExecutionMode::MaxNodeRecursionAMDX:
       words.push_back(param.maxNodeRecursionAMDX.value());
       break;
@@ -1303,6 +1340,10 @@ inline void EncodeParam(rdcarray<uint32_t> &words, const ExecutionModeAndParamDa
       words.push_back(param.maxNumWorkgroupsAMDX.xsize.value());
       words.push_back(param.maxNumWorkgroupsAMDX.ysize.value());
       words.push_back(param.maxNumWorkgroupsAMDX.zsize.value());
+      break;
+    case ExecutionMode::SharesInputWithAMDX:
+      words.push_back(param.sharesInputWithAMDX.nodeName.value());
+      words.push_back(param.sharesInputWithAMDX.shaderIndex.value());
       break;
     case ExecutionMode::OutputPrimitivesEXT:
       words.push_back((uint32_t)param.outputPrimitivesEXT);
@@ -1381,10 +1422,12 @@ inline uint16_t ExtraWordCount(const ExecutionMode executionMode)
     case ExecutionMode::SignedZeroInfNanPreserve: return 1;
     case ExecutionMode::RoundingModeRTE: return 1;
     case ExecutionMode::RoundingModeRTZ: return 1;
+    case ExecutionMode::IsApiEntryAMDX: return 1;
     case ExecutionMode::MaxNodeRecursionAMDX: return 1;
     case ExecutionMode::StaticNumWorkgroupsAMDX: return 3;
     case ExecutionMode::ShaderIndexAMDX: return 1;
     case ExecutionMode::MaxNumWorkgroupsAMDX: return 3;
+    case ExecutionMode::SharesInputWithAMDX: return 2;
     case ExecutionMode::OutputPrimitivesEXT: return 1;
     case ExecutionMode::SharedLocalMemorySizeINTEL: return 1;
     case ExecutionMode::RoundingModeRTPINTEL: return 1;
@@ -1749,6 +1792,45 @@ struct DecorationParam<Decoration::NodeMaxPayloadsAMDX>
   {
     DecorationAndParamData ret(Decoration::NodeMaxPayloadsAMDX);
     ret.nodeMaxPayloadsAMDX = nodeMaxPayloadsAMDX;
+    return ret;
+  }
+};
+
+template<>
+struct DecorationParam<Decoration::PayloadNodeNameAMDX>
+{
+  Id payloadNodeNameAMDX;
+  DecorationParam(Id payloadNodeNameAMDXParam) {  payloadNodeNameAMDX = payloadNodeNameAMDXParam; }
+  operator DecorationAndParamData()
+  {
+    DecorationAndParamData ret(Decoration::PayloadNodeNameAMDX);
+    ret.payloadNodeNameAMDX = payloadNodeNameAMDX;
+    return ret;
+  }
+};
+
+template<>
+struct DecorationParam<Decoration::PayloadNodeBaseIndexAMDX>
+{
+  Id payloadNodeBaseIndexAMDX;
+  DecorationParam(Id payloadNodeBaseIndexAMDXParam) {  payloadNodeBaseIndexAMDX = payloadNodeBaseIndexAMDXParam; }
+  operator DecorationAndParamData()
+  {
+    DecorationAndParamData ret(Decoration::PayloadNodeBaseIndexAMDX);
+    ret.payloadNodeBaseIndexAMDX = payloadNodeBaseIndexAMDX;
+    return ret;
+  }
+};
+
+template<>
+struct DecorationParam<Decoration::PayloadNodeArraySizeAMDX>
+{
+  Id payloadNodeArraySizeAMDX;
+  DecorationParam(Id payloadNodeArraySizeAMDXParam) {  payloadNodeArraySizeAMDX = payloadNodeArraySizeAMDXParam; }
+  operator DecorationAndParamData()
+  {
+    DecorationAndParamData ret(Decoration::PayloadNodeArraySizeAMDX);
+    ret.payloadNodeArraySizeAMDX = payloadNodeArraySizeAMDX;
     return ret;
   }
 };
@@ -2375,6 +2457,18 @@ inline DecorationAndParamData DecodeParam(const ConstIter &it, uint32_t &word)
       ret.nodeMaxPayloadsAMDX = Id::fromWord(it.word(word));
       word += 1;
       break;
+    case Decoration::PayloadNodeNameAMDX:
+      ret.payloadNodeNameAMDX = Id::fromWord(it.word(word));
+      word += 1;
+      break;
+    case Decoration::PayloadNodeBaseIndexAMDX:
+      ret.payloadNodeBaseIndexAMDX = Id::fromWord(it.word(word));
+      word += 1;
+      break;
+    case Decoration::PayloadNodeArraySizeAMDX:
+      ret.payloadNodeArraySizeAMDX = Id::fromWord(it.word(word));
+      word += 1;
+      break;
     case Decoration::SecondaryViewportRelativeNV:
       ret.secondaryViewportRelativeNV = (uint32_t)it.word(word);
       word += 1;
@@ -2621,6 +2715,15 @@ inline void EncodeParam(rdcarray<uint32_t> &words, const DecorationAndParamData 
     case Decoration::NodeMaxPayloadsAMDX:
       words.push_back(param.nodeMaxPayloadsAMDX.value());
       break;
+    case Decoration::PayloadNodeNameAMDX:
+      words.push_back(param.payloadNodeNameAMDX.value());
+      break;
+    case Decoration::PayloadNodeBaseIndexAMDX:
+      words.push_back(param.payloadNodeBaseIndexAMDX.value());
+      break;
+    case Decoration::PayloadNodeArraySizeAMDX:
+      words.push_back(param.payloadNodeArraySizeAMDX.value());
+      break;
     case Decoration::SecondaryViewportRelativeNV:
       words.push_back((uint32_t)param.secondaryViewportRelativeNV);
       break;
@@ -2778,6 +2881,9 @@ inline uint16_t ExtraWordCount(const Decoration decoration)
     case Decoration::MaxByteOffsetId: return 1;
     case Decoration::NodeSharesPayloadLimitsWithAMDX: return 1;
     case Decoration::NodeMaxPayloadsAMDX: return 1;
+    case Decoration::PayloadNodeNameAMDX: return 1;
+    case Decoration::PayloadNodeBaseIndexAMDX: return 1;
+    case Decoration::PayloadNodeArraySizeAMDX: return 1;
     case Decoration::SecondaryViewportRelativeNV: return 1;
     case Decoration::SIMTCallINTEL: return 1;
     case Decoration::FuncParamIOKindINTEL: return 1;
@@ -2846,6 +2952,52 @@ inline uint16_t OptionalWordCount(const CooperativeMatrixLayout val) { return va
 
 inline uint16_t OptionalWordCount(const CooperativeMatrixUse val) { return val != CooperativeMatrixUse::Invalid ? 1 : 0; }
 
+inline uint16_t OptionalWordCount(const TensorClampMode val) { return val != TensorClampMode::Invalid ? 1 : 0; }
+
+template<>
+inline TensorAddressingOperandsAndParamDatas DecodeParam(const ConstIter &it, uint32_t &word)
+{
+  if(word >= it.size()) return TensorAddressingOperandsAndParamDatas();
+
+  TensorAddressingOperandsAndParamDatas ret((TensorAddressingOperands)it.word(word));
+  word++;
+  if(ret.flags & TensorAddressingOperands::TensorView)
+  {
+    ret.tensorView = Id::fromWord(it.word(word));
+    word += 1;
+  }
+  if(ret.flags & TensorAddressingOperands::DecodeFunc)
+  {
+    ret.decodeFunc = Id::fromWord(it.word(word));
+    word += 1;
+  }
+  return ret;
+}
+
+inline void EncodeParam(rdcarray<uint32_t> &words, const TensorAddressingOperandsAndParamDatas &param)
+{
+  words.push_back((uint32_t)param.flags);
+  if(param.flags & TensorAddressingOperands::TensorView)
+  {
+    words.push_back(param.tensorView.value());
+  }
+  if(param.flags & TensorAddressingOperands::DecodeFunc)
+  {
+    words.push_back(param.decodeFunc.value());
+  }
+}
+
+inline uint16_t ExtraWordCount(const TensorAddressingOperands tensorAddressingOperands)
+{
+  switch(tensorAddressingOperands)
+  {
+    case TensorAddressingOperands::TensorView: return 1;
+    case TensorAddressingOperands::DecodeFunc: return 1;
+    default: break;
+  }
+  return 0;
+}
+
 inline uint16_t OptionalWordCount(const InitializationModeQualifier val) { return val != InitializationModeQualifier::Invalid ? 1 : 0; }
 
 inline uint16_t OptionalWordCount(const LoadCacheControl val) { return val != LoadCacheControl::Invalid ? 1 : 0; }
@@ -2853,6 +3005,14 @@ inline uint16_t OptionalWordCount(const LoadCacheControl val) { return val != Lo
 inline uint16_t OptionalWordCount(const StoreCacheControl val) { return val != StoreCacheControl::Invalid ? 1 : 0; }
 
 inline uint16_t OptionalWordCount(const NamedMaximumNumberOfRegisters val) { return val != NamedMaximumNumberOfRegisters::Invalid ? 1 : 0; }
+
+inline uint16_t OptionalWordCount(const MatrixMultiplyAccumulateOperands val) { return val != MatrixMultiplyAccumulateOperands::None ? 1 : 0; }
+
+inline uint16_t OptionalWordCount(const FPEncoding val) { return val != FPEncoding::Invalid ? 1 : 0; }
+
+inline uint16_t OptionalWordCount(const CooperativeVectorMatrixLayout val) { return val != CooperativeVectorMatrixLayout::Invalid ? 1 : 0; }
+
+inline uint16_t OptionalWordCount(const ComponentType val) { return val != ComponentType::Invalid ? 1 : 0; }
 
 
 inline uint16_t ExtraWordCount(const rdcstr &val)
@@ -3422,22 +3582,39 @@ struct OpTypeFloat
 {
   OpTypeFloat(const ConstIter &it)
   {
-    memcpy(this, it.words(), sizeof(*this));
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->result = Id::fromWord(it.word(1));
+    this->width = (uint32_t)it.word(2);
+    this->floatingPointEncoding = (it.size() > 3) ? (FPEncoding)it.word(3) : FPEncoding::Invalid;
   }
-  OpTypeFloat(IdResult result, uint32_t width)
+  OpTypeFloat(IdResult result, uint32_t width, FPEncoding floatingPointEncoding = FPEncoding::Invalid)
       : op(Op::TypeFloat)
-      , wordCount(FixedWordSize)
+      , wordCount(MinWordSize + OptionalWordCount(floatingPointEncoding))
   {
     this->result = result;
     this->width = width;
+    this->floatingPointEncoding = floatingPointEncoding;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(result.value());
+    words.push_back((uint32_t)width);
+    if(floatingPointEncoding != FPEncoding::Invalid) words.push_back((uint32_t)floatingPointEncoding);
+    return Operation(OpCode, words);
   }
 
   static constexpr Op OpCode = Op::TypeFloat;
-  static constexpr uint16_t FixedWordSize = 3U;
+  static constexpr uint16_t MinWordSize = 3U;
   Op op;
   uint16_t wordCount;
   IdResult result;
   uint32_t width;
+  FPEncoding floatingPointEncoding;
+
+  bool HasFloatingPointEncoding() const { return wordCount > 3; }
 };
 
 struct OpTypeVector
@@ -13269,6 +13446,174 @@ struct OpTerminateInvocation
   // no operands
 };
 
+struct OpTypeUntypedPointerKHR
+{
+  OpTypeUntypedPointerKHR(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpTypeUntypedPointerKHR(IdResult result, StorageClass storageClass)
+      : op(Op::TypeUntypedPointerKHR)
+      , wordCount(FixedWordSize)
+  {
+    this->result = result;
+    this->storageClass = storageClass;
+  }
+
+  static constexpr Op OpCode = Op::TypeUntypedPointerKHR;
+  static constexpr uint16_t FixedWordSize = 3U;
+  Op op;
+  uint16_t wordCount;
+  IdResult result;
+  StorageClass storageClass;
+};
+
+struct OpUntypedVariableKHR
+{
+  OpUntypedVariableKHR(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->storageClass = (StorageClass)it.word(3);
+    this->dataType = (it.size() > 4) ? Id::fromWord(it.word(4)) : Id();
+    this->initializer = (it.size() > 5) ? Id::fromWord(it.word(5)) : Id();
+  }
+  OpUntypedVariableKHR(IdResultType resultType, IdResult result, StorageClass storageClass, Id dataType = Id(), Id initializer = Id())
+      : op(Op::UntypedVariableKHR)
+      , wordCount(MinWordSize + OptionalWordCount(dataType) + OptionalWordCount(initializer))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->storageClass = storageClass;
+    this->dataType = dataType;
+    this->initializer = initializer;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back((uint32_t)storageClass);
+    if(dataType != Id()) words.push_back(dataType.value());
+    if(initializer != Id()) words.push_back(initializer.value());
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::UntypedVariableKHR;
+  static constexpr uint16_t MinWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  StorageClass storageClass;
+  Id dataType;
+  Id initializer;
+
+  bool HasDataType() const { return wordCount > 4; }
+  bool HasInitializer() const { return wordCount > 5; }
+};
+
+struct OpUntypedAccessChainKHR
+{
+  OpUntypedAccessChainKHR(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->baseType = Id::fromWord(it.word(3));
+    this->base = Id::fromWord(it.word(4));
+    word = 5;
+    this->indexes = MultiParam<Id>(it, word);
+  }
+  OpUntypedAccessChainKHR(IdResultType resultType, IdResult result, Id baseType, Id base, const rdcarray<Id> &indexes = {})
+      : op(Op::UntypedAccessChainKHR)
+      , wordCount(MinWordSize + MultiWordCount(indexes))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->baseType = baseType;
+    this->base = base;
+    this->indexes = indexes;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(baseType.value());
+    words.push_back(base.value());
+    for(size_t i=0; i < indexes.size(); i++)
+    {
+      words.push_back(indexes[i].value());
+    }
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::UntypedAccessChainKHR;
+  static constexpr uint16_t MinWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id baseType;
+  Id base;
+  rdcarray<Id> indexes;
+};
+
+struct OpUntypedInBoundsAccessChainKHR
+{
+  OpUntypedInBoundsAccessChainKHR(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->baseType = Id::fromWord(it.word(3));
+    this->base = Id::fromWord(it.word(4));
+    word = 5;
+    this->indexes = MultiParam<Id>(it, word);
+  }
+  OpUntypedInBoundsAccessChainKHR(IdResultType resultType, IdResult result, Id baseType, Id base, const rdcarray<Id> &indexes = {})
+      : op(Op::UntypedInBoundsAccessChainKHR)
+      , wordCount(MinWordSize + MultiWordCount(indexes))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->baseType = baseType;
+    this->base = base;
+    this->indexes = indexes;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(baseType.value());
+    words.push_back(base.value());
+    for(size_t i=0; i < indexes.size(); i++)
+    {
+      words.push_back(indexes[i].value());
+    }
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::UntypedInBoundsAccessChainKHR;
+  static constexpr uint16_t MinWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id baseType;
+  Id base;
+  rdcarray<Id> indexes;
+};
+
 struct OpSubgroupBallotKHR
 {
   OpSubgroupBallotKHR(const ConstIter &it)
@@ -13315,6 +13660,189 @@ struct OpSubgroupFirstInvocationKHR
   IdResultType resultType;
   IdResult result;
   Id value;
+};
+
+struct OpUntypedPtrAccessChainKHR
+{
+  OpUntypedPtrAccessChainKHR(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->baseType = Id::fromWord(it.word(3));
+    this->base = Id::fromWord(it.word(4));
+    this->element = Id::fromWord(it.word(5));
+    word = 6;
+    this->indexes = MultiParam<Id>(it, word);
+  }
+  OpUntypedPtrAccessChainKHR(IdResultType resultType, IdResult result, Id baseType, Id base, Id element, const rdcarray<Id> &indexes = {})
+      : op(Op::UntypedPtrAccessChainKHR)
+      , wordCount(MinWordSize + MultiWordCount(indexes))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->baseType = baseType;
+    this->base = base;
+    this->element = element;
+    this->indexes = indexes;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(baseType.value());
+    words.push_back(base.value());
+    words.push_back(element.value());
+    for(size_t i=0; i < indexes.size(); i++)
+    {
+      words.push_back(indexes[i].value());
+    }
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::UntypedPtrAccessChainKHR;
+  static constexpr uint16_t MinWordSize = 6U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id baseType;
+  Id base;
+  Id element;
+  rdcarray<Id> indexes;
+};
+
+struct OpUntypedInBoundsPtrAccessChainKHR
+{
+  OpUntypedInBoundsPtrAccessChainKHR(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->baseType = Id::fromWord(it.word(3));
+    this->base = Id::fromWord(it.word(4));
+    this->element = Id::fromWord(it.word(5));
+    word = 6;
+    this->indexes = MultiParam<Id>(it, word);
+  }
+  OpUntypedInBoundsPtrAccessChainKHR(IdResultType resultType, IdResult result, Id baseType, Id base, Id element, const rdcarray<Id> &indexes = {})
+      : op(Op::UntypedInBoundsPtrAccessChainKHR)
+      , wordCount(MinWordSize + MultiWordCount(indexes))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->baseType = baseType;
+    this->base = base;
+    this->element = element;
+    this->indexes = indexes;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(baseType.value());
+    words.push_back(base.value());
+    words.push_back(element.value());
+    for(size_t i=0; i < indexes.size(); i++)
+    {
+      words.push_back(indexes[i].value());
+    }
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::UntypedInBoundsPtrAccessChainKHR;
+  static constexpr uint16_t MinWordSize = 6U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id baseType;
+  Id base;
+  Id element;
+  rdcarray<Id> indexes;
+};
+
+struct OpUntypedArrayLengthKHR
+{
+  OpUntypedArrayLengthKHR(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpUntypedArrayLengthKHR(IdResultType resultType, IdResult result, Id structure, Id pointer, uint32_t arraymember)
+      : op(Op::UntypedArrayLengthKHR)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->structure = structure;
+    this->pointer = pointer;
+    this->arraymember = arraymember;
+  }
+
+  static constexpr Op OpCode = Op::UntypedArrayLengthKHR;
+  static constexpr uint16_t FixedWordSize = 6U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id structure;
+  Id pointer;
+  uint32_t arraymember;
+};
+
+struct OpUntypedPrefetchKHR
+{
+  OpUntypedPrefetchKHR(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->pointerType = Id::fromWord(it.word(1));
+    this->numBytes = Id::fromWord(it.word(2));
+    this->rW = (it.size() > 3) ? Id::fromWord(it.word(3)) : Id();
+    this->locality = (it.size() > 4) ? Id::fromWord(it.word(4)) : Id();
+    this->cacheType = (it.size() > 5) ? Id::fromWord(it.word(5)) : Id();
+  }
+  OpUntypedPrefetchKHR(Id pointerType, Id numBytes, Id rW = Id(), Id locality = Id(), Id cacheType = Id())
+      : op(Op::UntypedPrefetchKHR)
+      , wordCount(MinWordSize + OptionalWordCount(rW) + OptionalWordCount(locality) + OptionalWordCount(cacheType))
+  {
+    this->pointerType = pointerType;
+    this->numBytes = numBytes;
+    this->rW = rW;
+    this->locality = locality;
+    this->cacheType = cacheType;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(pointerType.value());
+    words.push_back(numBytes.value());
+    if(rW != Id()) words.push_back(rW.value());
+    if(locality != Id()) words.push_back(locality.value());
+    if(cacheType != Id()) words.push_back(cacheType.value());
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::UntypedPrefetchKHR;
+  static constexpr uint16_t MinWordSize = 3U;
+  Op op;
+  uint16_t wordCount;
+  Id pointerType;
+  Id numBytes;
+  Id rW;
+  Id locality;
+  Id cacheType;
+
+  bool HasRW() const { return wordCount > 3; }
+  bool HasLocality() const { return wordCount > 4; }
+  bool HasCacheType() const { return wordCount > 5; }
 };
 
 struct OpSubgroupAllKHR
@@ -14879,24 +15407,74 @@ struct OpReadClockKHR
   IdScope scope;
 };
 
-struct OpFinalizeNodePayloadsAMDX
+struct OpAllocateNodePayloadsAMDX
 {
-  OpFinalizeNodePayloadsAMDX(const ConstIter &it)
+  OpAllocateNodePayloadsAMDX(const ConstIter &it)
   {
     memcpy(this, it.words(), sizeof(*this));
   }
-  OpFinalizeNodePayloadsAMDX(Id payloadArray)
-      : op(Op::FinalizeNodePayloadsAMDX)
+  OpAllocateNodePayloadsAMDX(IdResultType resultType, IdResult result, IdScope visibility, Id payloadCount, Id nodeIndex)
+      : op(Op::AllocateNodePayloadsAMDX)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->visibility = visibility;
+    this->payloadCount = payloadCount;
+    this->nodeIndex = nodeIndex;
+  }
+
+  static constexpr Op OpCode = Op::AllocateNodePayloadsAMDX;
+  static constexpr uint16_t FixedWordSize = 6U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  IdScope visibility;
+  Id payloadCount;
+  Id nodeIndex;
+};
+
+struct OpEnqueueNodePayloadsAMDX
+{
+  OpEnqueueNodePayloadsAMDX(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpEnqueueNodePayloadsAMDX(Id payloadArray)
+      : op(Op::EnqueueNodePayloadsAMDX)
       , wordCount(FixedWordSize)
   {
     this->payloadArray = payloadArray;
   }
 
-  static constexpr Op OpCode = Op::FinalizeNodePayloadsAMDX;
+  static constexpr Op OpCode = Op::EnqueueNodePayloadsAMDX;
   static constexpr uint16_t FixedWordSize = 2U;
   Op op;
   uint16_t wordCount;
   Id payloadArray;
+};
+
+struct OpTypeNodePayloadArrayAMDX
+{
+  OpTypeNodePayloadArrayAMDX(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpTypeNodePayloadArrayAMDX(IdResult result, Id payloadType)
+      : op(Op::TypeNodePayloadArrayAMDX)
+      , wordCount(FixedWordSize)
+  {
+    this->result = result;
+    this->payloadType = payloadType;
+  }
+
+  static constexpr Op OpCode = Op::TypeNodePayloadArrayAMDX;
+  static constexpr uint16_t FixedWordSize = 3U;
+  Op op;
+  uint16_t wordCount;
+  IdResult result;
+  Id payloadType;
 };
 
 struct OpFinishWritingNodePayloadAMDX
@@ -14923,30 +15501,122 @@ struct OpFinishWritingNodePayloadAMDX
   Id payload;
 };
 
-struct OpInitializeNodePayloadsAMDX
+struct OpNodePayloadArrayLengthAMDX
 {
-  OpInitializeNodePayloadsAMDX(const ConstIter &it)
+  OpNodePayloadArrayLengthAMDX(const ConstIter &it)
   {
     memcpy(this, it.words(), sizeof(*this));
   }
-  OpInitializeNodePayloadsAMDX(Id payloadArray, IdScope visibility, Id payloadCount, Id nodeIndex)
-      : op(Op::InitializeNodePayloadsAMDX)
+  OpNodePayloadArrayLengthAMDX(IdResultType resultType, IdResult result, Id payloadArray)
+      : op(Op::NodePayloadArrayLengthAMDX)
       , wordCount(FixedWordSize)
   {
+    this->resultType = resultType;
+    this->result = result;
     this->payloadArray = payloadArray;
-    this->visibility = visibility;
-    this->payloadCount = payloadCount;
+  }
+
+  static constexpr Op OpCode = Op::NodePayloadArrayLengthAMDX;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id payloadArray;
+};
+
+struct OpIsNodePayloadValidAMDX
+{
+  OpIsNodePayloadValidAMDX(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpIsNodePayloadValidAMDX(IdResultType resultType, IdResult result, Id payloadType, Id nodeIndex)
+      : op(Op::IsNodePayloadValidAMDX)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->payloadType = payloadType;
     this->nodeIndex = nodeIndex;
   }
 
-  static constexpr Op OpCode = Op::InitializeNodePayloadsAMDX;
+  static constexpr Op OpCode = Op::IsNodePayloadValidAMDX;
   static constexpr uint16_t FixedWordSize = 5U;
   Op op;
   uint16_t wordCount;
-  Id payloadArray;
-  IdScope visibility;
-  Id payloadCount;
+  IdResultType resultType;
+  IdResult result;
+  Id payloadType;
   Id nodeIndex;
+};
+
+struct OpConstantStringAMDX
+{
+  OpConstantStringAMDX(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->result = Id::fromWord(it.word(1));
+    word = 2;
+    this->literalString = DecodeParam<rdcstr>(it, word);
+  }
+  OpConstantStringAMDX(IdResult result, rdcstr literalString)
+      : op(Op::ConstantStringAMDX)
+      , wordCount(MinWordSize + ExtraWordCount(literalString))
+  {
+    this->result = result;
+    this->literalString = literalString;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(result.value());
+    EncodeParam(words, literalString);
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::ConstantStringAMDX;
+  static constexpr uint16_t MinWordSize = 3U;
+  Op op;
+  uint16_t wordCount;
+  IdResult result;
+  rdcstr literalString;
+};
+
+struct OpSpecConstantStringAMDX
+{
+  OpSpecConstantStringAMDX(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->result = Id::fromWord(it.word(1));
+    word = 2;
+    this->literalString = DecodeParam<rdcstr>(it, word);
+  }
+  OpSpecConstantStringAMDX(IdResult result, rdcstr literalString)
+      : op(Op::SpecConstantStringAMDX)
+      , wordCount(MinWordSize + ExtraWordCount(literalString))
+  {
+    this->result = result;
+    this->literalString = literalString;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(result.value());
+    EncodeParam(words, literalString);
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::SpecConstantStringAMDX;
+  static constexpr uint16_t MinWordSize = 3U;
+  Op op;
+  uint16_t wordCount;
+  IdResult result;
+  rdcstr literalString;
 };
 
 struct OpGroupNonUniformQuadAllKHR
@@ -15977,6 +16647,305 @@ struct OpImageSampleFootprintNV
   ImageOperandsAndParamDatas imageOperands;
 };
 
+struct OpTypeCooperativeVectorNV
+{
+  OpTypeCooperativeVectorNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpTypeCooperativeVectorNV(IdResult result, Id componentType, Id componentCount)
+      : op(Op::TypeCooperativeVectorNV)
+      , wordCount(FixedWordSize)
+  {
+    this->result = result;
+    this->componentType = componentType;
+    this->componentCount = componentCount;
+  }
+
+  static constexpr Op OpCode = Op::TypeCooperativeVectorNV;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResult result;
+  Id componentType;
+  Id componentCount;
+};
+
+struct OpCooperativeVectorMatrixMulNV
+{
+  OpCooperativeVectorMatrixMulNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->input = Id::fromWord(it.word(3));
+    this->inputInterpretation = Id::fromWord(it.word(4));
+    this->matrix = Id::fromWord(it.word(5));
+    this->matrixOffset = Id::fromWord(it.word(6));
+    this->matrixInterpretation = Id::fromWord(it.word(7));
+    this->m = Id::fromWord(it.word(8));
+    this->k = Id::fromWord(it.word(9));
+    this->memoryLayout = Id::fromWord(it.word(10));
+    this->transpose = Id::fromWord(it.word(11));
+    this->matrixStride = (it.size() > 12) ? Id::fromWord(it.word(12)) : Id();
+    this->cooperativeMatrixOperands = (it.size() > 13) ? (CooperativeMatrixOperands)it.word(13) : CooperativeMatrixOperands::NoneKHR;
+  }
+  OpCooperativeVectorMatrixMulNV(IdResultType resultType, IdResult result, Id input, Id inputInterpretation, Id matrix, Id matrixOffset, Id matrixInterpretation, Id m, Id k, Id memoryLayout, Id transpose, Id matrixStride = Id(), CooperativeMatrixOperands cooperativeMatrixOperands = CooperativeMatrixOperands::NoneKHR)
+      : op(Op::CooperativeVectorMatrixMulNV)
+      , wordCount(MinWordSize + OptionalWordCount(matrixStride) + OptionalWordCount(cooperativeMatrixOperands))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->input = input;
+    this->inputInterpretation = inputInterpretation;
+    this->matrix = matrix;
+    this->matrixOffset = matrixOffset;
+    this->matrixInterpretation = matrixInterpretation;
+    this->m = m;
+    this->k = k;
+    this->memoryLayout = memoryLayout;
+    this->transpose = transpose;
+    this->matrixStride = matrixStride;
+    this->cooperativeMatrixOperands = cooperativeMatrixOperands;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(input.value());
+    words.push_back(inputInterpretation.value());
+    words.push_back(matrix.value());
+    words.push_back(matrixOffset.value());
+    words.push_back(matrixInterpretation.value());
+    words.push_back(m.value());
+    words.push_back(k.value());
+    words.push_back(memoryLayout.value());
+    words.push_back(transpose.value());
+    if(matrixStride != Id()) words.push_back(matrixStride.value());
+    if(cooperativeMatrixOperands != CooperativeMatrixOperands::NoneKHR) words.push_back((uint32_t)cooperativeMatrixOperands);
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::CooperativeVectorMatrixMulNV;
+  static constexpr uint16_t MinWordSize = 12U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id input;
+  Id inputInterpretation;
+  Id matrix;
+  Id matrixOffset;
+  Id matrixInterpretation;
+  Id m;
+  Id k;
+  Id memoryLayout;
+  Id transpose;
+  Id matrixStride;
+  CooperativeMatrixOperands cooperativeMatrixOperands;
+
+  bool HasMatrixStride() const { return wordCount > 12; }
+  bool HasCooperativeMatrixOperands() const { return wordCount > 13; }
+};
+
+struct OpCooperativeVectorOuterProductAccumulateNV
+{
+  OpCooperativeVectorOuterProductAccumulateNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->pointer = Id::fromWord(it.word(1));
+    this->offset = Id::fromWord(it.word(2));
+    this->a = Id::fromWord(it.word(3));
+    this->b = Id::fromWord(it.word(4));
+    this->memoryLayout = Id::fromWord(it.word(5));
+    this->matrixInterpretation = Id::fromWord(it.word(6));
+    this->matrixStride = (it.size() > 7) ? Id::fromWord(it.word(7)) : Id();
+  }
+  OpCooperativeVectorOuterProductAccumulateNV(Id pointer, Id offset, Id a, Id b, Id memoryLayout, Id matrixInterpretation, Id matrixStride = Id())
+      : op(Op::CooperativeVectorOuterProductAccumulateNV)
+      , wordCount(MinWordSize + OptionalWordCount(matrixStride))
+  {
+    this->pointer = pointer;
+    this->offset = offset;
+    this->a = a;
+    this->b = b;
+    this->memoryLayout = memoryLayout;
+    this->matrixInterpretation = matrixInterpretation;
+    this->matrixStride = matrixStride;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(pointer.value());
+    words.push_back(offset.value());
+    words.push_back(a.value());
+    words.push_back(b.value());
+    words.push_back(memoryLayout.value());
+    words.push_back(matrixInterpretation.value());
+    if(matrixStride != Id()) words.push_back(matrixStride.value());
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::CooperativeVectorOuterProductAccumulateNV;
+  static constexpr uint16_t MinWordSize = 7U;
+  Op op;
+  uint16_t wordCount;
+  Id pointer;
+  Id offset;
+  Id a;
+  Id b;
+  Id memoryLayout;
+  Id matrixInterpretation;
+  Id matrixStride;
+
+  bool HasMatrixStride() const { return wordCount > 7; }
+};
+
+struct OpCooperativeVectorReduceSumAccumulateNV
+{
+  OpCooperativeVectorReduceSumAccumulateNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpCooperativeVectorReduceSumAccumulateNV(Id pointer, Id offset, Id v)
+      : op(Op::CooperativeVectorReduceSumAccumulateNV)
+      , wordCount(FixedWordSize)
+  {
+    this->pointer = pointer;
+    this->offset = offset;
+    this->v = v;
+  }
+
+  static constexpr Op OpCode = Op::CooperativeVectorReduceSumAccumulateNV;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  Id pointer;
+  Id offset;
+  Id v;
+};
+
+struct OpCooperativeVectorMatrixMulAddNV
+{
+  OpCooperativeVectorMatrixMulAddNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->input = Id::fromWord(it.word(3));
+    this->inputInterpretation = Id::fromWord(it.word(4));
+    this->matrix = Id::fromWord(it.word(5));
+    this->matrixOffset = Id::fromWord(it.word(6));
+    this->matrixInterpretation = Id::fromWord(it.word(7));
+    this->bias = Id::fromWord(it.word(8));
+    this->biasOffset = Id::fromWord(it.word(9));
+    this->biasInterpretation = Id::fromWord(it.word(10));
+    this->m = Id::fromWord(it.word(11));
+    this->k = Id::fromWord(it.word(12));
+    this->memoryLayout = Id::fromWord(it.word(13));
+    this->transpose = Id::fromWord(it.word(14));
+    this->matrixStride = (it.size() > 15) ? Id::fromWord(it.word(15)) : Id();
+    this->cooperativeMatrixOperands = (it.size() > 16) ? (CooperativeMatrixOperands)it.word(16) : CooperativeMatrixOperands::NoneKHR;
+  }
+  OpCooperativeVectorMatrixMulAddNV(IdResultType resultType, IdResult result, Id input, Id inputInterpretation, Id matrix, Id matrixOffset, Id matrixInterpretation, Id bias, Id biasOffset, Id biasInterpretation, Id m, Id k, Id memoryLayout, Id transpose, Id matrixStride = Id(), CooperativeMatrixOperands cooperativeMatrixOperands = CooperativeMatrixOperands::NoneKHR)
+      : op(Op::CooperativeVectorMatrixMulAddNV)
+      , wordCount(MinWordSize + OptionalWordCount(matrixStride) + OptionalWordCount(cooperativeMatrixOperands))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->input = input;
+    this->inputInterpretation = inputInterpretation;
+    this->matrix = matrix;
+    this->matrixOffset = matrixOffset;
+    this->matrixInterpretation = matrixInterpretation;
+    this->bias = bias;
+    this->biasOffset = biasOffset;
+    this->biasInterpretation = biasInterpretation;
+    this->m = m;
+    this->k = k;
+    this->memoryLayout = memoryLayout;
+    this->transpose = transpose;
+    this->matrixStride = matrixStride;
+    this->cooperativeMatrixOperands = cooperativeMatrixOperands;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(input.value());
+    words.push_back(inputInterpretation.value());
+    words.push_back(matrix.value());
+    words.push_back(matrixOffset.value());
+    words.push_back(matrixInterpretation.value());
+    words.push_back(bias.value());
+    words.push_back(biasOffset.value());
+    words.push_back(biasInterpretation.value());
+    words.push_back(m.value());
+    words.push_back(k.value());
+    words.push_back(memoryLayout.value());
+    words.push_back(transpose.value());
+    if(matrixStride != Id()) words.push_back(matrixStride.value());
+    if(cooperativeMatrixOperands != CooperativeMatrixOperands::NoneKHR) words.push_back((uint32_t)cooperativeMatrixOperands);
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::CooperativeVectorMatrixMulAddNV;
+  static constexpr uint16_t MinWordSize = 15U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id input;
+  Id inputInterpretation;
+  Id matrix;
+  Id matrixOffset;
+  Id matrixInterpretation;
+  Id bias;
+  Id biasOffset;
+  Id biasInterpretation;
+  Id m;
+  Id k;
+  Id memoryLayout;
+  Id transpose;
+  Id matrixStride;
+  CooperativeMatrixOperands cooperativeMatrixOperands;
+
+  bool HasMatrixStride() const { return wordCount > 15; }
+  bool HasCooperativeMatrixOperands() const { return wordCount > 16; }
+};
+
+struct OpCooperativeMatrixConvertNV
+{
+  OpCooperativeMatrixConvertNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpCooperativeMatrixConvertNV(IdResultType resultType, IdResult result, Id matrix)
+      : op(Op::CooperativeMatrixConvertNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->matrix = matrix;
+  }
+
+  static constexpr Op OpCode = Op::CooperativeMatrixConvertNV;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id matrix;
+};
+
 struct OpEmitMeshTasksEXT
 {
   OpEmitMeshTasksEXT(const ConstIter &it)
@@ -16150,6 +17119,94 @@ struct OpFetchMicroTriangleVertexBarycentricNV
   Id geometryIndex;
   Id primitiveIndex;
   Id barycentric;
+};
+
+struct OpCooperativeVectorLoadNV
+{
+  OpCooperativeVectorLoadNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->pointer = Id::fromWord(it.word(3));
+    this->offset = Id::fromWord(it.word(4));
+    word = 5;
+    this->memoryAccess = DecodeParam<MemoryAccessAndParamDatas>(it, word);
+  }
+  OpCooperativeVectorLoadNV(IdResultType resultType, IdResult result, Id pointer, Id offset, MemoryAccessAndParamDatas memoryAccess = MemoryAccess::None)
+      : op(Op::CooperativeVectorLoadNV)
+      , wordCount(MinWordSize + ExtraWordCount(memoryAccess))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->pointer = pointer;
+    this->offset = offset;
+    this->memoryAccess = memoryAccess;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(pointer.value());
+    words.push_back(offset.value());
+    EncodeParam(words, memoryAccess);
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::CooperativeVectorLoadNV;
+  static constexpr uint16_t MinWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id pointer;
+  Id offset;
+  MemoryAccessAndParamDatas memoryAccess;
+};
+
+struct OpCooperativeVectorStoreNV
+{
+  OpCooperativeVectorStoreNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->pointer = Id::fromWord(it.word(1));
+    this->offset = Id::fromWord(it.word(2));
+    this->object = Id::fromWord(it.word(3));
+    word = 4;
+    this->memoryAccess = DecodeParam<MemoryAccessAndParamDatas>(it, word);
+  }
+  OpCooperativeVectorStoreNV(Id pointer, Id offset, Id object, MemoryAccessAndParamDatas memoryAccess = MemoryAccess::None)
+      : op(Op::CooperativeVectorStoreNV)
+      , wordCount(MinWordSize + ExtraWordCount(memoryAccess))
+  {
+    this->pointer = pointer;
+    this->offset = offset;
+    this->object = object;
+    this->memoryAccess = memoryAccess;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(pointer.value());
+    words.push_back(offset.value());
+    words.push_back(object.value());
+    EncodeParam(words, memoryAccess);
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::CooperativeVectorStoreNV;
+  static constexpr uint16_t MinWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  Id pointer;
+  Id offset;
+  Id object;
+  MemoryAccessAndParamDatas memoryAccess;
 };
 
 struct OpReportIntersectionKHR
@@ -16410,6 +17467,56 @@ struct OpExecuteCallableNV
   Id callableDataId;
 };
 
+struct OpRayQueryGetClusterIdNV
+{
+  OpRayQueryGetClusterIdNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpRayQueryGetClusterIdNV(IdResultType resultType, IdResult result, Id rayQuery, Id intersection)
+      : op(Op::RayQueryGetClusterIdNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->rayQuery = rayQuery;
+    this->intersection = intersection;
+  }
+
+  static constexpr Op OpCode = Op::RayQueryGetClusterIdNV;
+  static constexpr uint16_t FixedWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id rayQuery;
+  Id intersection;
+};
+
+struct OpHitObjectGetClusterIdNV
+{
+  OpHitObjectGetClusterIdNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpHitObjectGetClusterIdNV(IdResultType resultType, IdResult result, Id hitObject)
+      : op(Op::HitObjectGetClusterIdNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->hitObject = hitObject;
+  }
+
+  static constexpr Op OpCode = Op::HitObjectGetClusterIdNV;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id hitObject;
+};
+
 struct OpTypeCooperativeMatrixNV
 {
   OpTypeCooperativeMatrixNV(const ConstIter &it)
@@ -16626,6 +17733,547 @@ struct OpEndInvocationInterlockEXT
   // no operands
 };
 
+struct OpCooperativeMatrixReduceNV
+{
+  OpCooperativeMatrixReduceNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpCooperativeMatrixReduceNV(IdResultType resultType, IdResult result, Id matrix, CooperativeMatrixReduce reduce, Id combineFunc)
+      : op(Op::CooperativeMatrixReduceNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->matrix = matrix;
+    this->reduce = reduce;
+    this->combineFunc = combineFunc;
+  }
+
+  static constexpr Op OpCode = Op::CooperativeMatrixReduceNV;
+  static constexpr uint16_t FixedWordSize = 6U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id matrix;
+  CooperativeMatrixReduce reduce;
+  Id combineFunc;
+};
+
+struct OpCooperativeMatrixLoadTensorNV
+{
+  OpCooperativeMatrixLoadTensorNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->pointer = Id::fromWord(it.word(3));
+    this->object = Id::fromWord(it.word(4));
+    this->tensorLayout = Id::fromWord(it.word(5));
+    word = 6;
+    this->memoryOperand = DecodeParam<MemoryAccessAndParamDatas>(it, word);
+    this->tensorAddressingOperands = DecodeParam<TensorAddressingOperandsAndParamDatas>(it, word);
+  }
+  OpCooperativeMatrixLoadTensorNV(IdResultType resultType, IdResult result, Id pointer, Id object, Id tensorLayout, MemoryAccessAndParamDatas memoryOperand, TensorAddressingOperandsAndParamDatas tensorAddressingOperands)
+      : op(Op::CooperativeMatrixLoadTensorNV)
+      , wordCount(MinWordSize + ExtraWordCount(memoryOperand) + ExtraWordCount(tensorAddressingOperands))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->pointer = pointer;
+    this->object = object;
+    this->tensorLayout = tensorLayout;
+    this->memoryOperand = memoryOperand;
+    this->tensorAddressingOperands = tensorAddressingOperands;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(pointer.value());
+    words.push_back(object.value());
+    words.push_back(tensorLayout.value());
+    EncodeParam(words, memoryOperand);
+    EncodeParam(words, tensorAddressingOperands);
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::CooperativeMatrixLoadTensorNV;
+  static constexpr uint16_t MinWordSize = 8U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id pointer;
+  Id object;
+  Id tensorLayout;
+  MemoryAccessAndParamDatas memoryOperand;
+  TensorAddressingOperandsAndParamDatas tensorAddressingOperands;
+};
+
+struct OpCooperativeMatrixStoreTensorNV
+{
+  OpCooperativeMatrixStoreTensorNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->pointer = Id::fromWord(it.word(1));
+    this->object = Id::fromWord(it.word(2));
+    this->tensorLayout = Id::fromWord(it.word(3));
+    word = 4;
+    this->memoryOperand = DecodeParam<MemoryAccessAndParamDatas>(it, word);
+    this->tensorAddressingOperands = DecodeParam<TensorAddressingOperandsAndParamDatas>(it, word);
+  }
+  OpCooperativeMatrixStoreTensorNV(Id pointer, Id object, Id tensorLayout, MemoryAccessAndParamDatas memoryOperand, TensorAddressingOperandsAndParamDatas tensorAddressingOperands)
+      : op(Op::CooperativeMatrixStoreTensorNV)
+      , wordCount(MinWordSize + ExtraWordCount(memoryOperand) + ExtraWordCount(tensorAddressingOperands))
+  {
+    this->pointer = pointer;
+    this->object = object;
+    this->tensorLayout = tensorLayout;
+    this->memoryOperand = memoryOperand;
+    this->tensorAddressingOperands = tensorAddressingOperands;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(pointer.value());
+    words.push_back(object.value());
+    words.push_back(tensorLayout.value());
+    EncodeParam(words, memoryOperand);
+    EncodeParam(words, tensorAddressingOperands);
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::CooperativeMatrixStoreTensorNV;
+  static constexpr uint16_t MinWordSize = 6U;
+  Op op;
+  uint16_t wordCount;
+  Id pointer;
+  Id object;
+  Id tensorLayout;
+  MemoryAccessAndParamDatas memoryOperand;
+  TensorAddressingOperandsAndParamDatas tensorAddressingOperands;
+};
+
+struct OpCooperativeMatrixPerElementOpNV
+{
+  OpCooperativeMatrixPerElementOpNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->matrix = Id::fromWord(it.word(3));
+    this->func = Id::fromWord(it.word(4));
+    word = 5;
+    this->operands = MultiParam<Id>(it, word);
+  }
+  OpCooperativeMatrixPerElementOpNV(IdResultType resultType, IdResult result, Id matrix, Id func, const rdcarray<Id> &operands = {})
+      : op(Op::CooperativeMatrixPerElementOpNV)
+      , wordCount(MinWordSize + MultiWordCount(operands))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->matrix = matrix;
+    this->func = func;
+    this->operands = operands;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(matrix.value());
+    words.push_back(func.value());
+    for(size_t i=0; i < operands.size(); i++)
+    {
+      words.push_back(operands[i].value());
+    }
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::CooperativeMatrixPerElementOpNV;
+  static constexpr uint16_t MinWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id matrix;
+  Id func;
+  rdcarray<Id> operands;
+};
+
+struct OpTypeTensorLayoutNV
+{
+  OpTypeTensorLayoutNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpTypeTensorLayoutNV(IdResult result, Id dim, Id clampMode)
+      : op(Op::TypeTensorLayoutNV)
+      , wordCount(FixedWordSize)
+  {
+    this->result = result;
+    this->dim = dim;
+    this->clampMode = clampMode;
+  }
+
+  static constexpr Op OpCode = Op::TypeTensorLayoutNV;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResult result;
+  Id dim;
+  Id clampMode;
+};
+
+struct OpTypeTensorViewNV
+{
+  OpTypeTensorViewNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->result = Id::fromWord(it.word(1));
+    this->dim = Id::fromWord(it.word(2));
+    this->hasDimensions = Id::fromWord(it.word(3));
+    word = 4;
+    this->p = MultiParam<Id>(it, word);
+  }
+  OpTypeTensorViewNV(IdResult result, Id dim, Id hasDimensions, const rdcarray<Id> &p = {})
+      : op(Op::TypeTensorViewNV)
+      , wordCount(MinWordSize + MultiWordCount(p))
+  {
+    this->result = result;
+    this->dim = dim;
+    this->hasDimensions = hasDimensions;
+    this->p = p;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(result.value());
+    words.push_back(dim.value());
+    words.push_back(hasDimensions.value());
+    for(size_t i=0; i < p.size(); i++)
+    {
+      words.push_back(p[i].value());
+    }
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::TypeTensorViewNV;
+  static constexpr uint16_t MinWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResult result;
+  Id dim;
+  Id hasDimensions;
+  rdcarray<Id> p;
+};
+
+struct OpCreateTensorLayoutNV
+{
+  OpCreateTensorLayoutNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpCreateTensorLayoutNV(IdResultType resultType, IdResult result)
+      : op(Op::CreateTensorLayoutNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+  }
+
+  static constexpr Op OpCode = Op::CreateTensorLayoutNV;
+  static constexpr uint16_t FixedWordSize = 3U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+};
+
+struct OpTensorLayoutSetDimensionNV
+{
+  OpTensorLayoutSetDimensionNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->tensorLayout = Id::fromWord(it.word(3));
+    word = 4;
+    this->dim = MultiParam<Id>(it, word);
+  }
+  OpTensorLayoutSetDimensionNV(IdResultType resultType, IdResult result, Id tensorLayout, const rdcarray<Id> &dim = {})
+      : op(Op::TensorLayoutSetDimensionNV)
+      , wordCount(MinWordSize + MultiWordCount(dim))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->tensorLayout = tensorLayout;
+    this->dim = dim;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(tensorLayout.value());
+    for(size_t i=0; i < dim.size(); i++)
+    {
+      words.push_back(dim[i].value());
+    }
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::TensorLayoutSetDimensionNV;
+  static constexpr uint16_t MinWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id tensorLayout;
+  rdcarray<Id> dim;
+};
+
+struct OpTensorLayoutSetStrideNV
+{
+  OpTensorLayoutSetStrideNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->tensorLayout = Id::fromWord(it.word(3));
+    word = 4;
+    this->stride = MultiParam<Id>(it, word);
+  }
+  OpTensorLayoutSetStrideNV(IdResultType resultType, IdResult result, Id tensorLayout, const rdcarray<Id> &stride = {})
+      : op(Op::TensorLayoutSetStrideNV)
+      , wordCount(MinWordSize + MultiWordCount(stride))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->tensorLayout = tensorLayout;
+    this->stride = stride;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(tensorLayout.value());
+    for(size_t i=0; i < stride.size(); i++)
+    {
+      words.push_back(stride[i].value());
+    }
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::TensorLayoutSetStrideNV;
+  static constexpr uint16_t MinWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id tensorLayout;
+  rdcarray<Id> stride;
+};
+
+struct OpTensorLayoutSliceNV
+{
+  OpTensorLayoutSliceNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->tensorLayout = Id::fromWord(it.word(3));
+    word = 4;
+    this->operands = MultiParam<Id>(it, word);
+  }
+  OpTensorLayoutSliceNV(IdResultType resultType, IdResult result, Id tensorLayout, const rdcarray<Id> &operands = {})
+      : op(Op::TensorLayoutSliceNV)
+      , wordCount(MinWordSize + MultiWordCount(operands))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->tensorLayout = tensorLayout;
+    this->operands = operands;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(tensorLayout.value());
+    for(size_t i=0; i < operands.size(); i++)
+    {
+      words.push_back(operands[i].value());
+    }
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::TensorLayoutSliceNV;
+  static constexpr uint16_t MinWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id tensorLayout;
+  rdcarray<Id> operands;
+};
+
+struct OpTensorLayoutSetClampValueNV
+{
+  OpTensorLayoutSetClampValueNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpTensorLayoutSetClampValueNV(IdResultType resultType, IdResult result, Id tensorLayout, Id value)
+      : op(Op::TensorLayoutSetClampValueNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->tensorLayout = tensorLayout;
+    this->value = value;
+  }
+
+  static constexpr Op OpCode = Op::TensorLayoutSetClampValueNV;
+  static constexpr uint16_t FixedWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id tensorLayout;
+  Id value;
+};
+
+struct OpCreateTensorViewNV
+{
+  OpCreateTensorViewNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpCreateTensorViewNV(IdResultType resultType, IdResult result)
+      : op(Op::CreateTensorViewNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+  }
+
+  static constexpr Op OpCode = Op::CreateTensorViewNV;
+  static constexpr uint16_t FixedWordSize = 3U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+};
+
+struct OpTensorViewSetDimensionNV
+{
+  OpTensorViewSetDimensionNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->tensorView = Id::fromWord(it.word(3));
+    word = 4;
+    this->dim = MultiParam<Id>(it, word);
+  }
+  OpTensorViewSetDimensionNV(IdResultType resultType, IdResult result, Id tensorView, const rdcarray<Id> &dim = {})
+      : op(Op::TensorViewSetDimensionNV)
+      , wordCount(MinWordSize + MultiWordCount(dim))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->tensorView = tensorView;
+    this->dim = dim;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(tensorView.value());
+    for(size_t i=0; i < dim.size(); i++)
+    {
+      words.push_back(dim[i].value());
+    }
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::TensorViewSetDimensionNV;
+  static constexpr uint16_t MinWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id tensorView;
+  rdcarray<Id> dim;
+};
+
+struct OpTensorViewSetStrideNV
+{
+  OpTensorViewSetStrideNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->tensorView = Id::fromWord(it.word(3));
+    word = 4;
+    this->stride = MultiParam<Id>(it, word);
+  }
+  OpTensorViewSetStrideNV(IdResultType resultType, IdResult result, Id tensorView, const rdcarray<Id> &stride = {})
+      : op(Op::TensorViewSetStrideNV)
+      , wordCount(MinWordSize + MultiWordCount(stride))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->tensorView = tensorView;
+    this->stride = stride;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(tensorView.value());
+    for(size_t i=0; i < stride.size(); i++)
+    {
+      words.push_back(stride[i].value());
+    }
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::TensorViewSetStrideNV;
+  static constexpr uint16_t MinWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id tensorView;
+  rdcarray<Id> stride;
+};
+
 struct OpDemoteToHelperInvocation
 {
   OpDemoteToHelperInvocation(const ConstIter &it)
@@ -16666,6 +18314,107 @@ struct OpIsHelperInvocationEXT
   uint16_t wordCount;
   IdResultType resultType;
   IdResult result;
+};
+
+struct OpTensorViewSetClipNV
+{
+  OpTensorViewSetClipNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpTensorViewSetClipNV(IdResultType resultType, IdResult result, Id tensorView, Id clipRowOffset, Id clipRowSpan, Id clipColOffset, Id clipColSpan)
+      : op(Op::TensorViewSetClipNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->tensorView = tensorView;
+    this->clipRowOffset = clipRowOffset;
+    this->clipRowSpan = clipRowSpan;
+    this->clipColOffset = clipColOffset;
+    this->clipColSpan = clipColSpan;
+  }
+
+  static constexpr Op OpCode = Op::TensorViewSetClipNV;
+  static constexpr uint16_t FixedWordSize = 8U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id tensorView;
+  Id clipRowOffset;
+  Id clipRowSpan;
+  Id clipColOffset;
+  Id clipColSpan;
+};
+
+struct OpTensorLayoutSetBlockSizeNV
+{
+  OpTensorLayoutSetBlockSizeNV(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->tensorLayout = Id::fromWord(it.word(3));
+    word = 4;
+    this->blockSize = MultiParam<Id>(it, word);
+  }
+  OpTensorLayoutSetBlockSizeNV(IdResultType resultType, IdResult result, Id tensorLayout, const rdcarray<Id> &blockSize = {})
+      : op(Op::TensorLayoutSetBlockSizeNV)
+      , wordCount(MinWordSize + MultiWordCount(blockSize))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->tensorLayout = tensorLayout;
+    this->blockSize = blockSize;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(tensorLayout.value());
+    for(size_t i=0; i < blockSize.size(); i++)
+    {
+      words.push_back(blockSize[i].value());
+    }
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::TensorLayoutSetBlockSizeNV;
+  static constexpr uint16_t MinWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id tensorLayout;
+  rdcarray<Id> blockSize;
+};
+
+struct OpCooperativeMatrixTransposeNV
+{
+  OpCooperativeMatrixTransposeNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpCooperativeMatrixTransposeNV(IdResultType resultType, IdResult result, Id matrix)
+      : op(Op::CooperativeMatrixTransposeNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->matrix = matrix;
+  }
+
+  static constexpr Op OpCode = Op::CooperativeMatrixTransposeNV;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id matrix;
 };
 
 struct OpConvertUToImageNV
@@ -16885,6 +18634,332 @@ struct OpRawAccessChainNV
   RawAccessChainOperands rawAccessChainOperands;
 
   bool HasRawAccessChainOperands() const { return wordCount > 7; }
+};
+
+struct OpRayQueryGetIntersectionSpherePositionNV
+{
+  OpRayQueryGetIntersectionSpherePositionNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpRayQueryGetIntersectionSpherePositionNV(IdResultType resultType, IdResult result, Id rayQuery, Id intersection)
+      : op(Op::RayQueryGetIntersectionSpherePositionNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->rayQuery = rayQuery;
+    this->intersection = intersection;
+  }
+
+  static constexpr Op OpCode = Op::RayQueryGetIntersectionSpherePositionNV;
+  static constexpr uint16_t FixedWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id rayQuery;
+  Id intersection;
+};
+
+struct OpRayQueryGetIntersectionSphereRadiusNV
+{
+  OpRayQueryGetIntersectionSphereRadiusNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpRayQueryGetIntersectionSphereRadiusNV(IdResultType resultType, IdResult result, Id rayQuery, Id intersection)
+      : op(Op::RayQueryGetIntersectionSphereRadiusNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->rayQuery = rayQuery;
+    this->intersection = intersection;
+  }
+
+  static constexpr Op OpCode = Op::RayQueryGetIntersectionSphereRadiusNV;
+  static constexpr uint16_t FixedWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id rayQuery;
+  Id intersection;
+};
+
+struct OpRayQueryGetIntersectionLSSPositionsNV
+{
+  OpRayQueryGetIntersectionLSSPositionsNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpRayQueryGetIntersectionLSSPositionsNV(IdResultType resultType, IdResult result, Id rayQuery, Id intersection)
+      : op(Op::RayQueryGetIntersectionLSSPositionsNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->rayQuery = rayQuery;
+    this->intersection = intersection;
+  }
+
+  static constexpr Op OpCode = Op::RayQueryGetIntersectionLSSPositionsNV;
+  static constexpr uint16_t FixedWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id rayQuery;
+  Id intersection;
+};
+
+struct OpRayQueryGetIntersectionLSSRadiiNV
+{
+  OpRayQueryGetIntersectionLSSRadiiNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpRayQueryGetIntersectionLSSRadiiNV(IdResultType resultType, IdResult result, Id rayQuery, Id intersection)
+      : op(Op::RayQueryGetIntersectionLSSRadiiNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->rayQuery = rayQuery;
+    this->intersection = intersection;
+  }
+
+  static constexpr Op OpCode = Op::RayQueryGetIntersectionLSSRadiiNV;
+  static constexpr uint16_t FixedWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id rayQuery;
+  Id intersection;
+};
+
+struct OpRayQueryGetIntersectionLSSHitValueNV
+{
+  OpRayQueryGetIntersectionLSSHitValueNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpRayQueryGetIntersectionLSSHitValueNV(IdResultType resultType, IdResult result, Id rayQuery, Id intersection)
+      : op(Op::RayQueryGetIntersectionLSSHitValueNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->rayQuery = rayQuery;
+    this->intersection = intersection;
+  }
+
+  static constexpr Op OpCode = Op::RayQueryGetIntersectionLSSHitValueNV;
+  static constexpr uint16_t FixedWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id rayQuery;
+  Id intersection;
+};
+
+struct OpHitObjectGetSpherePositionNV
+{
+  OpHitObjectGetSpherePositionNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpHitObjectGetSpherePositionNV(IdResultType resultType, IdResult result, Id hitObject)
+      : op(Op::HitObjectGetSpherePositionNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->hitObject = hitObject;
+  }
+
+  static constexpr Op OpCode = Op::HitObjectGetSpherePositionNV;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id hitObject;
+};
+
+struct OpHitObjectGetSphereRadiusNV
+{
+  OpHitObjectGetSphereRadiusNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpHitObjectGetSphereRadiusNV(IdResultType resultType, IdResult result, Id hitObject)
+      : op(Op::HitObjectGetSphereRadiusNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->hitObject = hitObject;
+  }
+
+  static constexpr Op OpCode = Op::HitObjectGetSphereRadiusNV;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id hitObject;
+};
+
+struct OpHitObjectGetLSSPositionsNV
+{
+  OpHitObjectGetLSSPositionsNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpHitObjectGetLSSPositionsNV(IdResultType resultType, IdResult result, Id hitObject)
+      : op(Op::HitObjectGetLSSPositionsNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->hitObject = hitObject;
+  }
+
+  static constexpr Op OpCode = Op::HitObjectGetLSSPositionsNV;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id hitObject;
+};
+
+struct OpHitObjectGetLSSRadiiNV
+{
+  OpHitObjectGetLSSRadiiNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpHitObjectGetLSSRadiiNV(IdResultType resultType, IdResult result, Id hitObject)
+      : op(Op::HitObjectGetLSSRadiiNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->hitObject = hitObject;
+  }
+
+  static constexpr Op OpCode = Op::HitObjectGetLSSRadiiNV;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id hitObject;
+};
+
+struct OpHitObjectIsSphereHitNV
+{
+  OpHitObjectIsSphereHitNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpHitObjectIsSphereHitNV(IdResultType resultType, IdResult result, Id hitObject)
+      : op(Op::HitObjectIsSphereHitNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->hitObject = hitObject;
+  }
+
+  static constexpr Op OpCode = Op::HitObjectIsSphereHitNV;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id hitObject;
+};
+
+struct OpHitObjectIsLSSHitNV
+{
+  OpHitObjectIsLSSHitNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpHitObjectIsLSSHitNV(IdResultType resultType, IdResult result, Id hitObject)
+      : op(Op::HitObjectIsLSSHitNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->hitObject = hitObject;
+  }
+
+  static constexpr Op OpCode = Op::HitObjectIsLSSHitNV;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id hitObject;
+};
+
+struct OpRayQueryIsSphereHitNV
+{
+  OpRayQueryIsSphereHitNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpRayQueryIsSphereHitNV(IdResultType resultType, IdResult result, Id rayQuery, Id intersection)
+      : op(Op::RayQueryIsSphereHitNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->rayQuery = rayQuery;
+    this->intersection = intersection;
+  }
+
+  static constexpr Op OpCode = Op::RayQueryIsSphereHitNV;
+  static constexpr uint16_t FixedWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id rayQuery;
+  Id intersection;
+};
+
+struct OpRayQueryIsLSSHitNV
+{
+  OpRayQueryIsLSSHitNV(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpRayQueryIsLSSHitNV(IdResultType resultType, IdResult result, Id rayQuery, Id intersection)
+      : op(Op::RayQueryIsLSSHitNV)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->rayQuery = rayQuery;
+    this->intersection = intersection;
+  }
+
+  static constexpr Op OpCode = Op::RayQueryIsLSSHitNV;
+  static constexpr uint16_t FixedWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id rayQuery;
+  Id intersection;
 };
 
 struct OpSubgroupShuffleINTEL
@@ -18518,6 +20593,311 @@ struct OpControlBarrierWaitINTEL
   IdMemorySemantics semantics;
 };
 
+struct OpArithmeticFenceEXT
+{
+  OpArithmeticFenceEXT(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpArithmeticFenceEXT(IdResultType resultType, IdResult result, Id target)
+      : op(Op::ArithmeticFenceEXT)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->target = target;
+  }
+
+  static constexpr Op OpCode = Op::ArithmeticFenceEXT;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id target;
+};
+
+struct OpSubgroupBlockPrefetchINTEL
+{
+  OpSubgroupBlockPrefetchINTEL(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->ptr = Id::fromWord(it.word(1));
+    this->numBytes = Id::fromWord(it.word(2));
+    word = 3;
+    this->memoryAccess = DecodeParam<MemoryAccessAndParamDatas>(it, word);
+  }
+  OpSubgroupBlockPrefetchINTEL(Id ptr, Id numBytes, MemoryAccessAndParamDatas memoryAccess = MemoryAccess::None)
+      : op(Op::SubgroupBlockPrefetchINTEL)
+      , wordCount(MinWordSize + ExtraWordCount(memoryAccess))
+  {
+    this->ptr = ptr;
+    this->numBytes = numBytes;
+    this->memoryAccess = memoryAccess;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(ptr.value());
+    words.push_back(numBytes.value());
+    EncodeParam(words, memoryAccess);
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::SubgroupBlockPrefetchINTEL;
+  static constexpr uint16_t MinWordSize = 3U;
+  Op op;
+  uint16_t wordCount;
+  Id ptr;
+  Id numBytes;
+  MemoryAccessAndParamDatas memoryAccess;
+};
+
+struct OpSubgroup2DBlockLoadINTEL
+{
+  OpSubgroup2DBlockLoadINTEL(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpSubgroup2DBlockLoadINTEL(Id elementSize, Id blockWidth, Id blockHeight, Id blockCount, Id srcBasePointer, Id memoryWidth, Id memoryHeight, Id memoryPitch, Id coordinate, Id dstPointer)
+      : op(Op::Subgroup2DBlockLoadINTEL)
+      , wordCount(FixedWordSize)
+  {
+    this->elementSize = elementSize;
+    this->blockWidth = blockWidth;
+    this->blockHeight = blockHeight;
+    this->blockCount = blockCount;
+    this->srcBasePointer = srcBasePointer;
+    this->memoryWidth = memoryWidth;
+    this->memoryHeight = memoryHeight;
+    this->memoryPitch = memoryPitch;
+    this->coordinate = coordinate;
+    this->dstPointer = dstPointer;
+  }
+
+  static constexpr Op OpCode = Op::Subgroup2DBlockLoadINTEL;
+  static constexpr uint16_t FixedWordSize = 11U;
+  Op op;
+  uint16_t wordCount;
+  Id elementSize;
+  Id blockWidth;
+  Id blockHeight;
+  Id blockCount;
+  Id srcBasePointer;
+  Id memoryWidth;
+  Id memoryHeight;
+  Id memoryPitch;
+  Id coordinate;
+  Id dstPointer;
+};
+
+struct OpSubgroup2DBlockLoadTransformINTEL
+{
+  OpSubgroup2DBlockLoadTransformINTEL(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpSubgroup2DBlockLoadTransformINTEL(Id elementSize, Id blockWidth, Id blockHeight, Id blockCount, Id srcBasePointer, Id memoryWidth, Id memoryHeight, Id memoryPitch, Id coordinate, Id dstPointer)
+      : op(Op::Subgroup2DBlockLoadTransformINTEL)
+      , wordCount(FixedWordSize)
+  {
+    this->elementSize = elementSize;
+    this->blockWidth = blockWidth;
+    this->blockHeight = blockHeight;
+    this->blockCount = blockCount;
+    this->srcBasePointer = srcBasePointer;
+    this->memoryWidth = memoryWidth;
+    this->memoryHeight = memoryHeight;
+    this->memoryPitch = memoryPitch;
+    this->coordinate = coordinate;
+    this->dstPointer = dstPointer;
+  }
+
+  static constexpr Op OpCode = Op::Subgroup2DBlockLoadTransformINTEL;
+  static constexpr uint16_t FixedWordSize = 11U;
+  Op op;
+  uint16_t wordCount;
+  Id elementSize;
+  Id blockWidth;
+  Id blockHeight;
+  Id blockCount;
+  Id srcBasePointer;
+  Id memoryWidth;
+  Id memoryHeight;
+  Id memoryPitch;
+  Id coordinate;
+  Id dstPointer;
+};
+
+struct OpSubgroup2DBlockLoadTransposeINTEL
+{
+  OpSubgroup2DBlockLoadTransposeINTEL(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpSubgroup2DBlockLoadTransposeINTEL(Id elementSize, Id blockWidth, Id blockHeight, Id blockCount, Id srcBasePointer, Id memoryWidth, Id memoryHeight, Id memoryPitch, Id coordinate, Id dstPointer)
+      : op(Op::Subgroup2DBlockLoadTransposeINTEL)
+      , wordCount(FixedWordSize)
+  {
+    this->elementSize = elementSize;
+    this->blockWidth = blockWidth;
+    this->blockHeight = blockHeight;
+    this->blockCount = blockCount;
+    this->srcBasePointer = srcBasePointer;
+    this->memoryWidth = memoryWidth;
+    this->memoryHeight = memoryHeight;
+    this->memoryPitch = memoryPitch;
+    this->coordinate = coordinate;
+    this->dstPointer = dstPointer;
+  }
+
+  static constexpr Op OpCode = Op::Subgroup2DBlockLoadTransposeINTEL;
+  static constexpr uint16_t FixedWordSize = 11U;
+  Op op;
+  uint16_t wordCount;
+  Id elementSize;
+  Id blockWidth;
+  Id blockHeight;
+  Id blockCount;
+  Id srcBasePointer;
+  Id memoryWidth;
+  Id memoryHeight;
+  Id memoryPitch;
+  Id coordinate;
+  Id dstPointer;
+};
+
+struct OpSubgroup2DBlockPrefetchINTEL
+{
+  OpSubgroup2DBlockPrefetchINTEL(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpSubgroup2DBlockPrefetchINTEL(Id elementSize, Id blockWidth, Id blockHeight, Id blockCount, Id srcBasePointer, Id memoryWidth, Id memoryHeight, Id memoryPitch, Id coordinate)
+      : op(Op::Subgroup2DBlockPrefetchINTEL)
+      , wordCount(FixedWordSize)
+  {
+    this->elementSize = elementSize;
+    this->blockWidth = blockWidth;
+    this->blockHeight = blockHeight;
+    this->blockCount = blockCount;
+    this->srcBasePointer = srcBasePointer;
+    this->memoryWidth = memoryWidth;
+    this->memoryHeight = memoryHeight;
+    this->memoryPitch = memoryPitch;
+    this->coordinate = coordinate;
+  }
+
+  static constexpr Op OpCode = Op::Subgroup2DBlockPrefetchINTEL;
+  static constexpr uint16_t FixedWordSize = 10U;
+  Op op;
+  uint16_t wordCount;
+  Id elementSize;
+  Id blockWidth;
+  Id blockHeight;
+  Id blockCount;
+  Id srcBasePointer;
+  Id memoryWidth;
+  Id memoryHeight;
+  Id memoryPitch;
+  Id coordinate;
+};
+
+struct OpSubgroup2DBlockStoreINTEL
+{
+  OpSubgroup2DBlockStoreINTEL(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpSubgroup2DBlockStoreINTEL(Id elementSize, Id blockWidth, Id blockHeight, Id blockCount, Id srcPointer, Id dstBasePointer, Id memoryWidth, Id memoryHeight, Id memoryPitch, Id coordinate)
+      : op(Op::Subgroup2DBlockStoreINTEL)
+      , wordCount(FixedWordSize)
+  {
+    this->elementSize = elementSize;
+    this->blockWidth = blockWidth;
+    this->blockHeight = blockHeight;
+    this->blockCount = blockCount;
+    this->srcPointer = srcPointer;
+    this->dstBasePointer = dstBasePointer;
+    this->memoryWidth = memoryWidth;
+    this->memoryHeight = memoryHeight;
+    this->memoryPitch = memoryPitch;
+    this->coordinate = coordinate;
+  }
+
+  static constexpr Op OpCode = Op::Subgroup2DBlockStoreINTEL;
+  static constexpr uint16_t FixedWordSize = 11U;
+  Op op;
+  uint16_t wordCount;
+  Id elementSize;
+  Id blockWidth;
+  Id blockHeight;
+  Id blockCount;
+  Id srcPointer;
+  Id dstBasePointer;
+  Id memoryWidth;
+  Id memoryHeight;
+  Id memoryPitch;
+  Id coordinate;
+};
+
+struct OpSubgroupMatrixMultiplyAccumulateINTEL
+{
+  OpSubgroupMatrixMultiplyAccumulateINTEL(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->kDim = Id::fromWord(it.word(3));
+    this->matrixA = Id::fromWord(it.word(4));
+    this->matrixB = Id::fromWord(it.word(5));
+    this->matrixC = Id::fromWord(it.word(6));
+    this->matrixMultiplyAccumulateOperands = (it.size() > 7) ? (MatrixMultiplyAccumulateOperands)it.word(7) : MatrixMultiplyAccumulateOperands::None;
+  }
+  OpSubgroupMatrixMultiplyAccumulateINTEL(IdResultType resultType, IdResult result, Id kDim, Id matrixA, Id matrixB, Id matrixC, MatrixMultiplyAccumulateOperands matrixMultiplyAccumulateOperands = MatrixMultiplyAccumulateOperands::None)
+      : op(Op::SubgroupMatrixMultiplyAccumulateINTEL)
+      , wordCount(MinWordSize + OptionalWordCount(matrixMultiplyAccumulateOperands))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->kDim = kDim;
+    this->matrixA = matrixA;
+    this->matrixB = matrixB;
+    this->matrixC = matrixC;
+    this->matrixMultiplyAccumulateOperands = matrixMultiplyAccumulateOperands;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(kDim.value());
+    words.push_back(matrixA.value());
+    words.push_back(matrixB.value());
+    words.push_back(matrixC.value());
+    if(matrixMultiplyAccumulateOperands != MatrixMultiplyAccumulateOperands::None) words.push_back((uint32_t)matrixMultiplyAccumulateOperands);
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::SubgroupMatrixMultiplyAccumulateINTEL;
+  static constexpr uint16_t MinWordSize = 7U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id kDim;
+  Id matrixA;
+  Id matrixB;
+  Id matrixC;
+  MatrixMultiplyAccumulateOperands matrixMultiplyAccumulateOperands;
+
+  bool HasMatrixMultiplyAccumulateOperands() const { return wordCount > 7; }
+};
+
 struct OpGroupIMulKHR
 {
   OpGroupIMulKHR(const ConstIter &it)
@@ -18818,7 +21198,8 @@ rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv:
 rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::LoopControlAndParamDatas &el);template<>
 rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::MemoryAccessAndParamDatas &el);template<>
 rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::ExecutionModeAndParamData &el);template<>
-rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::DecorationAndParamData &el);
+rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::DecorationAndParamData &el);template<>
+rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::TensorAddressingOperandsAndParamDatas &el);
 
 template<typename U>
 inline rdcstr ParamsToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcarray<U> &ids)

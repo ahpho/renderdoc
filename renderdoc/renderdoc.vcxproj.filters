@@ -139,6 +139,12 @@
     <Filter Include="3rdparty\md5">
       <UniqueIdentifier>{fcbf71ce-3767-435c-9aa2-e1327b9016f4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Replay\Common">
+      <UniqueIdentifier>{02773850-117a-47d9-b238-d5d4b96468b3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{d8130624-7075-486d-91fc-b5ab8cd2b811}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="maths\camera.h">
@@ -564,6 +570,15 @@
     <ClInclude Include="core\gpu_address_range_tracker.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="replay\common\var_dispatch_helpers.h">
+      <Filter>Replay\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="common\tex_data.h">
+      <Filter>Common\File Formats</Filter>
+    </ClInclude>
+    <ClInclude Include="shaders\controlflow.h">
+      <Filter>Shaders</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="maths\camera.cpp">
@@ -962,6 +977,15 @@
     <ClCompile Include="core\gpu_address_range_tracker.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="common\jobsystem.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="common\jobsystem_tests.cpp">
+      <Filter>Common</Filter>
+    </ClCompile>
+    <ClCompile Include="shaders\controlflow.cpp">
+      <Filter>Shaders</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="os\win32\comexport.def">
@@ -1125,6 +1149,9 @@
       <Filter>Resources\hlsl</Filter>
     </None>
     <None Include="data\hlsl\raytracing.hlsl">
+      <Filter>Resources\hlsl</Filter>
+    </None>
+    <None Include="data\hlsl\quadswizzle.hlsl">
       <Filter>Resources\hlsl</Filter>
     </None>
   </ItemGroup>

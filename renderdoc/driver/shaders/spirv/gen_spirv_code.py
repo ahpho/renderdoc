@@ -79,7 +79,7 @@ copyright = '''
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -355,7 +355,10 @@ for operand_kind in spirv['operand_kinds']:
 
 '''.format(name = name, values = decl.rstrip()))
 
-        cpp.write('''template <>
+        if stringise.strip() == '':
+            cpp.write(f"template <>\nrdcstr DoStringise(const rdcspv::{name} &el) {{ return \"?\"; }}\n\n")
+        else:
+            cpp.write('''template <>
 rdcstr DoStringise(const rdcspv::{name} &el)
 {{
   BEGIN_ENUM_STRINGISE(rdcspv::{name});
@@ -385,7 +388,10 @@ rdcstr DoStringise(const rdcspv::{name} &el)
         decl = ''
         stringise = ''
         for value in operand_kind['enumerants']:
-            decl += '  {} = {},\n'.format(value['enumerant'], value['value'])
+            value_name = value['enumerant']
+            if value_name[0].isdigit():
+                value_name = '_' + value_name
+            decl += '  {} = {},\n'.format(value_name, value['value'])
 
             if value['value'] in used:
                 continue
@@ -395,7 +401,7 @@ rdcstr DoStringise(const rdcspv::{name} &el)
             if value['enumerant'] == none:
                 stringise += '    STRINGISE_BITFIELD_CLASS_VALUE({});\n\n'.format(none)
             else:
-                stringise += '    STRINGISE_BITFIELD_CLASS_BIT({});\n'.format(value['enumerant'])
+                stringise += '    STRINGISE_BITFIELD_CLASS_BIT({});\n'.format(value_name)
 
         header.write('''enum class {name} : uint32_t
 {{
@@ -408,7 +414,10 @@ BITMASK_OPERATORS({name});
 
 '''.format(name = name, values = decl.rstrip()))
 
-        cpp.write('''template <>
+        if stringise.strip() == '':
+            cpp.write(f"template <>\nrdcstr DoStringise(const rdcspv::{name} &el) {{ return \"?\"; }}\n\n")
+        else:
+            cpp.write('''template <>
 rdcstr DoStringise(const rdcspv::{name} &el)
 {{
   BEGIN_BITFIELD_STRINGISE(rdcspv::{name});
@@ -572,7 +581,10 @@ for operand_kind in spirv['operand_kinds']:
                 param = value['parameters'][0]
                 size += kinds[param['kind']]['size']
                 param_type = kinds[param['kind']]['type']
-                member = "{} {};\n".format(param_type, param_name)
+                if bit_enum:
+                    member = "{} {} = {{}};\n".format(param_type, param_name)
+                else:
+                    member = "{} {};\n".format(param_type, param_name)
 
                 if value_enum:
                     values += '  '
@@ -704,10 +716,11 @@ rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv:
 
         header.write('''struct {name}AndParamData
 {{
-  {name}AndParamData({name} v = {name}::Invalid) : value(v) {{}}
+  {name}AndParamData({name} v = {name}::Invalid) : value(v), _init(0) {{}}
   {name} value;
   union
   {{
+    uint64_t _init;
 {values}
   }};
   

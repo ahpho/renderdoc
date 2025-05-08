@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -146,6 +146,17 @@ uint64_t AllocateTLSSlot();
 void *GetTLSValue(uint64_t slot);
 void SetTLSValue(uint64_t slot, void *value);
 
+struct Semaphore
+{
+  static Semaphore *Create();
+  void Destroy();
+  void Wake(uint32_t numToWake);
+  void WaitForWake();
+protected:
+  Semaphore();
+  ~Semaphore();
+};
+
 // must typedef CriticalSectionTemplate<X> CriticalSection
 
 void SetCurrentThreadName(const rdcstr &name);
@@ -153,6 +164,7 @@ void SetCurrentThreadName(const rdcstr &name);
 typedef uint64_t ThreadHandle;
 ThreadHandle CreateThread(std::function<void()> entryFunc);
 uint64_t GetCurrentID();
+uint32_t NumberOfCores();
 void JoinThread(ThreadHandle handle);
 void DetachThread(ThreadHandle handle);
 void CloseThread(ThreadHandle handle);
@@ -312,6 +324,8 @@ enum FileMode
   OverwriteBinary,
 };
 FILE *fopen(const rdcstr &filename, FileMode mode);
+
+FILE *OpenTransientFileHandle(const rdcstr &filename, FileMode mode);
 
 size_t fread(void *buf, size_t elementSize, size_t count, FILE *f);
 size_t fwrite(const void *buf, size_t elementSize, size_t count, FILE *f);

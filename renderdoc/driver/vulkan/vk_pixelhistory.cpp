@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -249,6 +249,7 @@ struct PixelHistoryShaderCache
         dummybuf.Create(vk, vk->GetDev(), 1024, 1,
                         GPUBuffer::eGPUBufferGPULocal | GPUBuffer::eGPUBufferSSBO |
                             GPUBuffer::eGPUBufferAddressable);
+        dummybuf.Name("PixelHistoryDummy");
       }
       else
       {
@@ -263,7 +264,7 @@ struct PixelHistoryShaderCache
 
   ~PixelHistoryShaderCache()
   {
-    if(dummybuf.device != VK_NULL_HANDLE)
+    if(dummybuf.TotalSize() > 0)
       dummybuf.Destroy();
     for(auto it = m_ShaderReplacements.begin(); it != m_ShaderReplacements.end(); ++it)
     {
@@ -410,7 +411,7 @@ private:
         moduleCreateInfo.codeSize = modSpirv.byteSize();
         VkResult vkr =
             m_pDriver->vkCreateShaderModule(m_pDriver->GetDev(), &moduleCreateInfo, NULL, &module);
-        m_pDriver->CheckVkResult(vkr);
+        CHECK_VKR(m_pDriver, vkr);
       }
 
       return module;
@@ -459,7 +460,7 @@ private:
         shadCreateInfo.codeSize = modSpirv.byteSize();
         VkResult vkr =
             m_pDriver->vkCreateShadersEXT(m_pDriver->GetDev(), 1, &shadCreateInfo, NULL, &shader);
-        m_pDriver->CheckVkResult(vkr);
+        CHECK_VKR(m_pDriver, vkr);
       }
 
       return shader;
@@ -484,7 +485,7 @@ private:
     };
 
     VkResult vkr = m_pDriver->vkCreateShaderModule(m_pDriver->GetDev(), &modinfo, NULL, &mod);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
   }
 
   void PatchOutputLocation(VkShaderEXT &shad, ResourceId shaderId, BuiltinShader shaderType,
@@ -502,7 +503,7 @@ private:
     shadinfo.pName = "main";
 
     VkResult vkr = m_pDriver->vkCreateShadersEXT(m_pDriver->GetDev(), 1, &shadinfo, NULL, &shad);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
   }
 
   void PatchOutputLocationSpirv(rdcarray<uint32_t> &spv, BuiltinShader shaderType,
@@ -535,45 +536,36 @@ private:
       }
 
       // implement workaround for Intel drivers to force shader to have unimportant side-effects
-      if(dummybuf.device != VK_NULL_HANDLE)
+      if(dummybuf.TotalSize() > 0)
       {
         VkBufferDeviceAddressInfo getAddressInfo = {VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
-        getAddressInfo.buffer = dummybuf.buf;
+        getAddressInfo.buffer = dummybuf.UnwrappedBuffer();
 
+        editor.SetBufferStorageMode(BufferStorageMode::KHR_bda32);
+        editor.PrepareAddedBufferAccess();
+
+        VkDevice dev = m_pDriver->GetDev();
         VkDeviceAddress bufferAddress =
-            m_pDriver->vkGetBufferDeviceAddress(m_pDriver->GetDev(), &getAddressInfo);
+            ObjDisp(dev)->GetBufferDeviceAddress(Unwrap(dev), &getAddressInfo);
 
         rdcspv::Id uint32Type = editor.DeclareType(rdcspv::scalar<uint32_t>());
-        rdcspv::Id bufptrtype = editor.DeclareType(
-            rdcspv::Pointer(uint32Type, rdcspv::StorageClass::PhysicalStorageBuffer));
+
+        // we know because we're using KHR_bda that no globals will be added, we can ignore this
+        rdcarray<rdcspv::Id> dummyAddedGlobals;
+        rdcpair<rdcspv::Id, rdcspv::Id> bufVar = editor.AddBufferVariable(
+            dummyAddedGlobals, uint32Type, "_rd_dummyBuf", 0, 0, bufferAddress);
+        RDCASSERT(dummyAddedGlobals.empty());
 
         rdcspv::Id uint1 = editor.AddConstantImmediate<uint32_t>(uint32_t(1));
-
-        editor.AddExtension("SPV_KHR_physical_storage_buffer");
-
-        {
-          // change the memory model to physical storage buffer 64
-          rdcspv::Iter it = editor.Begin(rdcspv::Section::MemoryModel);
-          rdcspv::OpMemoryModel model(it);
-          model.addressingModel = rdcspv::AddressingModel::PhysicalStorageBuffer64;
-          it = model;
-        }
-
-        editor.AddCapability(rdcspv::Capability::PhysicalStorageBufferAddresses);
-
-        rdcspv::Id addressConstantLSB =
-            editor.AddConstantImmediate<uint32_t>(bufferAddress & 0xFFFFFFFF);
-        rdcspv::Id addressConstantMSB =
-            editor.AddConstantImmediate<uint32_t>((bufferAddress >> 32) & 0xFFFFFFFF);
-
-        rdcspv::Id uintPair = editor.DeclareType(rdcspv::Vector(rdcspv::scalar<uint32_t>(), 2));
-
-        rdcspv::Id addressConstant = editor.AddConstant(rdcspv::OpSpecConstantComposite(
-            uintPair, editor.MakeId(), {addressConstantLSB, addressConstantMSB}));
 
         rdcspv::Id scope = editor.AddConstantImmediate<uint32_t>((uint32_t)rdcspv::Scope::Device);
         rdcspv::Id semantics =
             editor.AddConstantImmediate<uint32_t>((uint32_t)rdcspv::MemorySemantics::AcquireRelease);
+
+        rdcspv::OperationList ops;
+
+        rdcspv::Id bufLoaded = editor.LoadBufferVariable(ops, bufVar);
+        ops.add(rdcspv::OpAtomicUMax(uint32Type, editor.MakeId(), bufLoaded, scope, semantics, uint1));
 
         // patch every function to include a BDA write just to be safe
         for(rdcspv::Iter it = editor.Begin(rdcspv::Section::Functions),
@@ -597,13 +589,12 @@ private:
                   it.opcode() == rdcspv::Op::NoLine)
               ++it;
 
-            rdcspv::Id structPtr = editor.AddOperation(
-                it, rdcspv::OpBitcast(bufptrtype, editor.MakeId(), addressConstant));
-            it++;
+            // give the umax a new result each time
+            rdcspv::OpAtomicUMax umax(ops.back().AsIter());
+            umax.result = editor.MakeId();
+            ops.back() = umax;
 
-            editor.AddOperation(it, rdcspv::OpAtomicUMax(uint32Type, editor.MakeId(), structPtr,
-                                                         scope, semantics, uint1));
-            it++;
+            it = editor.AddOperations(it, ops);
           }
         }
       }
@@ -1119,7 +1110,7 @@ protected:
         dyn.color[i].resolveMode = VK_RESOLVE_MODE_NONE;
         dyn.color[i].resolveImageView = VK_NULL_HANDLE;
 
-        if(dyn.color[i].loadOp != VK_ATTACHMENT_LOAD_OP_NONE_KHR)
+        if(dyn.color[i].loadOp != VK_ATTACHMENT_LOAD_OP_NONE)
           dyn.color[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
         if(dyn.color[i].storeOp != VK_ATTACHMENT_STORE_OP_NONE)
           dyn.color[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1213,12 +1204,12 @@ protected:
       descs[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
       descs[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
       descs[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-      if(rpInfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_NONE_KHR)
-        descs[i].loadOp = VK_ATTACHMENT_LOAD_OP_NONE_KHR;
+      if(rpInfo.attachments[i].loadOp == VK_ATTACHMENT_LOAD_OP_NONE)
+        descs[i].loadOp = VK_ATTACHMENT_LOAD_OP_NONE;
       if(rpInfo.attachments[i].storeOp == VK_ATTACHMENT_STORE_OP_NONE)
         descs[i].storeOp = VK_ATTACHMENT_STORE_OP_NONE;
-      if(rpInfo.attachments[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_NONE_KHR)
-        descs[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_NONE_KHR;
+      if(rpInfo.attachments[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_NONE)
+        descs[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_NONE;
       if(rpInfo.attachments[i].stencilStoreOp == VK_ATTACHMENT_STORE_OP_NONE)
         descs[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_NONE;
 
@@ -1337,7 +1328,7 @@ protected:
     VkRenderPass renderpass;
     VkResult vkr =
         m_pDriver->vkCreateRenderPass(m_pDriver->GetDev(), &rpCreateInfo, NULL, &renderpass);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
     m_RpsToDestroy.push_back(renderpass);
 
     pipestate.SetRenderPass(GetResID(renderpass));
@@ -1421,7 +1412,7 @@ protected:
 
     VkFramebuffer framebuffer;
     VkResult vkr = m_pDriver->vkCreateFramebuffer(m_pDriver->GetDev(), &fbCI, NULL, &framebuffer);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
     m_FbsToDestroy.push_back(framebuffer);
 
     NameVulkanObject(
@@ -1471,7 +1462,7 @@ protected:
 
     VkImageView imageView;
     VkResult vkr = m_pDriver->vkCreateImageView(m_pDriver->GetDev(), &viewInfo, NULL, &imageView);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
     m_ImageViewsToDestroy.push_back(imageView);
 
     VkImageView imageView2 = VK_NULL_HANDLE;
@@ -1479,7 +1470,7 @@ protected:
     {
       viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
       vkr = m_pDriver->vkCreateImageView(m_pDriver->GetDev(), &viewInfo, NULL, &imageView2);
-      m_pDriver->CheckVkResult(vkr);
+      CHECK_VKR(m_pDriver, vkr);
       m_ImageViewsToDestroy.push_back(imageView2);
     }
 
@@ -1804,7 +1795,7 @@ struct VulkanOcclusionCallback : public VulkanPixelHistoryCallback
                                              m_OcclusionResults.byteSize(),
                                              m_OcclusionResults.data(), sizeof(uint64_t),
                                              VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
   }
 
   uint64_t GetOcclusionResult(uint32_t eventId)
@@ -1860,7 +1851,7 @@ private:
     VkPipeline pipe;
     VkResult vkr = m_pDriver->vkCreateGraphicsPipelines(m_pDriver->GetDev(), VK_NULL_HANDLE, 1,
                                                         &pipeCreateInfo, NULL, &pipe);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
     m_PipeCache.insert(std::make_pair(pipeline, pipe));
     return pipe;
   }
@@ -2374,7 +2365,7 @@ private:
     VkResult vkr = m_pDriver->vkCreateGraphicsPipelines(m_pDriver->GetDev(), VK_NULL_HANDLE, 1,
                                                         &pipeCreateInfo, NULL,
                                                         &replacements.originalShaderStencil);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     for(uint32_t i = 0; i < pipeCreateInfo.stageCount; i++)
     {
@@ -2389,7 +2380,7 @@ private:
     vkr = m_pDriver->vkCreateGraphicsPipelines(m_pDriver->GetDev(), VK_NULL_HANDLE, 1,
                                                &pipeCreateInfo, NULL,
                                                &replacements.fixedShaderStencil);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     m_PipeCache.insert(std::make_pair(pipeline, replacements));
 
@@ -2506,7 +2497,7 @@ struct TestsFailedCallback : public VulkanPixelHistoryCallback
                                   (uint32_t)m_OcclusionResults.size(), m_OcclusionResults.byteSize(),
                                   m_OcclusionResults.data(), sizeof(m_OcclusionResults[0]),
                                   VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
   }
 
   uint64_t GetOcclusionResult(uint32_t eventId, uint32_t test) const
@@ -2973,7 +2964,7 @@ private:
     VkPipeline pipe;
     VkResult vkr = m_pDriver->vkCreateGraphicsPipelines(m_pDriver->GetDev(), VK_NULL_HANDLE, 1, &ci,
                                                         NULL, &pipe);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
     m_PipeCache.insert(std::make_pair(pipeKey, pipe));
     return GetResID(pipe);
   }
@@ -3153,15 +3144,6 @@ struct VulkanPixelHistoryPerFragmentCallback : VulkanPixelHistoryCallback
       shads = CreatePerFragmentShaders(state, eid, colorOutputIndex);
     }
 
-    for(uint32_t i = 0; i < state.views.size(); i++)
-    {
-      ScissorToPixel(state.views[i], state.scissors[i]);
-
-      state.scissors[i].offset.x &= ~0x1;
-      state.scissors[i].offset.y &= ~0x1;
-      state.scissors[i].extent = {2, 2};
-    }
-
     VkPipeline pipesIter[2];
     pipesIter[0] = pipes.primitiveIdPipe;
     pipesIter[1] = pipes.shaderOutPipe;
@@ -3218,11 +3200,13 @@ struct VulkanPixelHistoryPerFragmentCallback : VulkanPixelHistoryCallback
       for(uint32_t i = 0; i < 2; i++)
       {
         uint32_t storeOffset = (fragsProcessed + f) * sizeof(PerFragmentInfo);
+        bool isPrimitiveIDPipe = i == 0;
 
-        VkMarkerRegion region(cmd, StringFormat::Fmt("Getting %s for %u",
-                                                     i == 0 ? "primitive ID" : "shader output", eid));
+        VkMarkerRegion region(
+            cmd, StringFormat::Fmt("Getting %s for %u",
+                                   isPrimitiveIDPipe ? "primitive ID" : "shader output", eid));
 
-        if(i == 0 && !m_pDriver->GetDeviceEnabledFeatures().geometryShader)
+        if(isPrimitiveIDPipe && !m_pDriver->GetDeviceEnabledFeatures().geometryShader)
         {
           // without geometryShader, can't read primitive ID in pixel shader
           VkMarkerRegion::Set("Can't get primitive ID without geometryShader feature", cmd);
@@ -3303,7 +3287,7 @@ struct VulkanPixelHistoryPerFragmentCallback : VulkanPixelHistoryCallback
           state.shaderObjects[(uint32_t)ShaderStage::Fragment] = shadsIter[i];
 
           // set dynamic state
-          if(i == 0)
+          if(isPrimitiveIDPipe)
           {
             // first pass - fragment shader which outputs primitive ID
             state.depthTestEnable = false;
@@ -3315,6 +3299,13 @@ struct VulkanPixelHistoryPerFragmentCallback : VulkanPixelHistoryCallback
             state.depthTestEnable = prevState.depthTestEnable;
             state.depthWriteEnable = true;
           }
+        }
+
+        // The primitive ID shader always writes to location 0, so make sure that's not remapped
+        // with VK_KHR_dynamic_rendering_local_read.
+        if(isPrimitiveIDPipe && prevState.dynamicRendering.localRead.AreLocationsNonDefault())
+        {
+          state.dynamicRendering.localRead = {};
         }
 
         m_pDriver->GetCmdRenderState().BeginRenderPassAndApplyState(
@@ -3329,7 +3320,10 @@ struct VulkanPixelHistoryPerFragmentCallback : VulkanPixelHistoryCallback
         m_pDriver->ReplayDraw(cmd, *action);
         state.EndRenderPass(cmd);
 
-        if(i == 1)
+        // Restore location mapping for the other pipelines.
+        state.dynamicRendering.localRead = prevState.dynamicRendering.localRead;
+
+        if(!isPrimitiveIDPipe)
         {
           storeOffset += offsetof(struct PerFragmentInfo, shaderOut);
           if(depthEnabled)
@@ -3590,7 +3584,7 @@ struct VulkanPixelHistoryPerFragmentCallback : VulkanPixelHistoryCallback
     Pipelines pipes = {};
     VkResult vkr = m_pDriver->vkCreateGraphicsPipelines(m_pDriver->GetDev(), VK_NULL_HANDLE, 1,
                                                         &pipeCreateInfo, NULL, &pipes.postModPipe);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
     m_PipesToDestroy.push_back(pipes.postModPipe);
 
     pipeCreateInfo.renderPass = rp;
@@ -3642,7 +3636,7 @@ struct VulkanPixelHistoryPerFragmentCallback : VulkanPixelHistoryCallback
 
     vkr = m_pDriver->vkCreateGraphicsPipelines(m_pDriver->GetDev(), VK_NULL_HANDLE, 1,
                                                &pipeCreateInfo, NULL, &pipes.shaderOutPipe);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     m_PipesToDestroy.push_back(pipes.shaderOutPipe);
 
@@ -3655,51 +3649,58 @@ struct VulkanPixelHistoryPerFragmentCallback : VulkanPixelHistoryCallback
 
     ApplyDynamicStates(pipeCreateInfo);
 
-    // Output the primitive ID.
-    VkPipelineShaderStageCreateInfo stageCI = {};
-    stageCI.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stageCI.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    stageCI.module = m_ShaderCache->GetPrimitiveIdShader(colorOutputIndex);
-    stageCI.pName = "main";
-    bool gsFound = false;
-    bool meshFound = false;
-    bool fsFound = false;
-    for(uint32_t i = 0; i < pipeCreateInfo.stageCount; i++)
+    // Output the primitive ID, which requires geometryShader support
+    if(m_pDriver->GetDeviceEnabledFeatures().geometryShader)
     {
-      if(stages[i].stage == VK_SHADER_STAGE_GEOMETRY_BIT)
+      VkPipelineShaderStageCreateInfo stageCI = {};
+      stageCI.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+      stageCI.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+      stageCI.module = m_ShaderCache->GetPrimitiveIdShader(colorOutputIndex);
+      stageCI.pName = "main";
+      bool gsFound = false;
+      bool meshFound = false;
+      bool fsFound = false;
+      for(uint32_t i = 0; i < pipeCreateInfo.stageCount; i++)
       {
-        gsFound = true;
-        break;
+        if(stages[i].stage == VK_SHADER_STAGE_GEOMETRY_BIT)
+        {
+          gsFound = true;
+          break;
+        }
+        if(stages[i].stage == VK_SHADER_STAGE_MESH_BIT_EXT)
+        {
+          meshFound = true;
+          break;
+        }
+        if(stages[i].stage == VK_SHADER_STAGE_FRAGMENT_BIT)
+        {
+          stages[i] = stageCI;
+          fsFound = true;
+        }
       }
-      if(stages[i].stage == VK_SHADER_STAGE_MESH_BIT_EXT)
+      if(!fsFound)
       {
-        meshFound = true;
-        break;
+        stages.push_back(stageCI);
+        pipeCreateInfo.stageCount = (uint32_t)stages.size();
+        pipeCreateInfo.pStages = stages.data();
       }
-      if(stages[i].stage == VK_SHADER_STAGE_FRAGMENT_BIT)
-      {
-        stages[i] = stageCI;
-        fsFound = true;
-      }
-    }
-    if(!fsFound)
-    {
-      stages.push_back(stageCI);
-      pipeCreateInfo.stageCount = (uint32_t)stages.size();
-      pipeCreateInfo.pStages = stages.data();
-    }
 
-    if(!gsFound && !meshFound)
-    {
-      vkr = m_pDriver->vkCreateGraphicsPipelines(m_pDriver->GetDev(), VK_NULL_HANDLE, 1,
-                                                 &pipeCreateInfo, NULL, &pipes.primitiveIdPipe);
-      m_pDriver->CheckVkResult(vkr);
-      m_PipesToDestroy.push_back(pipes.primitiveIdPipe);
+      if(!gsFound && !meshFound)
+      {
+        vkr = m_pDriver->vkCreateGraphicsPipelines(m_pDriver->GetDev(), VK_NULL_HANDLE, 1,
+                                                   &pipeCreateInfo, NULL, &pipes.primitiveIdPipe);
+        CHECK_VKR(m_pDriver, vkr);
+        m_PipesToDestroy.push_back(pipes.primitiveIdPipe);
+      }
+      else
+      {
+        pipes.primitiveIdPipe = VK_NULL_HANDLE;
+        RDCWARN("Can't get primitive ID at event %u due to geometry shader usage", eid);
+      }
     }
     else
     {
       pipes.primitiveIdPipe = VK_NULL_HANDLE;
-      RDCWARN("Can't get primitive ID at event %u due to geometry shader usage", eid);
     }
 
     return pipes;
@@ -3886,7 +3887,7 @@ struct VulkanPixelHistoryDiscardedFragmentsCallback : VulkanPixelHistoryCallback
     VkPipeline newPipe;
     VkResult vkr = m_pDriver->vkCreateGraphicsPipelines(m_pDriver->GetDev(), VK_NULL_HANDLE, 1,
                                                         &pipeCreateInfo, NULL, &newPipe);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
     m_PipesToDestroy.push_back(newPipe);
     return newPipe;
   }
@@ -3900,7 +3901,7 @@ struct VulkanPixelHistoryDiscardedFragmentsCallback : VulkanPixelHistoryCallback
                                              m_OcclusionResults.byteSize(),
                                              m_OcclusionResults.data(), sizeof(uint64_t),
                                              VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-    m_pDriver->CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
   }
 
   bool PrimitiveDiscarded(uint32_t eid, uint32_t primId)
@@ -3994,7 +3995,7 @@ bool VulkanDebugManager::PixelHistorySetupResources(PixelHistoryResources &resou
     imgInfo.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
 
   vkr = m_pDriver->vkCreateImage(dev, &imgInfo, NULL, &colorImage);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   ImageState colorImageState = ImageState(colorImage, ImageInfo(imgInfo), eFrameRef_None);
 
@@ -4007,7 +4008,7 @@ bool VulkanDebugManager::PixelHistorySetupResources(PixelHistoryResources &resou
                   VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
   vkr = m_pDriver->vkCreateImage(dev, &imgInfo, NULL, &dsImage);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   ImageState stencilImageState = ImageState(dsImage, ImageInfo(imgInfo), eFrameRef_None);
 
@@ -4023,16 +4024,16 @@ bool VulkanDebugManager::PixelHistorySetupResources(PixelHistoryResources &resou
       m_pDriver->GetGPULocalMemoryIndex(colorImageMrq.memoryTypeBits),
   };
   vkr = m_pDriver->vkAllocateMemory(m_Device, &allocInfo, NULL, &gpuMem);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   if(vkr != VK_SUCCESS)
     return false;
 
   vkr = m_pDriver->vkBindImageMemory(m_Device, colorImage, gpuMem, 0);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   vkr = m_pDriver->vkBindImageMemory(m_Device, dsImage, gpuMem, offset);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   NameVulkanObject(colorImage, "Pixel History color image");
   NameVulkanObject(dsImage, "Pixel History depth image");
@@ -4047,7 +4048,7 @@ bool VulkanDebugManager::PixelHistorySetupResources(PixelHistoryResources &resou
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
 
   vkr = m_pDriver->vkCreateImageView(m_Device, &viewInfo, NULL, &colorImageView);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   viewInfo.image = dsImage;
   viewInfo.format = dsFormat;
@@ -4055,14 +4056,14 @@ bool VulkanDebugManager::PixelHistorySetupResources(PixelHistoryResources &resou
                                imgInfo.arrayLayers};
 
   vkr = m_pDriver->vkCreateImageView(m_Device, &viewInfo, NULL, &dsImageView);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   VkBufferCreateInfo bufferInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
   bufferInfo.size = AlignUp((uint32_t)(numEvents * sizeof(EventInfo)), 4096U);
   bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 
   vkr = m_pDriver->vkCreateBuffer(m_Device, &bufferInfo, NULL, &dstBuffer);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   // Allocate memory
   VkMemoryRequirements mrq = {};
@@ -4070,13 +4071,13 @@ bool VulkanDebugManager::PixelHistorySetupResources(PixelHistoryResources &resou
   allocInfo.allocationSize = mrq.size;
   allocInfo.memoryTypeIndex = m_pDriver->GetReadbackMemoryIndex(mrq.memoryTypeBits);
   vkr = m_pDriver->vkAllocateMemory(m_Device, &allocInfo, NULL, &bufferMemory);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   if(vkr != VK_SUCCESS)
     return false;
 
   vkr = m_pDriver->vkBindBufferMemory(m_Device, dstBuffer, bufferMemory, 0);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   VkCommandBuffer cmd = m_pDriver->GetNextCmd();
   VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
@@ -4086,7 +4087,7 @@ bool VulkanDebugManager::PixelHistorySetupResources(PixelHistoryResources &resou
     return false;
 
   vkr = ObjDisp(dev)->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
   ObjDisp(cmd)->CmdFillBuffer(Unwrap(cmd), Unwrap(dstBuffer), 0, VK_WHOLE_SIZE, 0);
   colorImageState.InlineTransition(
       cmd, m_pDriver->m_QueueFamilyIdx, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0,
@@ -4096,7 +4097,7 @@ bool VulkanDebugManager::PixelHistorySetupResources(PixelHistoryResources &resou
       VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, m_pDriver->GetImageTransitionInfo());
 
   vkr = ObjDisp(dev)->EndCommandBuffer(Unwrap(cmd));
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
   m_pDriver->SubmitCmds();
   m_pDriver->FlushQ();
 
@@ -4145,7 +4146,7 @@ bool VulkanDebugManager::PixelHistorySetupPerFragResources(PixelHistoryResources
   bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 
   VkResult vkr = m_pDriver->vkCreateBuffer(m_Device, &bufferInfo, NULL, &resources.dstBuffer);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   // Allocate memory
   VkMemoryRequirements mrq = {};
@@ -4157,13 +4158,13 @@ bool VulkanDebugManager::PixelHistorySetupPerFragResources(PixelHistoryResources
       m_pDriver->GetReadbackMemoryIndex(mrq.memoryTypeBits),
   };
   vkr = m_pDriver->vkAllocateMemory(m_Device, &allocInfo, NULL, &resources.bufferMemory);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   if(vkr != VK_SUCCESS)
     return false;
 
   vkr = m_pDriver->vkBindBufferMemory(m_Device, resources.dstBuffer, resources.bufferMemory, 0);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   VkCommandBuffer cmd = m_pDriver->GetNextCmd();
   VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
@@ -4173,11 +4174,11 @@ bool VulkanDebugManager::PixelHistorySetupPerFragResources(PixelHistoryResources
     return false;
 
   vkr = ObjDisp(dev)->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
   ObjDisp(cmd)->CmdFillBuffer(Unwrap(cmd), Unwrap(resources.dstBuffer), 0, VK_WHOLE_SIZE, 0);
 
   vkr = ObjDisp(dev)->EndCommandBuffer(Unwrap(cmd));
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
   m_pDriver->SubmitCmds();
   m_pDriver->FlushQ();
 
@@ -4279,7 +4280,7 @@ static void CreateOcclusionPool(WrappedVulkan *vk, uint32_t poolSize, VkQueryPoo
   // TODO: check that occlusion feature is available
   VkResult vkr =
       ObjDisp(dev)->CreateQueryPool(Unwrap(dev), &occlusionPoolCreateInfo, NULL, pQueryPool);
-  vk->CheckVkResult(vkr);
+  CHECK_VKR(vk, vkr);
   VkCommandBuffer cmd = vk->GetNextCmd();
   VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
                                         VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
@@ -4288,10 +4289,10 @@ static void CreateOcclusionPool(WrappedVulkan *vk, uint32_t poolSize, VkQueryPoo
     return;
 
   vkr = ObjDisp(dev)->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-  vk->CheckVkResult(vkr);
+  CHECK_VKR(vk, vkr);
   ObjDisp(dev)->CmdResetQueryPool(Unwrap(cmd), *pQueryPool, 0, poolSize);
   vkr = ObjDisp(dev)->EndCommandBuffer(Unwrap(cmd));
-  vk->CheckVkResult(vkr);
+  CHECK_VKR(vk, vkr);
   vk->SubmitCmds();
   vk->FlushQ();
 }
@@ -4609,13 +4610,13 @@ rdcarray<PixelModification> VulkanReplay::PixelHistory(rdcarray<EventUsage> even
   EventInfo *eventsInfo;
   VkResult vkr =
       m_pDriver->vkMapMemory(dev, resources.bufferMemory, 0, VK_WHOLE_SIZE, 0, (void **)&eventsInfo);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
   if(vkr != VK_SUCCESS)
     return history;
   if(!eventsInfo)
   {
     RDCERR("Manually reporting failed memory map");
-    CheckVkResult(VK_ERROR_MEMORY_MAP_FAILED);
+    CHECK_VKR(m_pDriver, VK_ERROR_MEMORY_MAP_FAILED);
     return history;
   }
 
@@ -4627,7 +4628,8 @@ rdcarray<PixelModification> VulkanReplay::PixelHistory(rdcarray<EventUsage> even
   {
     PixelModification &mod = history[h];
 
-    int32_t eventIndex = cb.GetEventIndex(mod.eventId);
+    uint32_t eid = mod.eventId;
+    int32_t eventIndex = cb.GetEventIndex(eid);
     if(eventIndex == -1)
     {
       // There is no information, skip the event.
@@ -4685,7 +4687,7 @@ rdcarray<PixelModification> VulkanReplay::PixelHistory(rdcarray<EventUsage> even
     RDCDEBUG(
         "PixelHistory event id: %u, fixed shader stencilValue = %u, original shader stencilValue = "
         "%u",
-        mod.eventId, ei.dsWithoutShaderDiscard[4], ei.dsWithShaderDiscard[4]);
+        eid, ei.dsWithoutShaderDiscard[4], ei.dsWithShaderDiscard[4]);
   }
   m_pDriver->vkUnmapMemory(dev, resources.bufferMemory);
 
@@ -4715,13 +4717,13 @@ rdcarray<PixelModification> VulkanReplay::PixelHistory(rdcarray<EventUsage> even
 
     PerFragmentInfo *bp = NULL;
     vkr = m_pDriver->vkMapMemory(dev, resources.bufferMemory, 0, VK_WHOLE_SIZE, 0, (void **)&bp);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
     if(vkr != VK_SUCCESS)
       return history;
     if(!bp)
     {
       RDCERR("Manually reporting failed memory map");
-      CheckVkResult(VK_ERROR_MEMORY_MAP_FAILED);
+      CHECK_VKR(m_pDriver, VK_ERROR_MEMORY_MAP_FAILED);
       return history;
     }
 

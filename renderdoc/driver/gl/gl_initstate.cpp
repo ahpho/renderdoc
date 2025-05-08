@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1920,7 +1920,7 @@ void GLResourceManager::Create_InitialState(ResourceId id, GLResource live, bool
   }
 }
 
-void GLResourceManager::Apply_InitialState(GLResource live, const GLInitialContents &initial)
+void GLResourceManager::Apply_InitialState(GLResource live, GLInitialContents &initial)
 {
   if(live.Namespace == eResBuffer)
   {

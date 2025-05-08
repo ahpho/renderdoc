@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,9 +32,11 @@
 #include "amd_isa_devices.h"
 
 #if ENABLED(RDOC_X64)
-#define DLL_NAME "atidxx64.dll"
+#define OLD_DLL_NAME "atidxx64.dll"
+#define NEW_DLL_NAME "amdxx64.dll"
 #else
-#define DLL_NAME "atidxx32.dll"
+#define OLD_DLL_NAME "atidxx32.dll"
+#define NEW_DLL_NAME "amdxx32.dll"
 #endif
 
 namespace GCNISA
@@ -43,12 +45,23 @@ extern rdcstr pluginPath;
 
 static HMODULE GetAMDModule()
 {
+  HMODULE module = NULL;
+
   // first try in the plugin locations
-  HMODULE module = LoadLibraryA(LocatePluginFile(GCNISA::pluginPath, DLL_NAME).c_str());
+  if(module == NULL)
+    module = LoadLibraryA(LocatePluginFile(GCNISA::pluginPath, NEW_DLL_NAME).c_str());
 
   // if that failed then try checking for it just in the default search path
   if(module == NULL)
-    module = LoadLibraryA(DLL_NAME);
+    module = LoadLibraryA(NEW_DLL_NAME);
+
+  // next try old dll name in the plugin locations
+  if(module == NULL)
+    module = LoadLibraryA(LocatePluginFile(GCNISA::pluginPath, OLD_DLL_NAME).c_str());
+
+  // if that failed then try checking for it just in the default search path
+  if(module == NULL)
+    module = LoadLibraryA(OLD_DLL_NAME);
 
   return module;
 }
@@ -160,9 +173,10 @@ rdcstr DisassembleDXBC(const bytebuf &shaderBytes, const rdcstr &target)
   HMODULE mod = GetAMDModule();
 
   if(mod == NULL)
-    return "; Error loading " DLL_NAME R"(.
+    return "; Error loading " NEW_DLL_NAME R"(.
 
-; Currently )" DLL_NAME R"( from AMD's driver package is required for GCN disassembly and it cannot be
+; Currently )" NEW_DLL_NAME
+           R"( from AMD's driver package is required for GCN disassembly and it cannot be
 ; distributed with RenderDoc.
 
 ; To see instructions on how to download and configure it on your system, go to:
@@ -201,8 +215,8 @@ rdcstr DisassembleDXBC(const bytebuf &shaderBytes, const rdcstr &target)
   bool amdil = false;
   if(target == "AMDIL")
   {
-    in.chipFamily = asicInfo[legacyAsicCount].chipFamily;
-    in.chipRevision = asicInfo[legacyAsicCount].chipRevision;
+    in.chipFamily = asicInfo[AMDILIndex].chipFamily;
+    in.chipRevision = asicInfo[AMDILIndex].chipRevision;
     amdil = true;
   }
 

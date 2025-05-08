@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,8 +27,10 @@
 #include <algorithm>
 #include "common/formatting.h"
 #include "maths/half_convert.h"
+#include "strings/string_utils.h"
 #include "dxil_bytecode.h"
 #include "dxil_common.h"
+#include "dxil_debuginfo.h"
 
 #if ENABLED(DXC_COMPATIBLE_DISASM) && ENABLED(RDOC_RELEASE)
 
@@ -80,7 +82,7 @@ bool isUndef(const Value *v)
 }
 
 // Detect the DXC output which uses a load from global variable called "dx.nothing.*" instead of a Nop
-bool DXIL::IsDXCNop(const Instruction &inst)
+bool IsDXCNop(const Instruction &inst)
 {
   if(inst.op != Operation::Load)
     return false;
@@ -100,23 +102,71 @@ bool DXIL::IsDXCNop(const Instruction &inst)
   return false;
 }
 
-bool DXIL::IsLLVMDebugCall(const Instruction &inst)
+bool IsLLVMDebugCall(const Instruction &inst)
 {
   return ((inst.op == Operation::Call) && (inst.getFuncCall()->family == FunctionFamily::LLVMDbg));
 }
 
-// true if the Value is an SSA value i.e. from an instruction, not a constant etc.
-bool DXIL::IsSSA(const Value *dxilValue)
+bool IsLLVMIntrinsicCall(const Instruction &inst)
+{
+  return ((inst.op == Operation::Call) &&
+          (inst.getFuncCall()->family == FunctionFamily::LLVMInstrinsic));
+}
+
+bool ShouldIgnoreSourceMapping(const Instruction &inst)
+{
+  if(inst.op == Operation::Call)
+  {
+    rdcstr funcCallName = inst.getFuncCall()->name;
+    // Do not set source mapping for handle creation instructions
+    if(funcCallName.beginsWith("dx.op."))
+    {
+      DXOp dxOpCode = DXOp::NumOpCodes;
+      RDCASSERT(getival<DXOp>(inst.args[0], dxOpCode));
+      RDCASSERT(dxOpCode < DXOp::NumOpCodes, dxOpCode, DXOp::NumOpCodes);
+      switch(dxOpCode)
+      {
+        case DXOp::CreateHandle:
+        case DXOp::CreateHandleFromBinding:
+        case DXOp::CreateHandleFromHeap:
+        case DXOp::AnnotateHandle: return true;
+        default: break;
+      }
+    }
+    else if(funcCallName.beginsWith("llvm."))
+    {
+      // Do not set source mapping for LLVM debug instructions
+      if(funcCallName.beginsWith("llvm.dbg."))
+      {
+        return true;
+      }
+      // Do not set source mapping for LLVM lifetime instructions
+      else if(funcCallName.beginsWith("llvm.lifetime."))
+      {
+        return true;
+      }
+      // Do not set source mapping for LLVM invariant instructions
+      else if(funcCallName.beginsWith("llvm.invariant"))
+      {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// true if the Value has an SSA value i.e. from an instruction, global variable,  a constant etc.
+bool IsSSA(const Value *dxilValue)
 {
   if(const Instruction *inst = cast<Instruction>(dxilValue))
     return true;
+  if(const GlobalVar *gv = cast<GlobalVar>(dxilValue))
+    return true;
   if(const Constant *c = cast<Constant>(dxilValue))
-    return false;
+    return true;
   if(const Literal *lit = cast<Literal>(dxilValue))
     return false;
   if(const Block *block = cast<Block>(dxilValue))
-    return false;
-  if(const GlobalVar *gv = cast<GlobalVar>(dxilValue))
     return false;
   if(const Function *func = cast<Function>(dxilValue))
     return false;
@@ -125,6 +175,54 @@ bool DXIL::IsSSA(const Value *dxilValue)
 
   RDCERR("Unknown DXIL::Value type");
   return false;
+}
+
+DXILDebug::Id GetSSAId(const DXIL::Value *value)
+{
+  if(const Instruction *inst = cast<Instruction>(value))
+    return inst->slot;
+  if(const GlobalVar *gv = cast<GlobalVar>(value))
+    return gv->ssaId;
+  if(const Constant *c = cast<Constant>(value))
+    return c->ssaId;
+
+  return DXILDebug::INVALID_ID;
+}
+
+bool FindSigParameter(const rdcarray<SigParameter> &inputSig,
+                      const EntryPointInterface::Signature &dxilParam, SigParameter &sigParam)
+{
+  for(const SigParameter &param : inputSig)
+  {
+    int row = param.regIndex;
+    if((dxilParam.startRow <= row) && (row < (int)(dxilParam.startRow + dxilParam.rows)))
+    {
+      const int firstElem = param.regChannelMask & 0x1   ? 0
+                            : param.regChannelMask & 0x2 ? 1
+                            : param.regChannelMask & 0x4 ? 2
+                            : param.regChannelMask & 0x8 ? 3
+                                                         : -1;
+      if(dxilParam.startCol == firstElem)
+      {
+        if(param.semanticName == dxilParam.name)
+        {
+          sigParam = param;
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+// Replace '.' -> '_'
+void SanitiseName(rdcstr &name)
+{
+  for(size_t c = 0; c < name.size(); ++c)
+  {
+    if(name[c] == '.')
+      name[c] = '_';
+  }
 }
 
 static const char *shaderNames[] = {
@@ -1001,7 +1099,29 @@ static rdcstr GetResourceTypeName(const Type *type)
   {
     rdcstr compType = "int";
     if(resType->scalarType == Type::Float)
-      compType = resType->bitWidth > 32 ? "double" : "float";
+    {
+      if(resType->bitWidth == 64)
+        compType = "double";
+      else if(resType->bitWidth == 32)
+        compType = "float";
+      else if(resType->bitWidth == 16)
+        compType = "half";
+      else
+        compType = "UNKNOWN FLOAT BITSIZE";
+    }
+    else if(resType->scalarType == Type::Int)
+    {
+      if(resType->bitWidth == 64)
+        compType = "long";
+      else if(resType->bitWidth == 32)
+        compType = "int";
+      else if(resType->bitWidth == 16)
+        compType = "short";
+      else if(resType->bitWidth == 8)
+        compType = "int8";
+      else
+        compType = "UNKNOWN INT BITSIZE";
+    }
 
     if(compCount > 1)
       compType += ToStr(compCount);
@@ -1038,6 +1158,23 @@ void Program::Parse(const DXBC::Reflection *reflection)
   m_SsaAliases.clear();
   ParseReferences(reflection);
 
+  if(m_Type == DXBC::ShaderType::Compute || m_Type == DXBC::ShaderType::Amplification ||
+     m_Type == DXBC::ShaderType::Mesh)
+  {
+    for(GlobalVar *g : m_GlobalVars)
+    {
+      RDCASSERT(g->type->type == Type::Pointer);
+      if(g->type->type == Type::Pointer && g->type->addrSpace == Type::PointerAddrSpace::GroupShared)
+        m_Threadscope |= DXBC::ThreadScope::Workgroup;
+    }
+
+    for(Function *f : m_Functions)
+    {
+      if(f->name == "dx.op.barrier")
+        m_Threadscope |= DXBC::ThreadScope::Workgroup;
+    }
+  }
+
   m_Parsed = true;
 }
 
@@ -1060,6 +1197,30 @@ void Program::SettleIDs()
         AssignMetaSlot(m_MetaSlots, m_NextMetaSlot, m.children[c]);
     }
   }
+  // assign SSA ID for global variables
+  for(GlobalVar *g : m_GlobalVars)
+  {
+    if(g->ssaId == ~0U)
+      g->ssaId = m_NextSSAId++;
+  }
+
+  // assign SSA ID for constants
+  for(size_t i = 0; i < m_Functions.size(); i++)
+  {
+    Function &func = *m_Functions[i];
+    for(Instruction *inst : func.instructions)
+    {
+      for(const Value *arg : inst->args)
+      {
+        if(arg && arg->kind() == Constant::Kind)
+        {
+          Constant *c = (Constant *)arg;
+          if(c->ssaId == ~0U)
+            c->ssaId = m_NextSSAId++;
+        }
+      }
+    }
+  }
   rdcarray<Metadata *> &metaSlots = m_MetaSlots;
   uint32_t &nextMetaSlot = m_NextMetaSlot;
   for(size_t i = 0; i < m_Functions.size(); i++)
@@ -1070,19 +1231,19 @@ void Program::SettleIDs()
 #endif
     size_t curBlock = 0;
     Function &func = *m_Functions[i];
-    for(Instruction *inst : func.instructions)
+    for(Instruction *arg : func.args)
     {
       RDCASSERT(curBlock < func.blocks.size());
-      for(Instruction *arg : func.args)
-      {
 #if DISABLED(DXC_COMPATIBLE_DISASM)
-        if(arg->slot == ~0U)
-          arg->slot = m_NextSSAId++;
+      if(arg->slot == ~0U)
+        arg->slot = m_NextSSAId++;
 #else
-        if(arg->getName().isEmpty())
-          arg->slot = slot++;
+      if(arg->getName().isEmpty())
+        arg->slot = slot++;
 #endif
-      }
+    }
+    for(Instruction *inst : func.instructions)
+    {
       if(!inst->type->isVoid())
       {
 #if DISABLED(DXC_COMPATIBLE_DISASM)
@@ -1107,18 +1268,50 @@ void Program::SettleIDs()
           RDCASSERT(funcCallName.beginsWith(dxOpFunctionNames[(uint32_t)dxOpCode]));
           callFunc->family = FunctionFamily::DXOp;
         }
-        else if(funcCallName.beginsWith("llvm.dbg."))
+        else if(funcCallName.beginsWith("llvm."))
         {
-          LLVMDbgOp dbgOpCode = LLVMDbgOp::Unknown;
-          if(funcCallName == "llvm.dbg.declare")
-            dbgOpCode = LLVMDbgOp::Declare;
-          else if(funcCallName == "llvm.dbg.value")
-            dbgOpCode = LLVMDbgOp::Value;
-          else
-            RDCERR("Unknown llv.dbg call: ", funcCallName.c_str());
+          LLVMIntrinsicOp intrinsicOp = LLVMIntrinsicOp::Unknown;
+          FunctionFamily family = FunctionFamily::Unknown;
 
-          callFunc->family = FunctionFamily::LLVMDbg;
-          callFunc->llvmDbgOp = dbgOpCode;
+          if(funcCallName.beginsWith("llvm.dbg."))
+          {
+            family = FunctionFamily::LLVMDbg;
+
+            if(funcCallName == "llvm.dbg.declare")
+              intrinsicOp = LLVMIntrinsicOp::DbgDeclare;
+            else if(funcCallName == "llvm.dbg.value")
+              intrinsicOp = LLVMIntrinsicOp::DbgValue;
+            else
+              RDCERR("Unknown llvm.dbg call: ", funcCallName.c_str());
+          }
+          else if(funcCallName.beginsWith("llvm.lifetime."))
+          {
+            family = FunctionFamily::LLVMInstrinsic;
+
+            if(funcCallName == "llvm.lifetime.start")
+              intrinsicOp = LLVMIntrinsicOp::LifetimeStart;
+            else if(funcCallName == "llvm.lifetime.end")
+              intrinsicOp = LLVMIntrinsicOp::LifetimeEnd;
+            else
+              RDCERR("Unknown llvm.lifetime call: ", funcCallName.c_str());
+          }
+          else if(funcCallName.beginsWith("llvm.invariant"))
+          {
+            family = FunctionFamily::LLVMInstrinsic;
+
+            if(funcCallName == "llvm.invariant.start")
+              intrinsicOp = LLVMIntrinsicOp::InvariantStart;
+            else if(funcCallName == "llvm.invariant.end")
+              intrinsicOp = LLVMIntrinsicOp::InvariantEnd;
+            else
+              RDCERR("Unknown llvm.invariant call: ", funcCallName.c_str());
+          }
+          else
+          {
+            RDCERR("Unknown llvm. call: ", funcCallName.c_str());
+          }
+          callFunc->family = family;
+          callFunc->llvmIntrinsicOp = intrinsicOp;
         }
       }
     }
@@ -1311,6 +1504,21 @@ void Program::SettleIDs()
     }
     m_Accum.exitFunction();
   }
+#if DISABLED(DXC_COMPATIBLE_DISASM)
+  // Check all instruction arguments have valid SSA IDs
+  for(size_t i = 0; i < m_Functions.size(); i++)
+  {
+    Function &func = *m_Functions[i];
+    for(Instruction *inst : func.instructions)
+    {
+      for(const Value *arg : inst->args)
+      {
+        if(IsSSA(arg))
+          RDCASSERTNOTEQUAL(GetSSAId(arg), ~0U);
+      }
+    }
+  }
+#endif
 
   m_FuncAttrGroups.clear();
   for(size_t i = 0; i < m_AttributeGroups.size(); i++)
@@ -1516,7 +1724,13 @@ rdcstr Program::DisassembleGlobalVars(int &instructionLine) const
   {
     const GlobalVar &g = *m_GlobalVars[i];
 
-    ret += StringFormat::Fmt("@%s = ", escapeStringIfNeeded(g.name).c_str());
+    rdcstr n = g.name;
+    if(!m_DXCStyle)
+    {
+      n = DXBC::BasicDemangle(g.name);
+      DXIL::SanitiseName(n);
+    }
+    ret += StringFormat::Fmt("@%s = ", escapeStringIfNeeded(n).c_str());
     switch(g.flags & GlobalFlags::LinkageMask)
     {
       case GlobalFlags::ExternalLinkage:
@@ -1744,7 +1958,6 @@ void Program::MakeDXCDisassemblyString()
       {
         Instruction &inst = *func.instructions[funcIdx];
 
-        inst.disassemblyLine = m_DisassemblyInstructionLine;
         m_Disassembly += "  ";
         if(!inst.getName().empty())
           m_Disassembly += StringFormat::Fmt("%c%s = ", dxilIdentifier,
@@ -2401,10 +2614,10 @@ void Program::MakeDXCDisassemblyString()
               bool uav = (packedProps[0] & (1 << 12)) != 0;
               bool rov = (packedProps[0] & (1 << 13)) != 0;
               bool globallyCoherent = (packedProps[0] & (1 << 14)) != 0;
-              bool sampelCmpOrCounter = (packedProps[0] & (1 << 15)) != 0;
+              bool sampleCmpOrCounter = (packedProps[0] & (1 << 15)) != 0;
               ResourceKind resKind = (ResourceKind)(packedProps[0] & 0xFF);
               ResourceClass resClass;
-              if(sampelCmpOrCounter && resKind == ResourceKind::Sampler)
+              if(sampleCmpOrCounter && resKind == ResourceKind::Sampler)
                 resKind = ResourceKind::SamplerComparison;
               if(resKind == ResourceKind::Sampler || resKind == ResourceKind::SamplerComparison)
                 resClass = ResourceClass::Sampler;
@@ -2472,7 +2685,7 @@ void Program::MakeDXCDisassemblyString()
                     m_Disassembly += "globallycoherent ";
                   m_Disassembly += srv ? "StructuredBuffer" : "RWStructuredBuffer";
                   m_Disassembly += StringFormat::Fmt("<stride=%u", structStride);
-                  if(sampelCmpOrCounter)
+                  if(sampleCmpOrCounter)
                     m_Disassembly += ", counter";
                   m_Disassembly += ">";
                   break;
@@ -2777,32 +2990,38 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
 
     if(!func.external)
     {
-      EntryPointInterface *entryPoint = NULL;
+      bool foundEntryPoint = false;
+      EntryPointInterface entryPoint;
       for(size_t e = 0; e < m_EntryPointInterfaces.size(); ++e)
       {
         if(func.name == m_EntryPointInterfaces[e].name)
         {
-          entryPoint = &m_EntryPointInterfaces[e];
+          entryPoint = m_EntryPointInterfaces[e];
+          foundEntryPoint = true;
           break;
         }
       }
 
       // Display inputs/outputs and resource
-      if(entryPoint)
+      if(foundEntryPoint)
       {
         bool needBlankLine = false;
-
-        if(!entryPoint->inputs.empty())
+        if(!entryPoint.inputs.empty())
         {
           m_Disassembly += "Inputs";
           DisassemblyAddNewLine();
-          for(size_t j = 0; j < entryPoint->inputs.size(); ++j)
+          for(size_t j = 0; j < entryPoint.inputs.size(); ++j)
           {
             if(needBlankLine)
               DisassemblyAddNewLine();
-            EntryPointInterface::Signature &sig = entryPoint->inputs[j];
 
             m_Disassembly += "  ";
+
+            EntryPointInterface::Signature &sig = entryPoint.inputs[j];
+
+            if(sig.interpolation != D3D_INTERPOLATION_MODE::D3D_INTERPOLATION_UNDEFINED &&
+               sig.interpolation != D3D_INTERPOLATION_MODE::D3D_INTERPOLATION_LINEAR)
+              m_Disassembly += ToStr((DXBC::InterpolationMode)sig.interpolation) + " ";
 
             ComponentType compType = sig.type;
 
@@ -2814,10 +3033,10 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
             if(sig.cols > 1)
               m_Disassembly += ToStr(sig.cols);
 
-            if(reflection && sig.rows == 1 && j < reflection->InputSig.size())
+            if(reflection)
             {
-              const SigParameter &sigParam = reflection->InputSig[j];
-              if(sigParam.semanticName == sig.name)
+              SigParameter sigParam;
+              if(FindSigParameter(reflection->InputSig, sig, sigParam))
               {
                 sig.name = sigParam.semanticIdxName;
               }
@@ -2826,6 +3045,8 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
             if(sig.rows > 1)
               m_Disassembly += "[" + ToStr(sig.rows) + "]";
             m_Disassembly += ";";
+            m_Disassembly += " // Rows:" + ToStr(sig.rows) + " StartRow:" + ToStr(sig.startRow);
+            m_Disassembly += " Cols:" + ToStr(sig.cols) + " StartCol:" + ToStr(sig.startCol);
             needBlankLine = true;
           }
           DisassemblyAddNewLine();
@@ -2853,7 +3074,7 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
           DisassemblyAddNewLine();
         }
 
-        if(!entryPoint->outputs.empty())
+        if(!entryPoint.outputs.empty())
         {
           if(needBlankLine)
           {
@@ -2863,13 +3084,17 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
 
           m_Disassembly += "Outputs";
           DisassemblyAddNewLine();
-          for(size_t j = 0; j < entryPoint->outputs.size(); ++j)
+          for(size_t j = 0; j < entryPoint.outputs.size(); ++j)
           {
             if(needBlankLine)
               DisassemblyAddNewLine();
-            EntryPointInterface::Signature &sig = entryPoint->outputs[j];
+            EntryPointInterface::Signature &sig = entryPoint.outputs[j];
 
             m_Disassembly += "  ";
+
+            if(sig.interpolation != D3D_INTERPOLATION_MODE::D3D_INTERPOLATION_UNDEFINED &&
+               sig.interpolation != D3D_INTERPOLATION_MODE::D3D_INTERPOLATION_LINEAR)
+              m_Disassembly += ToStr((DXBC::InterpolationMode)sig.interpolation) + " ";
 
             ComponentType compType = sig.type;
 
@@ -2881,16 +3106,20 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
             if(sig.cols > 1)
               m_Disassembly += ToStr(sig.cols);
 
-            if(reflection && sig.rows == 1 && j < reflection->OutputSig.size())
+            if(reflection)
             {
-              const SigParameter &sigParam = reflection->OutputSig[j];
-              if(sigParam.semanticName == sig.name)
+              SigParameter sigParam;
+              if(FindSigParameter(reflection->OutputSig, sig, sigParam))
+              {
                 sig.name = sigParam.semanticIdxName;
+              }
             }
             m_Disassembly += " " + sig.name;
             if(sig.rows > 1)
               m_Disassembly += "[" + ToStr(sig.rows) + "]";
             m_Disassembly += ";";
+            m_Disassembly += " // Rows:" + ToStr(sig.rows) + " StartRow:" + ToStr(sig.startRow);
+            m_Disassembly += " Cols:" + ToStr(sig.cols) + " StartCol:" + ToStr(sig.startCol);
             needBlankLine = true;
           }
           DisassemblyAddNewLine();
@@ -2924,13 +3153,13 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
           DisassemblyAddNewLine();
         }
 
-        if(!entryPoint->srvs.empty())
+        if(!entryPoint.srvs.empty())
         {
-          for(size_t j = 0; j < entryPoint->srvs.size(); ++j)
+          for(size_t j = 0; j < entryPoint.srvs.size(); ++j)
           {
             if(needBlankLine)
               DisassemblyAddNewLine();
-            const DXIL::EntryPointInterface::ResourceBase &resource = entryPoint->srvs[j];
+            const DXIL::EntryPointInterface::ResourceBase &resource = entryPoint.srvs[j];
             const DXIL::EntryPointInterface::SRV &srv = resource.srvData;
             m_Disassembly += GetResourceShapeName(srv.shape, false);
             if(srv.shape != DXIL::ResourceKind::RTAccelerationStructure)
@@ -2951,13 +3180,13 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
           DisassemblyAddNewLine();
         }
 
-        if(!entryPoint->uavs.empty())
+        if(!entryPoint.uavs.empty())
         {
-          for(size_t j = 0; j < entryPoint->uavs.size(); ++j)
+          for(size_t j = 0; j < entryPoint.uavs.size(); ++j)
           {
             if(needBlankLine)
               DisassemblyAddNewLine();
-            const DXIL::EntryPointInterface::ResourceBase &resource = entryPoint->uavs[j];
+            const DXIL::EntryPointInterface::ResourceBase &resource = entryPoint.uavs[j];
             const DXIL::EntryPointInterface::UAV &uav = resource.uavData;
             m_Disassembly += GetResourceShapeName(uav.shape, true);
             m_Disassembly += "<" + GetResourceTypeName(resource.type) + ">";
@@ -2977,11 +3206,11 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
           DisassemblyAddNewLine();
         }
 
-        if(!entryPoint->cbuffers.empty())
+        if(!entryPoint.cbuffers.empty())
         {
-          for(size_t j = 0; j < entryPoint->cbuffers.size(); ++j)
+          for(size_t j = 0; j < entryPoint.cbuffers.size(); ++j)
           {
-            DXIL::EntryPointInterface::ResourceBase &resource = entryPoint->cbuffers[j];
+            DXIL::EntryPointInterface::ResourceBase &resource = entryPoint.cbuffers[j];
             DXIL::EntryPointInterface::CBuffer &cbuffer = resource.cbufferData;
             if(reflection)
             {
@@ -3041,13 +3270,13 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
           needBlankLine = true;
         }
 
-        if(!entryPoint->samplers.empty())
+        if(!entryPoint.samplers.empty())
         {
-          for(size_t j = 0; j < entryPoint->samplers.size(); ++j)
+          for(size_t j = 0; j < entryPoint.samplers.size(); ++j)
           {
             if(needBlankLine)
               DisassemblyAddNewLine();
-            const DXIL::EntryPointInterface::ResourceBase &resource = entryPoint->samplers[j];
+            const DXIL::EntryPointInterface::ResourceBase &resource = entryPoint.samplers[j];
             m_Disassembly += GetSamplerTypeName(resource.type);
             m_Disassembly += " " + resource.name;
             if(resource.regCount > 1)
@@ -3069,8 +3298,10 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
           DisassemblyAddNewLine();
       }
 
-      // Show the compute shader thread group size
-      if(reflection && m_Type == DXBC::ShaderType::Compute)
+      // Show the compute shader,Amplification shader, mesh shader thread group size
+      if(reflection &&
+         ((m_Type == DXBC::ShaderType::Compute) || (m_Type == DXBC::ShaderType::Amplification) ||
+          (m_Type == DXBC::ShaderType::Mesh)))
       {
         m_Disassembly += StringFormat::Fmt(
             "[numthreads(%u, %u, %u)]", reflection->DispatchThreadsDimension[0],
@@ -3115,9 +3346,6 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
 
         inst.disassemblyLine = m_DisassemblyInstructionLine;
 
-        if(IsDXCNop(inst))
-          continue;
-
         rdcstr resultTypeStr;
         if(!inst.type->isVoid())
         {
@@ -3126,6 +3354,7 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
         }
         rdcstr resultIdStr;
         MakeResultId(inst, resultIdStr);
+        DXILDebug::Id resultId = GetResultSSAId(inst);
 
         bool showDxFuncName = false;
         rdcstr commentStr;
@@ -3153,9 +3382,9 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                   uint32_t inputIdx;
                   uint32_t rowIdx;
                   bool hasRowIdx = getival<uint32_t>(inst.args[2], rowIdx);
-                  if(entryPoint && getival<uint32_t>(inst.args[1], inputIdx))
+                  if(foundEntryPoint && getival<uint32_t>(inst.args[1], inputIdx))
                   {
-                    EntryPointInterface::Signature &sig = entryPoint->inputs[inputIdx];
+                    const EntryPointInterface::Signature &sig = entryPoint.inputs[inputIdx];
                     name = sig.name;
                     if(hasRowIdx)
                     {
@@ -3191,9 +3420,9 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                   uint32_t outputIdx;
                   uint32_t rowIdx;
                   bool hasRowIdx = getival<uint32_t>(inst.args[2], rowIdx);
-                  if(entryPoint && getival<uint32_t>(inst.args[1], outputIdx))
+                  if(foundEntryPoint && getival<uint32_t>(inst.args[1], outputIdx))
                   {
-                    EntryPointInterface::Signature &sig = entryPoint->outputs[outputIdx];
+                    const EntryPointInterface::Signature &sig = entryPoint.outputs[outputIdx];
                     name = sig.name;
                     if(hasRowIdx)
                     {
@@ -3236,7 +3465,7 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                     nonUniformIndexArgId = 3;
                   }
 
-                  const ResourceReference *resRef = GetResourceReference(resultIdStr);
+                  const ResourceReference *resRef = GetResourceReference(resultId);
                   if(resRef)
                   {
                     uint32_t index = 0;
@@ -3303,10 +3532,10 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                       bool uav = (packedProps[0] & (1 << 12)) != 0;
                       bool rov = (packedProps[0] & (1 << 13)) != 0;
                       bool globallyCoherent = (packedProps[0] & (1 << 14)) != 0;
-                      bool sampelCmpOrCounter = (packedProps[0] & (1 << 15)) != 0;
+                      bool sampleCmpOrCounter = (packedProps[0] & (1 << 15)) != 0;
                       ResourceKind resKind = (ResourceKind)(packedProps[0] & 0xFF);
                       ResourceClass resClass;
-                      if(sampelCmpOrCounter && resKind == ResourceKind::Sampler)
+                      if(sampleCmpOrCounter && resKind == ResourceKind::Sampler)
                         resKind = ResourceKind::SamplerComparison;
                       if(resKind == ResourceKind::Sampler ||
                          resKind == ResourceKind::SamplerComparison)
@@ -3379,7 +3608,7 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                             typeStr += "globallycoherent ";
                           typeStr += srv ? "StructuredBuffer" : "RWStructuredBuffer";
                           typeStr += StringFormat::Fmt("<stride=%u", structStride);
-                          if(sampelCmpOrCounter)
+                          if(sampleCmpOrCounter)
                             typeStr += ", counter";
                           typeStr += ">";
                           break;
@@ -3471,10 +3700,12 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                 {
                   // CBufferLoad(handle,byteOffset,alignment)
                   // CBufferLoadLegacy(handle,regIndex)
+                  DXILDebug::Id handleId = GetSSAId(inst.args[1]);
+                  const ResourceReference *resRef = GetResourceReference(handleId);
                   rdcstr handleStr = GetArgId(inst, 1);
-                  const ResourceReference *resRef = GetResourceReference(handleStr);
+                  rdcstr resName = GetHandleAlias(handleStr);
                   bool useFallback = true;
-                  if(entryPoint && resRef)
+                  if(foundEntryPoint && resRef)
                   {
                     uint32_t regIndex;
                     if(getival<uint32_t>(inst.args[2], regIndex))
@@ -3488,7 +3719,7 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                         // uint32_t alignment = getival<uint32_t>(inst.args[3]);
                       }
                       const DXIL::EntryPointInterface::ResourceBase &resource =
-                          entryPoint->cbuffers[resRef->resourceIndex];
+                          entryPoint.cbuffers[resRef->resourceIndex];
                       const DXIL::EntryPointInterface::CBuffer &cbuffer = resource.cbufferData;
                       if(cbuffer.cbufferRefl && cbuffer.cbufferRefl->hasReflectionData)
                       {
@@ -3496,22 +3727,30 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                         uint32_t bytesPerElement = 4;
                         if(retType)
                         {
-                          RDCASSERTEQUAL(retType->type, Type::TypeKind::Struct);
                           if(retType->type == Type::TypeKind::Struct)
                           {
                             const Type *baseType = retType->members[0];
                             RDCASSERTEQUAL(baseType->type, Type::TypeKind::Scalar);
                             bytesPerElement = baseType->bitWidth / 8;
                           }
+                          else if(retType->type == Type::TypeKind::Scalar)
+                          {
+                            const Type *baseType = retType;
+                            bytesPerElement = baseType->bitWidth / 8;
+                          }
+                          else
+                          {
+                            RDCWARN("Unhandled cbuffer return type");
+                          }
                         }
                         lineStr +=
-                            MakeCBufferRegisterStr(regIndex, bytesPerElement, cbuffer, handleStr);
+                            MakeCBufferRegisterStr(regIndex, bytesPerElement, cbuffer, resName);
                         commentStr += " cbuffer = " + resource.name;
                         commentStr += ", byte_offset = " + ToStr(regIndex * 16);
                       }
                       else
                       {
-                        lineStr += handleStr;
+                        lineStr += resName;
                         lineStr += ".Load4(";
                         lineStr += "byte_offset = " + ToStr(regIndex * 16);
                         lineStr += ")";
@@ -3520,7 +3759,7 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                   }
                   if(useFallback)
                   {
-                    lineStr += GetHandleAlias(handleStr);
+                    lineStr += resName;
                     lineStr += ".Load4(";
                     lineStr += "byte_offset = ";
                     uint32_t regIndex;
@@ -3620,15 +3859,16 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                 case DXOp::TextureLoad:
                 {
                   // TextureLoad(srv,mipLevelOrSampleCount,coord0,coord1,coord2,offset0,offset1,offset2)
+                  DXILDebug::Id handleId = GetSSAId(inst.args[1]);
+                  const ResourceReference *resRef = GetResourceReference(handleId);
                   rdcstr handleStr = GetArgId(inst, 1);
-                  const ResourceReference *resRef = GetResourceReference(handleStr);
                   uint32_t sampleCount = 0;
-                  if(entryPoint && resRef)
+                  if(foundEntryPoint && resRef)
                   {
                     uint32_t resourceIndex = resRef->resourceIndex;
                     const EntryPointInterface::SRV *texture =
-                        resourceIndex < entryPoint->srvs.size()
-                            ? &entryPoint->srvs[resourceIndex].srvData
+                        resourceIndex < entryPoint.srvs.size()
+                            ? &entryPoint.srvs[resourceIndex].srvData
                             : NULL;
                     if(texture)
                       sampleCount = texture->sampleCount;
@@ -3920,6 +4160,187 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                   }
                   break;
                 }
+                case DXOp::WaveActiveOp:
+                {
+                  // WaveActiveOp(value, i8 waveOp, i8 sign)
+                  WaveOpCode waveOpCode;
+                  SignedOpKind sop;
+                  if(getival<SignedOpKind>(inst.args[3], sop))
+                    commentStr += ToStr(sop);
+
+                  if(getival<WaveOpCode>(inst.args[2], waveOpCode))
+                  {
+                    lineStr += "WaveActive" + ToStr(waveOpCode);
+                    lineStr += "(";
+                    lineStr += GetArgId(inst, 1);
+                    lineStr += ")";
+                  }
+                  else
+                  {
+                    showDxFuncName = true;
+                  }
+                  break;
+                }
+                case DXOp::WaveActiveBit:
+                {
+                  // WaveActiveBit(value, i8 waveBitOp)
+                  WaveBitOpCode waveBitOpCode;
+                  if(getival<WaveBitOpCode>(inst.args[2], waveBitOpCode))
+                  {
+                    lineStr += "WaveActiveBit" + ToStr(waveBitOpCode);
+                    lineStr += "(";
+                    lineStr += GetArgId(inst, 1);
+                    lineStr += ")";
+                  }
+                  else
+                  {
+                    showDxFuncName = true;
+                  }
+                  break;
+                }
+                case DXOp::WaveMultiPrefixOp:
+                {
+                  // WaveMultiPrefixOp(value,mask0,mask1,mask2,mask3,op,sop)
+                  SignedOpKind sop;
+                  if(getival<SignedOpKind>(inst.args[7], sop))
+                    commentStr += ToStr(sop);
+
+                  WaveMultiPrefixOpCode waveMultiOpCode;
+                  if(getival<WaveMultiPrefixOpCode>(inst.args[6], waveMultiOpCode))
+                  {
+                    lineStr += "WaveMultiPrefix";
+                    if((waveMultiOpCode == WaveMultiPrefixOpCode::And) ||
+                       (waveMultiOpCode == WaveMultiPrefixOpCode::Or) ||
+                       (waveMultiOpCode == WaveMultiPrefixOpCode::Xor))
+                      lineStr += "Bit";
+
+                    lineStr += ToStr(waveMultiOpCode);
+                    lineStr += "(";
+                    lineStr += GetArgId(inst, 1);
+                    lineStr += ", {";
+                    lineStr += GetArgId(inst, 2);
+                    lineStr += ",";
+                    lineStr += GetArgId(inst, 3);
+                    lineStr += ",";
+                    lineStr += GetArgId(inst, 4);
+                    lineStr += ",";
+                    lineStr += GetArgId(inst, 5);
+                    lineStr += "}";
+                    lineStr += ")";
+                  }
+                  else
+                  {
+                    showDxFuncName = true;
+                  }
+                  break;
+                }
+                case DXOp::Pack4x8:
+                {
+                  // Pack4x8(packMode,x,y,z,w)
+                  // SM6.6: pack_u8, pack_s8, pack_clamp_u8 (0-255), pack_s8, pack_clamp_s8 (-128-127)
+                  //  packs vector of 4 signed or unsigned values into a packed datatype, drops or clamps unused bits
+                  PackMode packMode;
+                  // const Type *retType = inst.type;
+                  if(getival<PackMode>(inst.args[1], packMode))
+                  {
+                    if(packMode == PackMode::Trunc)
+                      lineStr += "pack_";
+                    else
+                      lineStr += "pack_clamp_";
+                    lineStr += "s8";
+                    lineStr += "(";
+                    bool needComma = false;
+                    for(uint32_t a = 2; a < 6; ++a)
+                    {
+                      if(!isUndef(inst.args[a]))
+                      {
+                        if(needComma)
+                          lineStr += ", ";
+                        lineStr += GetArgId(inst, a);
+                        needComma = true;
+                      }
+                    }
+                    lineStr += ")";
+                  }
+                  else
+                  {
+                    showDxFuncName = true;
+                  }
+                  break;
+                }
+                case DXOp::Unpack4x8:
+                {
+                  // Unpack4x8(unpackMode,pk)
+                  // SM6.6: unpack_s8s16, unpack_s8s32, unpack_u8u16, unpack_u8u32
+                  //  unpacks 4 8-bit signed or unsigned values into int32 or int16 vector
+                  UnpackMode unpackMode;
+                  if(getival<UnpackMode>(inst.args[1], unpackMode))
+                  {
+                    const Type *retType = inst.type;
+                    RDCASSERTEQUAL(retType->type, Type::Struct);
+                    if(retType->members.empty())
+                    {
+                      showDxFuncName = true;
+                      break;
+                    }
+
+                    uint32_t bitWidth = retType->members[0]->bitWidth;
+                    if(unpackMode == UnpackMode::Signed)
+                      lineStr += StringFormat::Fmt("unpack_s8s%d", bitWidth);
+                    else
+                      lineStr += StringFormat::Fmt("unpack_u8u%d", bitWidth);
+                    lineStr += "(";
+                    lineStr += GetArgId(inst, 2);
+                    lineStr += ")";
+                  }
+                  else
+                  {
+                    showDxFuncName = true;
+                  }
+                  break;
+                }
+                case DXOp::QuadOp:
+                {
+                  // QuadOp(value,op)
+                  QuadOpKind quadOpKind;
+                  if(getival<QuadOpKind>(inst.args[2], quadOpKind))
+                  {
+                    // QuadReadAcrossDiagonal
+                    // QuadReadAcrossX
+                    // QuadReadAcrossY
+                    if(quadOpKind == QuadOpKind::ReadAcrossX)
+                      lineStr += "QuadReadAcrossX";
+                    else if(quadOpKind == QuadOpKind::ReadAcrossY)
+                      lineStr += "QuadReadAcrossY";
+                    else if(quadOpKind == QuadOpKind::ReadAcrossDiagonal)
+                      lineStr += "QuadReadAcrossDiagonal";
+                    lineStr += "(";
+                    lineStr += GetArgId(inst, 1);
+                    lineStr += ")";
+                  }
+                  else
+                  {
+                    showDxFuncName = true;
+                  }
+                  break;
+                }
+                case DXOp::QuadVote:
+                {
+                  // SM6.7 QuadVote(cond,op)
+                  QuadVoteOpKind quadVoteOpKind;
+                  if(getival<QuadVoteOpKind>(inst.args[2], quadVoteOpKind))
+                  {
+                    lineStr += "Quad" + ToStr(quadVoteOpKind);
+                    lineStr += "(";
+                    lineStr += GetArgId(inst, 1);
+                    lineStr += ")";
+                  }
+                  else
+                  {
+                    showDxFuncName = true;
+                  }
+                  break;
+                }
                 case DXOp::Dot2:
                 case DXOp::Dot3:
                 case DXOp::Dot4:
@@ -3967,6 +4388,20 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                   }
                   lineStr += "}";
                   lineStr += ")";
+                  break;
+                }
+                case DXOp::Barrier:
+                {
+                  // Barrier(barrierMode)
+                  BarrierMode barrierMode;
+                  if(getival<BarrierMode>(inst.args[1], barrierMode))
+                  {
+                    lineStr += "Barrier(" + ToStr(barrierMode) + ")";
+                  }
+                  else
+                  {
+                    showDxFuncName = true;
+                  }
                   break;
                 }
                 case DXOp::NumOpCodes: showDxFuncName = false; break;
@@ -4026,6 +4461,43 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
             }
             else if(callFunc->family == FunctionFamily::LLVMDbg)
             {
+              SourceMappingInfo sourceMappingInfo;
+              switch(callFunc->llvmIntrinsicOp)
+              {
+                case LLVMIntrinsicOp::DbgDeclare:
+                  lineStr = "DbgDeclare";
+                  sourceMappingInfo = ParseDbgOpDeclare(inst);
+                  break;
+                case LLVMIntrinsicOp::DbgValue:
+                  lineStr = "DbgValue";
+                  sourceMappingInfo = ParseDbgOpValue(inst);
+                  break;
+                default: break;
+              }
+              if(sourceMappingInfo.localVariable)
+              {
+                rdcstr sourceVarName = GetDebugVarName(sourceMappingInfo.localVariable);
+                rdcstr functionName = GetFunctionScopeName(sourceMappingInfo.localVariable);
+
+                commentStr += StringFormat::Fmt(
+                    "Function '%s' Variable '%s' Offset %u Count %u bytes maps to %s",
+                    functionName.c_str(), sourceVarName.c_str(), sourceMappingInfo.srcByteOffset,
+                    sourceMappingInfo.srcCountBytes, sourceMappingInfo.dbgVarName.c_str());
+
+                uint32_t dbgLoc = inst.debugLoc;
+                if(dbgLoc != ~0U)
+                {
+                  const DebugLocation &debugLoc = m_DebugLocations[dbgLoc];
+
+                  rdcstr shaderFilePath = standardise_directory_separator(
+                      GetDebugScopeFilePath(sourceMappingInfo.localVariable));
+                  commentStr += StringFormat::Fmt(
+                      " ; File:%s Line:%u", get_basename(shaderFilePath).c_str(), debugLoc.line);
+                }
+              }
+            }
+            else if(callFunc->family == FunctionFamily::LLVMInstrinsic)
+            {
             }
             else
             {
@@ -4078,13 +4550,25 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
           {
             switch(inst.op)
             {
+              case Operation::Bitcast:
+              {
+                if(inst.type->type == Type::Scalar)
+                {
+                  if(inst.type->scalarType == Type::ScalarKind::Float)
+                    lineStr += "asfloat";
+                  if(inst.type->scalarType == Type::ScalarKind::Int)
+                    lineStr += "asint";
+                }
+                else
+                  lineStr += "(" + inst.type->toString(dxcStyleFormatting) + ")";
+                break;
+              }
               case Operation::Trunc:
               case Operation::ZExt:
               case Operation::SExt:
               case Operation::UToF:
               case Operation::FPTrunc:
               case Operation::FPExt:
-              case Operation::Bitcast:
               case Operation::FToU:
               case Operation::FToS:
               case Operation::PtrToI:
@@ -4540,8 +5024,11 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                 lineStr += " ";
               else
                 lineStr += ", ";
-              lineStr += StringFormat::Fmt("[ %s, %s ]", GetArgId(inst, a).c_str(),
-                                           GetArgId(inst, a + 1).c_str());
+              rdcstr block = GetArgId(inst, a + 1);
+              lineStr += "[ ";
+              if(IsSSA(inst.args[a]))
+                lineStr += StringFormat::Fmt("%s::", block.c_str());
+              lineStr += StringFormat::Fmt("%s, %s ]", GetArgId(inst, a).c_str(), block.c_str());
             }
             break;
           }
@@ -4684,6 +5171,9 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
         }
         if(!resultIdStr.empty())
           lineStr = resultTypeStr + resultIdStr + " = " + lineStr;
+
+        if(IsDXCNop(inst))
+          lineStr = "nop";
 
         if(!lineStr.empty())
         {
@@ -4865,6 +5355,7 @@ void Program::ParseReferences(const DXBC::Reflection *reflection)
           {
             rdcstr resultIdStr;
             MakeResultId(inst, resultIdStr);
+            DXILDebug::Id resultId = GetResultSSAId(inst);
 
             DXOp dxOpCode = DXOp::NumOpCodes;
             RDCASSERT(getival<DXOp>(inst.args[0], dxOpCode));
@@ -5022,24 +5513,29 @@ void Program::ParseReferences(const DXBC::Reflection *reflection)
 
                 if(resourceBase)
                 {
-                  RDCASSERT(!GetResourceReference(resultIdStr));
+                  RDCASSERT(!GetResourceReference(resultId));
                   ResourceReference resRef(resultIdStr, *resourceBase, resIndex);
-                  m_ResourceHandles[resultIdStr] = m_ResourceHandles.size();
+                  m_ResourceByIdHandles[resultId] = m_ResourceByIdHandles.size();
                   m_ResourceReferences.push_back(resRef);
                   resName = resourceBase->name;
-                  uint32_t index = 0;
-                  if(getival<uint32_t>(inst.args[resIndexArgId], index))
+                  uint32_t arrayIndex = 0;
+                  if(getival<uint32_t>(inst.args[resIndexArgId], arrayIndex))
                   {
-                    if(index != resIndex)
+                    if(arrayIndex != resIndex)
                     {
                       if(resourceBase->regCount > 1)
-                        resName += StringFormat::Fmt("[%u]", index);
+                      {
+                        RDCASSERT(arrayIndex >= resourceBase->regBase);
+                        arrayIndex -= resourceBase->regBase;
+                        resName += StringFormat::Fmt("[%u]", arrayIndex);
+                      }
                     }
                   }
                   else
                   {
                     if(resourceBase->regCount > 1)
-                      resName += "[" + GetArgId(inst, resIndexArgId) + "]";
+                      resName += StringFormat::Fmt(
+                          "[%s - %u]", GetArgId(inst, resIndexArgId).c_str(), resourceBase->regBase);
                   }
                 }
                 if(!resName.isEmpty())
@@ -5074,14 +5570,16 @@ void Program::ParseReferences(const DXBC::Reflection *reflection)
 
                 // If the underlying handle points to a known resource then duplicate the resource
                 // and register it as resultIdStr
+                DXILDebug::Id handleId = GetSSAId(inst.args[1]);
+                const ResourceReference *pResRef = GetResourceReference(handleId);
                 rdcstr baseResource = GetArgId(inst, 1);
-                const ResourceReference *resRef = GetResourceReference(baseResource);
                 rdcstr resBaseName = "typed_descriptor";
-                if(resRef)
+                if(pResRef)
                 {
-                  resBaseName = resRef->resourceBase.name;
-                  m_ResourceHandles[resultIdStr] = m_ResourceHandles.size();
-                  m_ResourceReferences.push_back(*resRef);
+                  const ResourceReference resRef = *pResRef;
+                  resBaseName = resRef.resourceBase.name;
+                  m_ResourceByIdHandles[resultId] = m_ResourceByIdHandles.size();
+                  m_ResourceReferences.push_back(resRef);
                 }
                 uint32_t annotateHandleCount = m_ResourceAnnotateCounts[resBaseName];
                 rdcstr resName = "__" + resBaseName + "_" + ToStr(annotateHandleCount);
@@ -5768,12 +6266,133 @@ rdcstr Program::GetArgId(const Value *v) const
   return ret;
 }
 
+rdcstr Program::GetArgumentName(const DXIL::Value *v) const
+{
+  if(const DXIL::Constant *c = cast<Constant>(v))
+    return StringFormat::Fmt("%c%u", '_', c->ssaId);
+
+  return GetArgId(v);
+}
+
+DXILDebug::Id Program::GetResultSSAId(const DXIL::Instruction &inst)
+{
+  return inst.slot;
+}
+
 void Program::MakeResultId(const DXIL::Instruction &inst, rdcstr &resultId)
 {
   if(!inst.getName().empty())
     resultId = StringFormat::Fmt("%c%s", '_', escapeStringIfNeeded(inst.getName()).c_str());
   else if(inst.slot != ~0U)
     resultId = StringFormat::Fmt("%c%s", '_', ToStr(inst.slot).c_str());
+}
+
+rdcpair<int32_t, int32_t> Program::ParseDIExpressionMD(const Metadata *expressionMD) const
+{
+  rdcpair<int32_t, int32_t> ret;
+  ret.first = 0;
+  ret.second = 0;
+
+  if(expressionMD)
+  {
+    if(expressionMD->dwarf->type == DIBase::Type::Expression)
+    {
+      const DIExpression *expression = expressionMD->dwarf->As<DXIL::DIExpression>();
+      switch(expression->op)
+      {
+        case DXIL::DW_OP::DW_OP_bit_piece:
+          ret.first = (uint32_t)(expression->evaluated.bit_piece.offset / 8);
+          ret.second = (uint32_t)(expression->evaluated.bit_piece.size / 8);
+          break;
+        case DXIL::DW_OP::DW_OP_none: break;
+        case DXIL::DW_OP::DW_OP_nop: break;
+        case DXIL::DW_OP::DW_OP_plus: RDCERR("DIExpression DW_OP_plus is not implemented"); break;
+        case DXIL::DW_OP::DW_OP_deref: break;
+        default: RDCERR("Unhandled DIExpression op %s", ToStr(expression->op).c_str()); break;
+      }
+    }
+    else
+    {
+      RDCERR("Unhandled Expression Metadata %s", ToStr(expressionMD->dwarf->type).c_str());
+    }
+  }
+  return ret;
+}
+
+SourceMappingInfo Program::ParseDbgOpValue(const DXIL::Instruction &inst) const
+{
+  SourceMappingInfo ret;
+  ret.isDeclare = false;
+
+  // arg 0 is metadata containing the new value
+  const Metadata *valueMD = cast<Metadata>(inst.args[0]);
+  ret.dbgVarId = GetSSAId(valueMD->value);
+  ret.dbgVarName = GetArgumentName(valueMD->value);
+
+  // arg 1 is i64 byte offset in the source variable where the new value is written
+  int64_t value = 0;
+  RDCASSERT(getival<int64_t>(inst.args[1], value));
+  ret.srcByteOffset = (int32_t)(value);
+
+  // arg 2 is DILocalVariable metadata
+  const Metadata *localVariableMD = cast<Metadata>(inst.args[2]);
+  RDCASSERT(localVariableMD);
+  RDCASSERTEQUAL(localVariableMD->dwarf->type, DIBase::Type::LocalVariable);
+  ret.localVariable = localVariableMD->dwarf->As<DILocalVariable>();
+
+  // arg 3 is DIExpression metadata
+  const Metadata *expressionMD = cast<Metadata>(inst.args[3]);
+  rdcpair<int32_t, int32_t> srcMapping = ParseDIExpressionMD(expressionMD);
+  ret.srcByteOffset += srcMapping.first;
+  ret.srcCountBytes = srcMapping.second;
+
+  return ret;
+}
+
+SourceMappingInfo Program::ParseDbgOpDeclare(const DXIL::Instruction &inst) const
+{
+  SourceMappingInfo ret;
+  ret.isDeclare = true;
+
+  // arg 0 contains the SSA Id of the result which represents the local variable (a pointer)
+  const Metadata *allocaInstMD = cast<Metadata>(inst.args[0]);
+  RDCASSERT(allocaInstMD);
+  const DXIL::Value *value = allocaInstMD->value;
+  if(const Instruction *varInst = cast<Instruction>(value))
+  {
+    ret.dbgVarId = Program::GetResultSSAId(*varInst);
+    Program::MakeResultId(*varInst, ret.dbgVarName);
+  }
+  else if(const GlobalVar *gv = cast<GlobalVar>(value))
+  {
+    ret.dbgVarId = gv->ssaId;
+    rdcstr n = DXBC::BasicDemangle(gv->name);
+    DXIL::SanitiseName(n);
+    ret.dbgVarName = n;
+  }
+  else if(const Constant *c = cast<Constant>(value))
+  {
+    ret.dbgVarId = c->ssaId;
+    ret.dbgVarName = StringFormat::Fmt("%c%u", '_', c->ssaId);
+  }
+  else
+  {
+    RDCERR("Unhandled metadata value type %s", ToStr(value->kind()).c_str());
+  }
+
+  // arg 1 is DILocalVariable metadata
+  const Metadata *localVariableMD = cast<Metadata>(inst.args[1]);
+  RDCASSERT(localVariableMD);
+  RDCASSERTEQUAL(localVariableMD->dwarf->type, DIBase::Type::LocalVariable);
+  ret.localVariable = localVariableMD->dwarf->As<DILocalVariable>();
+
+  // arg 2 is DIExpression metadata
+  const Metadata *expressionMD = cast<Metadata>(inst.args[2]);
+  rdcpair<int32_t, int32_t> srcMapping = ParseDIExpressionMD(expressionMD);
+  ret.srcByteOffset = srcMapping.first;
+  ret.srcCountBytes = srcMapping.second;
+
+  return ret;
 }
 
 };    // namespace DXIL

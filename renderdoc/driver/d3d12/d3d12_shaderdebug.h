@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2024 Baldur Karlsson
+ * Copyright (c) 2024-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -44,12 +44,16 @@ bool CalculateMathIntrinsic(bool dxil, WrappedID3D12Device *device, int mathOp,
                             ShaderVariable &output2);
 
 bool CalculateSampleGather(bool dxil, WrappedID3D12Device *device, int sampleOp,
-                           SampleGatherResourceData resourceData, SampleGatherSamplerData samplerData,
-                           const ShaderVariable &uv, const ShaderVariable &ddxCalc,
-                           const ShaderVariable &ddyCalc, const int8_t texelOffsets[3],
-                           int multisampleIndex, float lodOrCompareValue, const uint8_t swizzle[4],
+                           SampleGatherResourceData resourceData,
+                           SampleGatherSamplerData samplerData, const ShaderVariable &uv,
+                           const ShaderVariable &ddxCalc, const ShaderVariable &ddyCalc,
+                           const int8_t texelOffsets[3], int multisampleIndex, float lodValue,
+                           float compareValue, const uint8_t swizzle[4],
                            GatherChannel gatherChannel, const DXBC::ShaderType shaderType,
                            uint32_t instruction, const char *opString, ShaderVariable &output);
+
+D3D12Descriptor FindDescriptor(WrappedID3D12Device *device,
+                               const DXDebug::HeapDescriptorType heapType, uint32_t descriptorIndex);
 
 D3D12Descriptor FindDescriptor(WrappedID3D12Device *device, D3D12_DESCRIPTOR_RANGE_TYPE descType,
                                const DXDebug::BindingSlot &slot, const DXBC::ShaderType shaderType);
@@ -64,4 +68,7 @@ ShaderVariable GetSampleInfo(WrappedID3D12Device *device, D3D12_DESCRIPTOR_RANGE
 
 ShaderVariable GetRenderTargetSampleInfo(WrappedID3D12Device *device,
                                          const DXBC::ShaderType shaderType, const char *opString);
+
+DXGI_FORMAT GetUAVResourceFormat(const D3D12_UNORDERED_ACCESS_VIEW_DESC &uavDesc,
+                                 ID3D12Resource *pResource);
 };

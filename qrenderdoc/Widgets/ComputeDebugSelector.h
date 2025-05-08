@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2021-2024 Baldur Karlsson
+ * Copyright (c) 2021-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -40,6 +40,8 @@ public:
   explicit ComputeDebugSelector(QWidget *parent = 0);
   ~ComputeDebugSelector();
 
+  void SetDefaultDispatch(const rdcfixedarray<uint32_t, 3> &group,
+                          const rdcfixedarray<uint32_t, 3> &thread);
   void SetThreadBounds(const rdcfixedarray<uint32_t, 3> &group,
                        const rdcfixedarray<uint32_t, 3> &thread);
 

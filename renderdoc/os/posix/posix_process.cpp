@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -683,7 +683,7 @@ rdcpair<RDResult, uint32_t> Process::InjectIntoProcess(uint32_t pid,
   RDCUNIMPLEMENTED("Injecting into already running processes on linux");
   return {
       RDResult(ResultCode::InjectionFailed,
-               "Injecting into already running processes is not supported on non-Windows systems"),
+               "Injecting into already running processes is not supported on non-Windows systems."),
       0};
 }
 

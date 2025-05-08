@@ -19,6 +19,8 @@ parser.add_argument('--in-process',
                     help="Run test code in the same process as test runner", action="store_true")
 parser.add_argument('--slow-tests',
                     help="Run potentially slow tests", action="store_true")
+parser.add_argument('--test-timeout',
+                    help="Timeout for output from tests", default=90, type=int)
 parser.add_argument('--data', default=os.path.join(script_dir, "data"),
                     help="The folder that reference data is in. Will not be modified.", type=str)
 parser.add_argument('--demos-binary', default="",
@@ -137,4 +139,4 @@ elif args.internal_remote_server:
 elif args.internal_run_test is not None:
     rdtest.internal_run_test(args.internal_run_test)
 else:
-    rdtest.run_tests(args.test_include, args.test_exclude, args.in_process, args.slow_tests, args.debugger)
+    rdtest.run_tests(args.test_include, args.test_exclude, args.in_process, args.slow_tests, args.debugger, args.test_timeout)

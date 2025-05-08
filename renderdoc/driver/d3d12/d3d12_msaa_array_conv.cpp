@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -327,7 +327,7 @@ void D3D12DebugManager::CopyTex2DMSToArray(ID3D12GraphicsCommandList *list,
 
     ID3D12CommandList *l = list;
     m_pDevice->GetQueue()->GetReal()->ExecuteCommandLists(1, &l);
-    m_pDevice->GPUSync(m_pDevice->GetQueue()->GetReal(), Unwrap(m_DebugFence));
+    m_pDevice->QueueWaitForIdle(m_pDevice->GetQueue()->GetReal(), Unwrap(m_DebugFence));
     m_DebugAlloc->Reset();
   }
 }
@@ -600,7 +600,7 @@ void D3D12DebugManager::CopyArrayToTex2DMS(ID3D12Resource *destMS, ID3D12Resourc
 
   ID3D12CommandList *l = m_DebugList;
   m_pDevice->GetQueue()->ExecuteCommandLists(1, &l);
-  m_pDevice->GPUSync();
+  m_pDevice->InternalQueueWaitForIdle();
   m_DebugAlloc->Reset();
 
   SAFE_RELEASE(pso);

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -318,8 +318,19 @@ bool WrappedVulkan::Serialise_vkAllocateMemory(SerialiserType &ser, VkDevice dev
 
         if(mrq.size != AllocateInfo.allocationSize)
         {
-          RDCDEBUG("Removing dedicated allocation for incompatible size");
-          RemoveNextStruct(&patched, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO);
+          RDCDEBUG("Patching dedicated allocation for incompatible size");
+
+          // if acceleration structures are used, we promote all non-dedicated memory to be BDA as
+          // we can't know if it will be used for an AS or not during capture. That means that
+          // during self-capture if we just remove the dedicated allocation structure here without
+          // any other changes the self-capture layer will promote it to BDA and potentially cause
+          // clashes with reserved addresses elsewhere.
+          // instead we do the more dangerous thing of adjusting the allocation size to match the
+          // image's memory requirements and keep the dedicated allocation.
+          if(AccelerationStructures())
+            patched.allocationSize = mrq.size;
+          else
+            RemoveNextStruct(&patched, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO);
         }
       }
     }
@@ -479,7 +490,7 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
     VkBuffer buf;
 
     VkResult vkr = ObjDisp(device)->CreateBuffer(Unwrap(device), &bufInfo, NULL, &buf);
-    CheckVkResult(vkr);
+    CHECK_VKR(this, vkr);
 
     if(vkr == VK_SUCCESS && buf != VK_NULL_HANDLE)
     {
@@ -500,11 +511,47 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
   VkMemoryAllocateInfo unwrapped = info;
 
   byte *tempMem = GetTempMemory(GetNextPatchSize(unwrapped.pNext));
+  byte *reusedTempMem = tempMem;
 
   UnwrapNextChain(m_State, "VkMemoryAllocateInfo", tempMem, (VkBaseInStructure *)&unwrapped);
 
   VkMemoryAllocateFlagsInfo *memFlags = (VkMemoryAllocateFlagsInfo *)FindNextStruct(
       &unwrapped, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO);
+
+  VkMemoryAllocateFlagsInfo rtForcedFlags = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO};
+
+  // massive wart and oversight in RT APIs. ASs are bound to buffers which are then bound to memory.
+  // Buffers are not required to be BDA, but we need them to be BDA capture/replay'd in order to
+  // capture/replay the AS itself. However, we have no way of knowing which memory such a buffer
+  // will be bound against since there's no requirement for the buffer to be marked as BDA. This
+  // means that when RT is enabled ALL MEMORY IN THE ENTIRE PROGRAM must be marked as BDA just in
+  // case.
+  //
+  // we don't force this on for memory allocations that are going to be used for dedicated images
+  bool forceBDA = false;
+  if(IsCaptureMode(m_State) && AccelerationStructures())
+  {
+    const VkMemoryDedicatedAllocateInfo *dedicated =
+        (const VkMemoryDedicatedAllocateInfo *)FindNextStruct(
+            pAllocateInfo, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO);
+    if(dedicated == NULL || dedicated->image == VK_NULL_HANDLE)
+    {
+      // force BDA flag when creating, by adding the struct if needed
+      forceBDA = true;
+
+      if(memFlags)
+      {
+        memFlags->flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+      }
+      else
+      {
+        rtForcedFlags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT |
+                              VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
+        rtForcedFlags.pNext = unwrapped.pNext;
+        unwrapped.pNext = &rtForcedFlags;
+      }
+    }
+  }
 
   // since the application must specify VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT itself, we can
   // assume the struct is present and just add the capture-replay flag to allow us to specify the
@@ -515,8 +562,9 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
 
   // remove dedicated memory struct if it is not allowed
   {
-    VkMemoryDedicatedAllocateInfo *dedicated = (VkMemoryDedicatedAllocateInfo *)FindNextStruct(
-        pAllocateInfo, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO);
+    const VkMemoryDedicatedAllocateInfo *dedicated =
+        (const VkMemoryDedicatedAllocateInfo *)FindNextStruct(
+            pAllocateInfo, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO);
     if(dedicated && dedicated->image != VK_NULL_HANDLE)
     {
       VkResourceRecord *imageRecord = GetRecord(dedicated->image);
@@ -538,15 +586,16 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
   {
     ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pMemory);
 
-    VkMemoryDedicatedAllocateInfo *dedicated = (VkMemoryDedicatedAllocateInfo *)FindNextStruct(
-        pAllocateInfo, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO);
+    const VkMemoryDedicatedAllocateInfo *dedicated =
+        (const VkMemoryDedicatedAllocateInfo *)FindNextStruct(
+            pAllocateInfo, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO);
     if(dedicated && dedicated->buffer == VK_NULL_HANDLE && dedicated->image == VK_NULL_HANDLE)
     {
       dedicated = NULL;
     }
 
-    VkDedicatedAllocationMemoryAllocateInfoNV *dedicatedNV =
-        (VkDedicatedAllocationMemoryAllocateInfoNV *)FindNextStruct(
+    const VkDedicatedAllocationMemoryAllocateInfoNV *dedicatedNV =
+        (const VkDedicatedAllocationMemoryAllocateInfoNV *)FindNextStruct(
             pAllocateInfo, VK_STRUCTURE_TYPE_DEDICATED_ALLOCATION_MEMORY_ALLOCATE_INFO_NV);
     if(dedicatedNV && dedicatedNV->buffer == VK_NULL_HANDLE && dedicatedNV->image == VK_NULL_HANDLE)
     {
@@ -654,6 +703,9 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
       Chunk *chunk = NULL;
 
       VkMemoryAllocateInfo serialisedInfo = info;
+      CopyNextChainForPatching("VkMemoryAllocateInfo", reusedTempMem,
+                               (VkBaseInStructure *)&serialisedInfo);
+
       VkMemoryOpaqueCaptureAddressAllocateInfo memoryDeviceAddress = {
           VK_STRUCTURE_TYPE_MEMORY_OPAQUE_CAPTURE_ADDRESS_ALLOCATE_INFO,
       };
@@ -665,6 +717,22 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
       memFlags = (VkMemoryAllocateFlagsInfo *)FindNextStruct(
           &serialisedInfo, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO);
 
+      // see above for this gross workaround we have to do
+      if(forceBDA)
+      {
+        if(memFlags)
+        {
+          memFlags->flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+        }
+        else
+        {
+          // if we don't have memFlags here we also filled out rtForcedFlags above
+          memFlags = &rtForcedFlags;
+          rtForcedFlags.pNext = serialisedInfo.pNext;
+          serialisedInfo.pNext = &rtForcedFlags;
+        }
+      }
+
       if(memFlags && (memFlags->flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT))
       {
         VkDeviceMemoryOpaqueCaptureAddressInfo getInfo = {
@@ -673,16 +741,29 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
             Unwrap(*pMemory),
         };
 
-        memoryDeviceAddress.opaqueCaptureAddress =
+        VkMemoryOpaqueCaptureAddressAllocateInfo *addr =
+            (VkMemoryOpaqueCaptureAddressAllocateInfo *)FindNextStruct(
+                &serialisedInfo, VK_STRUCTURE_TYPE_MEMORY_OPAQUE_CAPTURE_ADDRESS_ALLOCATE_INFO);
+
+        uint64_t opaque =
             ObjDisp(device)->GetDeviceMemoryOpaqueCaptureAddress(Unwrap(device), &getInfo);
 
-        // we explicitly DON'T assert on this, because some drivers will only need the device
-        // address specified at allocate time.
-        // RDCASSERT(memoryDeviceAddress.opaqueCaptureAddress);
+        if(addr)
+        {
+          RDCASSERT(addr->opaqueCaptureAddress == opaque, addr->opaqueCaptureAddress, opaque);
+        }
+        else
+        {
+          memoryDeviceAddress.opaqueCaptureAddress = opaque;
 
-        // push this struct onto the start of the chain
-        memoryDeviceAddress.pNext = serialisedInfo.pNext;
-        serialisedInfo.pNext = &memoryDeviceAddress;
+          // we explicitly DON'T assert on this, because some drivers will only need the device
+          // address specified at allocate time.
+          // RDCASSERT(memoryDeviceAddress.opaqueCaptureAddress);
+
+          // push this struct onto the start of the chain
+          memoryDeviceAddress.pNext = serialisedInfo.pNext;
+          serialisedInfo.pNext = &memoryDeviceAddress;
+        }
 
         memFlags->flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
 
@@ -703,7 +784,7 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
 
       record->AddChunk(chunk);
 
-      record->Length = memSize;
+      record->memSize = record->Length = memSize;
 
       uint32_t memProps =
           m_PhysicalDeviceData.memProps.memoryTypes[info.memoryTypeIndex].propertyFlags;
@@ -766,7 +847,7 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
   }
   else
   {
-    CheckVkResult(ret);
+    CHECK_VKR(this, ret);
   }
 
   return ret;
@@ -958,7 +1039,7 @@ bool WrappedVulkan::Serialise_vkUnmapMemory(SerialiserType &ser, VkDevice device
     {
       SET_ERROR_RESULT(m_FailedReplayResult, ResultCode::APIReplayFailed,
                        "Error mapping memory on replay");
-      CheckVkResult(VK_ERROR_MEMORY_MAP_FAILED);
+      CHECK_VKR(this, VK_ERROR_MEMORY_MAP_FAILED);
       return false;
     }
 
@@ -1162,14 +1243,14 @@ bool WrappedVulkan::Serialise_vkFlushMappedMemoryRanges(SerialiserType &ser, VkD
     VkResult ret =
         ObjDisp(device)->MapMemory(Unwrap(device), Unwrap(MemRange.memory), MemRange.offset,
                                    MemRange.size, 0, (void **)&MappedData);
-    CheckVkResult(ret);
+    CHECK_VKR(this, ret);
     if(ret != VK_SUCCESS)
       RDCERR("Error mapping memory on replay: %s", ToStr(ret).c_str());
     if(!MappedData)
     {
       SET_ERROR_RESULT(m_FailedReplayResult, ResultCode::APIReplayFailed,
                        "Error mapping memory on replay");
-      CheckVkResult(VK_ERROR_MEMORY_MAP_FAILED);
+      CHECK_VKR(this, VK_ERROR_MEMORY_MAP_FAILED);
       return false;
     }
 
@@ -1476,7 +1557,7 @@ VkResult WrappedVulkan::vkBindBufferMemory(VkDevice device, VkBuffer buffer, VkD
   SERIALISE_TIME_CALL(ret = ObjDisp(device)->BindBufferMemory(Unwrap(device), Unwrap(buffer),
                                                               Unwrap(memory), memoryOffset));
 
-  CheckVkResult(ret);
+  CHECK_VKR(this, ret);
 
   if(IsCaptureMode(m_State))
   {
@@ -1510,9 +1591,8 @@ VkResult WrappedVulkan::vkBindBufferMemory(VkDevice device, VkBuffer buffer, VkD
     // if the buffer was force-referenced, do the same with the memory
     if(IsForcedReference(record))
     {
-      // in case we're currently capturing, immediately consider the buffer and backing memory as
-      // read-before-write referenced
-      GetResourceManager()->MarkResourceFrameReferenced(record->GetResourceID(), eFrameRef_Read);
+      // AddForcedReference will also call MarkResourceFrameReferenced() on the buffer in case
+      // we're currently capturing, do the same with the memory with the correct semantics.
       GetResourceManager()->MarkMemoryFrameReferenced(id, memoryOffset, record->memSize,
                                                       eFrameRef_ReadBeforeWrite);
 
@@ -1597,7 +1677,7 @@ VkResult WrappedVulkan::vkBindImageMemory(VkDevice device, VkImage image, VkDevi
   SERIALISE_TIME_CALL(ret = ObjDisp(device)->BindImageMemory(Unwrap(device), Unwrap(image),
                                                              Unwrap(mem), memOffset));
 
-  CheckVkResult(ret);
+  CHECK_VKR(this, ret);
 
   if(IsCaptureMode(m_State))
   {
@@ -1709,15 +1789,16 @@ bool WrappedVulkan::Serialise_vkCreateBuffer(SerialiserType &ser, VkDevice devic
   {
     VkBuffer buf = VK_NULL_HANDLE;
 
-    VkBufferUsageFlags origusage = CreateInfo.usage;
-
+    uint64_t origusage = GetBufferUsageFlags(&CreateInfo);
+    uint64_t patchedusage = origusage;
     // ensure we can always readback from buffers
-    CreateInfo.usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    patchedusage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
     // we only need to add TRANSFER_DST_BIT for dedicated buffers, but there's not a reliable way to
     // know if a buffer will be dedicated-allocation or not. We assume that TRANSFER_DST is
     // effectively free as a usage bit for all sensible implementations so we just add it here.
-    CreateInfo.usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    patchedusage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    SetBufferUsageFlags(&CreateInfo, patchedusage);
 
     // remap the queue family indices
     if(CreateInfo.sharingMode == VK_SHARING_MODE_CONCURRENT)
@@ -1735,13 +1816,7 @@ bool WrappedVulkan::Serialise_vkCreateBuffer(SerialiserType &ser, VkDevice devic
 
     VkResult ret = ObjDisp(device)->CreateBuffer(Unwrap(device), &patched, NULL, &buf);
 
-    if(CreateInfo.flags &
-       (VK_BUFFER_CREATE_SPARSE_BINDING_BIT | VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT))
-    {
-      APIProps.SparseResources = true;
-    }
-
-    CreateInfo.usage = origusage;
+    SetBufferUsageFlags(&CreateInfo, origusage);
 
     if(ret != VK_SUCCESS)
     {
@@ -1758,6 +1833,34 @@ bool WrappedVulkan::Serialise_vkCreateBuffer(SerialiserType &ser, VkDevice devic
                                          memoryRequirements);
     }
 
+    if(CreateInfo.flags &
+       (VK_BUFFER_CREATE_SPARSE_BINDING_BIT | VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT))
+    {
+      APIProps.SparseResources = true;
+
+      // for sparse BDA buffers we can and must request the address now since it won't be queried on memory bind
+      if(CreateInfo.usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
+      {
+        VulkanCreationInfo::Buffer &bufInfo = m_CreationInfo.m_Buffer[GetResID(buf)];
+
+        VkBufferDeviceAddressInfo getInfo = {
+            VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+            NULL,
+            Unwrap(buf),
+        };
+
+        RDCCOMPILE_ASSERT(VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO ==
+                              VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_EXT,
+                          "KHR and EXT buffer_device_address should be interchangeable here.");
+
+        if(GetExtensions(GetRecord(device)).ext_KHR_buffer_device_address)
+          bufInfo.gpuAddress = ObjDisp(device)->GetBufferDeviceAddress(Unwrap(device), &getInfo);
+        else if(GetExtensions(GetRecord(device)).ext_EXT_buffer_device_address)
+          bufInfo.gpuAddress = ObjDisp(device)->GetBufferDeviceAddressEXT(Unwrap(device), &getInfo);
+        m_CreationInfo.m_BufferAddresses[bufInfo.gpuAddress] = GetResID(buf);
+      }
+    }
+
     AddResource(Buffer, ResourceType::Buffer, "Buffer");
     DerivedResource(device, Buffer);
   }
@@ -1772,27 +1875,29 @@ VkResult WrappedVulkan::vkCreateBuffer(VkDevice device, const VkBufferCreateInfo
 
   // if you change any properties here, ensure you also update
   // vkGetDeviceBufferMemoryRequirementsKHR
-
+  uint64_t adjusted_usage = GetBufferUsageFlags(&adjusted_info);
   // TEMP HACK: Until we define a portable fake hardware, need to match the requirements for usage
   // on replay, so that the memory requirements are the same
-  adjusted_info.usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+  adjusted_usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
   // we only need to add TRANSFER_DST_BIT for dedicated buffers, but there's not a reliable way to
   // know if a buffer will be dedicated-allocation or not. We assume that TRANSFER_DST is
   // effectively free as a usage bit for all sensible implementations so we just add it here.
-  adjusted_info.usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+  adjusted_usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
   if(IsCaptureMode(m_State))
   {
-    // If we're using this buffer for AS storage we need to enable BDA
-    if(adjusted_info.usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR)
-      adjusted_info.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    // If we're using this buffer for AS or OMM storage we need to enable BDA
+    if(adjusted_usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR)
+      adjusted_usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
     // If we're using this buffer for device addresses, ensure we force on capture replay bit.
     // We ensured the physical device can support this feature before whitelisting the extension.
-    if(adjusted_info.usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
+    if(adjusted_usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
       adjusted_info.flags |= VK_BUFFER_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
   }
+
+  SetBufferUsageFlags(&adjusted_info, adjusted_usage);
 
   byte *tempMem = GetTempMemory(GetNextPatchSize(adjusted_info.pNext));
 
@@ -1819,12 +1924,18 @@ VkResult WrappedVulkan::vkCreateBuffer(VkDevice device, const VkBufferCreateInfo
       };
 
       VkResourceRecord *record = GetResourceManager()->AddResourceRecord(*pBuffer);
-      record->memSize = pCreateInfo->size;
+      record->memSize = serialisedCreateInfo.size;
+
+      uint64_t serialisedUsage = GetBufferUsageFlags(&serialisedCreateInfo);
+      // If we're using this buffer for AS storage we need to enable BDA
+      if(serialisedUsage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR)
+        serialisedUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+      SetBufferUsageFlags(&serialisedCreateInfo, serialisedUsage);
 
       // if we're using VK_[KHR|EXT]_buffer_device_address, we fetch the device address that's been
       // allocated and insert it into the next chain and patch the flags so that it replays
       // naturally.
-      if((pCreateInfo->usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) != 0)
+      if((serialisedUsage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) != 0)
       {
         VkBufferDeviceAddressInfo getInfo = {
             VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
@@ -1834,16 +1945,30 @@ VkResult WrappedVulkan::vkCreateBuffer(VkDevice device, const VkBufferCreateInfo
 
         if(GetExtensions(GetRecord(device)).ext_KHR_buffer_device_address)
         {
-          bufferDeviceAddressCoreOrKHR.opaqueCaptureAddress =
-              ObjDisp(device)->GetBufferOpaqueCaptureAddress(Unwrap(device), &getInfo);
+          VkBufferOpaqueCaptureAddressCreateInfo *addr =
+              (VkBufferOpaqueCaptureAddressCreateInfo *)FindNextStruct(
+                  &serialisedCreateInfo, VK_STRUCTURE_TYPE_BUFFER_OPAQUE_CAPTURE_ADDRESS_CREATE_INFO);
 
-          // we explicitly DON'T assert on this, because some drivers will only need the device
-          // address specified at allocate time.
-          // RDCASSERT(bufferDeviceAddressKHR.opaqueCaptureAddress);
+          uint64_t opaque = ObjDisp(device)->GetBufferOpaqueCaptureAddress(Unwrap(device), &getInfo);
 
-          // push this struct onto the start of the chain
-          bufferDeviceAddressCoreOrKHR.pNext = serialisedCreateInfo.pNext;
-          serialisedCreateInfo.pNext = &bufferDeviceAddressCoreOrKHR;
+          if(addr)
+          {
+            RDCASSERT(opaque == addr->opaqueCaptureAddress, opaque, addr->opaqueCaptureAddress);
+          }
+          else
+          {
+            addr = &bufferDeviceAddressCoreOrKHR;
+
+            bufferDeviceAddressCoreOrKHR.opaqueCaptureAddress = opaque;
+
+            // we explicitly DON'T assert on this, because some drivers will only need the device
+            // address specified at allocate time.
+            // RDCASSERT(bufferDeviceAddressKHR.opaqueCaptureAddress);
+
+            // push this struct onto the start of the chain
+            bufferDeviceAddressCoreOrKHR.pNext = serialisedCreateInfo.pNext;
+            serialisedCreateInfo.pNext = &bufferDeviceAddressCoreOrKHR;
+          }
         }
         else if(GetExtensions(GetRecord(device)).ext_EXT_buffer_device_address)
         {
@@ -1885,8 +2010,9 @@ VkResult WrappedVulkan::vkCreateBuffer(VkDevice device, const VkBufferCreateInfo
 
       record->AddChunk(chunk);
 
-      record->storable = (pCreateInfo->usage & (VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                                VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT)) != 0;
+      record->storable =
+          (GetBufferUsageFlags(pCreateInfo) &
+           (VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT)) != 0;
 
       bool isSparse = (pCreateInfo->flags & (VK_BUFFER_CREATE_SPARSE_BINDING_BIT |
                                              VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT)) != 0;
@@ -1912,10 +2038,16 @@ VkResult WrappedVulkan::vkCreateBuffer(VkDevice device, const VkBufferCreateInfo
         ObjDisp(device)->GetBufferMemoryRequirements(Unwrap(device), Unwrap(*pBuffer),
                                                      &record->resInfo->memreqs);
 
-        // initialise the sparse page table
         if(isSparse)
+        {
+          // initialise the sparse page table
           record->resInfo->sparseTable.Initialise(pCreateInfo->size,
                                                   record->resInfo->memreqs.alignment & 0xFFFFFFFFU);
+
+          // Track the buffer address.  We only do this here for sparse buffers as they aren't
+          // bound against a single allocation
+          TrackBufferAddress(device, *pBuffer);
+        }
 
         // for external buffers, try creating a non-external version and take the worst case of
         // memory requirements, in case the non-external one (as we will replay it) needs more
@@ -1979,7 +2111,7 @@ VkResult WrappedVulkan::vkCreateBuffer(VkDevice device, const VkBufferCreateInfo
   }
   else
   {
-    CheckVkResult(ret);
+    CHECK_VKR(this, ret);
   }
 
   return ret;
@@ -2392,8 +2524,9 @@ VkResult WrappedVulkan::vkCreateImage(VkDevice device, const VkImageCreateInfo *
   // reserve space for a patched view format list if necessary
   if(createInfo_adjusted.samples != VK_SAMPLE_COUNT_1_BIT)
   {
-    VkImageFormatListCreateInfo *formatListInfo = (VkImageFormatListCreateInfo *)FindNextStruct(
-        &createInfo_adjusted, VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
+    const VkImageFormatListCreateInfo *formatListInfo =
+        (const VkImageFormatListCreateInfo *)FindNextStruct(
+            &createInfo_adjusted, VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
 
     if(formatListInfo)
       tempMemSize += sizeof(VkFormat) * (formatListInfo->viewFormatCount + 1);
@@ -2716,7 +2849,7 @@ VkResult WrappedVulkan::vkCreateImage(VkDevice device, const VkImageCreateInfo *
   }
   else
   {
-    CheckVkResult(ret);
+    CHECK_VKR(this, ret);
   }
 
   return ret;
@@ -2978,7 +3111,7 @@ VkResult WrappedVulkan::vkBindBufferMemory2(VkDevice device, uint32_t bindInfoCo
   SERIALISE_TIME_CALL(
       ret = ObjDisp(device)->BindBufferMemory2(Unwrap(device), bindInfoCount, unwrapped));
 
-  CheckVkResult(ret);
+  CHECK_VKR(this, ret);
 
   if(IsCaptureMode(m_State))
   {
@@ -3014,12 +3147,13 @@ VkResult WrappedVulkan::vkBindBufferMemory2(VkDevice device, uint32_t bindInfoCo
       // if the buffer was force-referenced, do the same with the memory
       if(IsForcedReference(bufrecord))
       {
-        // in case we're currently capturing, immediately consider the buffer and backing memory as
-        // read-before-write referenced
-        GetResourceManager()->MarkResourceFrameReferenced(bufrecord->GetResourceID(), eFrameRef_Read);
+        // AddForcedReference will also call MarkResourceFrameReferenced() on the buffer in case
+        // we're currently capturing, do the same with the memory with the correct semantics.
         GetResourceManager()->MarkMemoryFrameReferenced(
             GetResID(pBindInfos[i].memory), pBindInfos[i].memoryOffset, bufrecord->memSize,
             eFrameRef_ReadBeforeWrite);
+
+        memrecord->hasBDA = true;
       }
 
       // the memory is immediately dirty because we don't use dirty tracking, it's too expensive to
@@ -3061,38 +3195,73 @@ bool WrappedVulkan::Serialise_vkBindImageMemory2(SerialiserType &ser, VkDevice d
       VkMemoryRequirements mrq = {};
       ObjDisp(device)->GetImageMemoryRequirements(Unwrap(device), Unwrap(bindInfo.image), &mrq);
 
-      bool ok = CheckMemoryRequirements(GetResourceDesc(resOrigId).name.c_str(),
-                                        GetResID(bindInfo.memory), bindInfo.memoryOffset, mrq,
-                                        imgInfo.external, imgInfo.mrq);
+      VkBindImageMemorySwapchainInfoKHR *swapBind =
+          (VkBindImageMemorySwapchainInfoKHR *)FindNextStruct(
+              &bindInfo, VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_SWAPCHAIN_INFO_KHR);
 
-      if(!ok)
-        return false;
-
+      // can't reconstruct this on replay as we don't have the swapchain handle anymore, so just
+      // assume that a NULL memory object was valid if the structure was at least present...
+      if(swapBind && bindInfo.memory == VK_NULL_HANDLE)
       {
-        ResourceId id = GetResID(bindInfo.image);
-        LockedImageStateRef state = FindImageState(id);
-        if(!state)
+        MemoryAllocation all = AllocateMemoryForResource(
+            bindInfo.image, MemoryScope::ImmutableReplayDebug, MemoryType::GPULocal);
+
+        VkBindImageMemoryInfo &patchBindInfo = (VkBindImageMemoryInfo &)pBindInfos[i];
+        patchBindInfo.memory = all.mem;
+        patchBindInfo.memoryOffset = all.offs;
+
         {
-          RDCERR("Binding memory for unknown image %s", ToStr(id).c_str());
+          ResourceId id = GetResID(bindInfo.image);
+          LockedImageStateRef state = FindImageState(id);
+          if(!state)
+          {
+            RDCERR("Binding memory for unknown image %s", ToStr(id).c_str());
+          }
+          else
+          {
+            state->isMemoryBound = true;
+          }
         }
-        else
+      }
+      else
+      {
+        bool ok = CheckMemoryRequirements(GetResourceDesc(resOrigId).name.c_str(),
+                                          GetResID(bindInfo.memory), bindInfo.memoryOffset, mrq,
+                                          imgInfo.external, imgInfo.mrq);
+
+        if(!ok)
+          return false;
+
         {
-          state->isMemoryBound = true;
-          state->boundMemory = GetResID(bindInfo.memory);
-          state->boundMemoryOffset = bindInfo.memoryOffset;
-          state->boundMemorySize = mrq.size;
+          ResourceId id = GetResID(bindInfo.image);
+          LockedImageStateRef state = FindImageState(id);
+          if(!state)
+          {
+            RDCERR("Binding memory for unknown image %s", ToStr(id).c_str());
+          }
+          else
+          {
+            state->isMemoryBound = true;
+            state->boundMemory = GetResID(bindInfo.memory);
+            state->boundMemoryOffset = bindInfo.memoryOffset;
+            state->boundMemorySize = mrq.size;
+          }
         }
       }
 
-      GetResourceDesc(memOrigId).derivedResources.push_back(resOrigId);
-      GetResourceDesc(resOrigId).parentResources.push_back(memOrigId);
-
-      AddResourceCurChunk(memOrigId);
       AddResourceCurChunk(resOrigId);
 
-      m_CreationInfo.m_Memory[GetResID(bindInfo.memory)].BindMemory(
-          bindInfo.memoryOffset, mrq.size,
-          imgInfo.linear ? VulkanCreationInfo::Memory::Linear : VulkanCreationInfo::Memory::Tiled);
+      if(memOrigId != ResourceId())
+      {
+        GetResourceDesc(memOrigId).derivedResources.push_back(resOrigId);
+        GetResourceDesc(resOrigId).parentResources.push_back(memOrigId);
+
+        AddResourceCurChunk(memOrigId);
+
+        m_CreationInfo.m_Memory[GetResID(bindInfo.memory)].BindMemory(
+            bindInfo.memoryOffset, mrq.size,
+            imgInfo.linear ? VulkanCreationInfo::Memory::Linear : VulkanCreationInfo::Memory::Tiled);
+      }
     }
 
     VkBindImageMemoryInfo *unwrapped = UnwrapInfos(m_State, pBindInfos, bindInfoCount);
@@ -3110,7 +3279,7 @@ VkResult WrappedVulkan::vkBindImageMemory2(VkDevice device, uint32_t bindInfoCou
   SERIALISE_TIME_CALL(
       ret = ObjDisp(device)->BindImageMemory2(Unwrap(device), bindInfoCount, unwrapped));
 
-  CheckVkResult(ret);
+  CHECK_VKR(this, ret);
 
   if(IsCaptureMode(m_State))
   {
@@ -3176,13 +3345,28 @@ VkResult WrappedVulkan::vkBindImageMemory2(VkDevice device, uint32_t bindInfoCou
       // to memory mid-frame
       imgrecord->AddChunk(chunk);
 
-      imgrecord->AddParent(memrecord);
+      const VkBindImageMemorySwapchainInfoKHR *swapBind =
+          (const VkBindImageMemorySwapchainInfoKHR *)FindNextStruct(
+              &pBindInfos[i], VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_SWAPCHAIN_INFO_KHR);
 
-      // images are a base resource but we want to track where their memory comes from.
-      // Anything that looks up a baseResource for an image knows not to chase further
-      // than the image.
-      imgrecord->baseResourceMem = imgrecord->baseResource = memrecord->GetResourceID();
-      imgrecord->dedicated = memrecord->memMapState->dedicated;
+      if(swapBind && swapBind->swapchain != VK_NULL_HANDLE)
+      {
+        VkResourceRecord *swaprecord = GetRecord(swapBind->swapchain);
+
+        imgrecord->InternalResource = true;
+
+        imgrecord->AddParent(swaprecord);
+      }
+      else
+      {
+        imgrecord->AddParent(memrecord);
+
+        // images are a base resource but we want to track where their memory comes from.
+        // Anything that looks up a baseResource for an image knows not to chase further
+        // than the image.
+        imgrecord->baseResourceMem = imgrecord->baseResource = memrecord->GetResourceID();
+        imgrecord->dedicated = memrecord->memMapState->dedicated;
+      }
     }
   }
   else
@@ -3389,7 +3573,6 @@ VkResult WrappedVulkan::vkCreateAccelerationStructureKHR(
       record->baseResource = bufferRecord->GetResourceID();
       record->baseResourceMem = bufferRecord->baseResource;
       record->dedicated = bufferRecord->dedicated;
-      record->resInfo = bufferRecord->resInfo;
       record->storable = bufferRecord->storable;
       record->memOffset = bufferRecord->memOffset + pCreateInfo->offset;
       record->memSize = pCreateInfo->size;
@@ -3402,6 +3585,9 @@ VkResult WrappedVulkan::vkCreateAccelerationStructureKHR(
         // reference them.  We force ref generics too as they could bottom or top level so we
         // conservatively assume they are bottom
         AddForcedReference(record);
+
+        // in case we're currently capturing, immediately consider the AS as referenced
+        GetResourceManager()->MarkResourceFrameReferenced(record->GetResourceID(), eFrameRef_Read);
       }
     }
     else

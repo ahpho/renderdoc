@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -147,6 +147,8 @@ struct D3D11GraphicsTest : public GraphicsTest
   void IASetVertexBuffer(ID3D11Buffer *vb, UINT stride, UINT offset);
 
   void ClearRenderTargetView(ID3D11RenderTargetView *rt, Vec4f col);
+  void ClearUnorderedAccessView(ID3D11UnorderedAccessView *uav, Vec4f col);
+  void ClearUnorderedAccessView(ID3D11UnorderedAccessView *uav, Vec4u col);
 
   D3D11_RASTERIZER_DESC GetRasterState();
   void SetRasterState(const D3D11_RASTERIZER_DESC &desc);

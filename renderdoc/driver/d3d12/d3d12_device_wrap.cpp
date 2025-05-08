@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,10 +31,56 @@
 #include "d3d12_command_queue.h"
 #include "d3d12_replay.h"
 #include "d3d12_resources.h"
+#include "d3d12_rootsig.h"
 #include "d3d12_shader_cache.h"
 
-RDOC_DEBUG_CONFIG(bool, D3D12_Experimental_EnableRTSupport, false,
-                  "Enable support for experimental DXR support");
+RDOC_EXTERN_CONFIG(bool, Replay_Debug_SingleThreadedCompilation);
+
+RDOC_EXTERN_CONFIG(bool, D3D12_Debug_RT_Auditing);
+
+static RDResult DeferredPipelineCompile(ID3D12Device *device,
+                                        const D3D12_GRAPHICS_PIPELINE_STATE_DESC &Descriptor,
+                                        WrappedID3D12PipelineState *wrappedPipe)
+{
+  D3D12_GRAPHICS_PIPELINE_STATE_DESC unwrappedDesc = Descriptor;
+  unwrappedDesc.pRootSignature = Unwrap(unwrappedDesc.pRootSignature);
+
+  ID3D12PipelineState *realPipe;
+  HRESULT hr = device->CreateGraphicsPipelineState(&unwrappedDesc, __uuidof(ID3D12PipelineState),
+                                                   (void **)&realPipe);
+
+  wrappedPipe->SetNewReal(realPipe);
+
+  if(FAILED(hr))
+  {
+    RETURN_ERROR_RESULT(ResultCode::APIReplayFailed,
+                        "Failed creating graphics pipeline, HRESULT: %s", ToStr(hr).c_str());
+  }
+
+  return ResultCode::Succeeded;
+}
+
+static RDResult DeferredPipelineCompile(ID3D12Device *device,
+                                        const D3D12_COMPUTE_PIPELINE_STATE_DESC &Descriptor,
+                                        WrappedID3D12PipelineState *wrappedPipe)
+{
+  D3D12_COMPUTE_PIPELINE_STATE_DESC unwrappedDesc = Descriptor;
+  unwrappedDesc.pRootSignature = Unwrap(unwrappedDesc.pRootSignature);
+
+  ID3D12PipelineState *realPipe;
+  HRESULT hr = device->CreateComputePipelineState(&unwrappedDesc, __uuidof(ID3D12PipelineState),
+                                                  (void **)&realPipe);
+
+  wrappedPipe->SetNewReal(realPipe);
+
+  if(FAILED(hr))
+  {
+    RETURN_ERROR_RESULT(ResultCode::APIReplayFailed,
+                        "Failed creating compute pipeline, HRESULT: %s", ToStr(hr).c_str());
+  }
+
+  return ResultCode::Succeeded;
+}
 
 static bool UsesExtensionUAV(const D3D12_SHADER_BYTECODE &sh, uint32_t reg, uint32_t space)
 {
@@ -168,7 +214,7 @@ HRESULT WrappedID3D12Device::CreateCommandQueue(const D3D12_COMMAND_QUEUE_DESC *
   }
   else
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
   }
 
   return ret;
@@ -258,7 +304,7 @@ HRESULT WrappedID3D12Device::CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE type
   }
   else
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
   }
 
   return ret;
@@ -289,8 +335,10 @@ bool WrappedID3D12Device::Serialise_CreateCommandList(SerialiserType &ser, UINT 
   {
     nodeMask = 0;
 
+    // don't pass the initial state. We are about to immediately close the command list anyway, and
+    // otherwise we would need to wait on it
     ID3D12GraphicsCommandList *list = NULL;
-    HRESULT hr = CreateCommandList(nodeMask, type, pCommandAllocator, pInitialState,
+    HRESULT hr = CreateCommandList(nodeMask, type, pCommandAllocator, NULL,
                                    __uuidof(ID3D12GraphicsCommandList), (void **)&list);
 
     if(FAILED(hr))
@@ -330,7 +378,7 @@ HRESULT WrappedID3D12Device::CreateCommandList(UINT nodeMask, D3D12_COMMAND_LIST
      riid != __uuidof(ID3D12GraphicsCommandList3) && riid != __uuidof(ID3D12GraphicsCommandList4) &&
      riid != __uuidof(ID3D12GraphicsCommandList5) && riid != __uuidof(ID3D12GraphicsCommandList6) &&
      riid != __uuidof(ID3D12GraphicsCommandList7) && riid != __uuidof(ID3D12GraphicsCommandList8) &&
-     riid != __uuidof(ID3D12GraphicsCommandList9))
+     riid != __uuidof(ID3D12GraphicsCommandList9) && riid != __uuidof(ID3D12GraphicsCommandList10))
     return E_NOINTERFACE;
 
   void *realptr = NULL;
@@ -363,6 +411,8 @@ HRESULT WrappedID3D12Device::CreateCommandList(UINT nodeMask, D3D12_COMMAND_LIST
     real = (ID3D12GraphicsCommandList8 *)realptr;
   else if(riid == __uuidof(ID3D12GraphicsCommandList9))
     real = (ID3D12GraphicsCommandList9 *)realptr;
+  else if(riid == __uuidof(ID3D12GraphicsCommandList10))
+    real = (ID3D12GraphicsCommandList10 *)realptr;
 
   if(SUCCEEDED(ret))
   {
@@ -423,6 +473,8 @@ HRESULT WrappedID3D12Device::CreateCommandList(UINT nodeMask, D3D12_COMMAND_LIST
       *ppCommandList = (ID3D12GraphicsCommandList8 *)wrapped;
     else if(riid == __uuidof(ID3D12GraphicsCommandList9))
       *ppCommandList = (ID3D12GraphicsCommandList9 *)wrapped;
+    else if(riid == __uuidof(ID3D12GraphicsCommandList10))
+      *ppCommandList = (ID3D12GraphicsCommandList10 *)wrapped;
     else if(riid == __uuidof(ID3D12CommandList))
       *ppCommandList = (ID3D12CommandList *)wrapped;
     else
@@ -430,7 +482,7 @@ HRESULT WrappedID3D12Device::CreateCommandList(UINT nodeMask, D3D12_COMMAND_LIST
   }
   else
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
   }
 
   return ret;
@@ -451,12 +503,16 @@ bool WrappedID3D12Device::Serialise_CreateGraphicsPipelineState(
 
   if(IsReplayingAndReading())
   {
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC unwrappedDesc = Descriptor;
-    unwrappedDesc.pRootSignature = Unwrap(unwrappedDesc.pRootSignature);
+    // we steal the serialised descriptor here so we can pass it to jobs without its contents and
+    // all of the allocated structures and arrays being deserialised. We add a job which waits on
+    // the compiles then deserialises this manually.
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC OrigDescriptor = Descriptor;
+    Descriptor = {};
 
     {
       D3D12_SHADER_BYTECODE *shaders[] = {
-          &Descriptor.VS, &Descriptor.HS, &Descriptor.DS, &Descriptor.GS, &Descriptor.PS,
+          &OrigDescriptor.VS, &OrigDescriptor.HS, &OrigDescriptor.DS,
+          &OrigDescriptor.GS, &OrigDescriptor.PS,
       };
 
       for(size_t i = 0; i < ARRAY_COUNT(shaders); i++)
@@ -473,107 +529,117 @@ bool WrappedID3D12Device::Serialise_CreateGraphicsPipelineState(
       }
     }
 
-    ID3D12PipelineState *ret = NULL;
-    HRESULT hr = m_pDevice->CreateGraphicsPipelineState(&unwrappedDesc, guid, (void **)&ret);
+    WrappedID3D12PipelineState *wrapped = new WrappedID3D12PipelineState(
+        GetResourceManager()->CreateDeferredHandle<ID3D12PipelineState>(), this);
 
-    if(FAILED(hr))
+    wrapped->graphics = new D3D12_EXPANDED_PIPELINE_STATE_STREAM_DESC(OrigDescriptor);
+
+    D3D12_SHADER_BYTECODE *shaders[] = {
+        &wrapped->graphics->VS, &wrapped->graphics->HS, &wrapped->graphics->DS,
+        &wrapped->graphics->GS, &wrapped->graphics->PS,
+    };
+
+    AddResource(pPipelineState, ResourceType::PipelineState, "Graphics Pipeline State");
+    if(OrigDescriptor.pRootSignature)
+      DerivedResource(OrigDescriptor.pRootSignature, pPipelineState);
+
+    for(size_t i = 0; i < ARRAY_COUNT(shaders); i++)
     {
-      SET_ERROR_RESULT(m_FailedReplayResult, ResultCode::APIReplayFailed,
-                       "Failed creating graphics pipeline, HRESULT: %s", ToStr(hr).c_str());
-      return false;
+      if(shaders[i]->BytecodeLength == 0 || shaders[i]->pShaderBytecode == NULL)
+      {
+        shaders[i]->pShaderBytecode = NULL;
+        shaders[i]->BytecodeLength = 0;
+      }
+      else
+      {
+        WrappedID3D12Shader *entry = WrappedID3D12Shader::AddShader(*shaders[i], this);
+        entry->AddRef();
+
+        shaders[i]->pShaderBytecode = entry;
+
+        if(m_GlobalEXTUAV != ~0U)
+          entry->SetShaderExtSlot(m_GlobalEXTUAV, m_GlobalEXTUAVSpace);
+
+        AddResourceCurChunk(entry->GetResourceID());
+
+        DerivedResource(entry->GetResourceID(), pPipelineState);
+      }
+    }
+
+    wrapped->FetchRootSig(GetShaderCache());
+
+    if(wrapped->graphics->InputLayout.NumElements)
+    {
+      wrapped->graphics->InputLayout.pInputElementDescs =
+          new D3D12_INPUT_ELEMENT_DESC[wrapped->graphics->InputLayout.NumElements];
+      memcpy((void *)wrapped->graphics->InputLayout.pInputElementDescs,
+             OrigDescriptor.InputLayout.pInputElementDescs,
+             sizeof(D3D12_INPUT_ELEMENT_DESC) * wrapped->graphics->InputLayout.NumElements);
     }
     else
     {
-      ret = new WrappedID3D12PipelineState(ret, this);
+      wrapped->graphics->InputLayout.pInputElementDescs = NULL;
+    }
 
-      WrappedID3D12PipelineState *wrapped = (WrappedID3D12PipelineState *)ret;
+    if(wrapped->graphics->StreamOutput.NumEntries)
+    {
+      wrapped->graphics->StreamOutput.pSODeclaration =
+          new D3D12_SO_DECLARATION_ENTRY[wrapped->graphics->StreamOutput.NumEntries];
+      memcpy((void *)wrapped->graphics->StreamOutput.pSODeclaration,
+             OrigDescriptor.StreamOutput.pSODeclaration,
+             sizeof(D3D12_SO_DECLARATION_ENTRY) * wrapped->graphics->StreamOutput.NumEntries);
 
-      wrapped->graphics = new D3D12_EXPANDED_PIPELINE_STATE_STREAM_DESC(Descriptor);
-
-      D3D12_SHADER_BYTECODE *shaders[] = {
-          &wrapped->graphics->VS, &wrapped->graphics->HS, &wrapped->graphics->DS,
-          &wrapped->graphics->GS, &wrapped->graphics->PS,
-      };
-
-      AddResource(pPipelineState, ResourceType::PipelineState, "Graphics Pipeline State");
-      if(Descriptor.pRootSignature)
-        DerivedResource(Descriptor.pRootSignature, pPipelineState);
-
-      for(size_t i = 0; i < ARRAY_COUNT(shaders); i++)
+      if(wrapped->graphics->StreamOutput.NumStrides)
       {
-        if(shaders[i]->BytecodeLength == 0 || shaders[i]->pShaderBytecode == NULL)
-        {
-          shaders[i]->pShaderBytecode = NULL;
-          shaders[i]->BytecodeLength = 0;
-        }
-        else
-        {
-          WrappedID3D12Shader *entry = WrappedID3D12Shader::AddShader(*shaders[i], this);
-          entry->AddRef();
-
-          shaders[i]->pShaderBytecode = entry;
-
-          if(m_GlobalEXTUAV != ~0U)
-            entry->SetShaderExtSlot(m_GlobalEXTUAV, m_GlobalEXTUAVSpace);
-
-          AddResourceCurChunk(entry->GetResourceID());
-
-          DerivedResource(entry->GetResourceID(), pPipelineState);
-        }
-      }
-
-      wrapped->FetchRootSig(GetShaderCache());
-
-      if(wrapped->graphics->InputLayout.NumElements)
-      {
-        wrapped->graphics->InputLayout.pInputElementDescs =
-            new D3D12_INPUT_ELEMENT_DESC[wrapped->graphics->InputLayout.NumElements];
-        memcpy((void *)wrapped->graphics->InputLayout.pInputElementDescs,
-               Descriptor.InputLayout.pInputElementDescs,
-               sizeof(D3D12_INPUT_ELEMENT_DESC) * wrapped->graphics->InputLayout.NumElements);
+        wrapped->graphics->StreamOutput.pBufferStrides =
+            new UINT[wrapped->graphics->StreamOutput.NumStrides];
+        memcpy((void *)wrapped->graphics->StreamOutput.pBufferStrides,
+               OrigDescriptor.StreamOutput.pBufferStrides,
+               sizeof(UINT) * wrapped->graphics->StreamOutput.NumStrides);
       }
       else
       {
-        wrapped->graphics->InputLayout.pInputElementDescs = NULL;
-      }
-
-      if(wrapped->graphics->StreamOutput.NumEntries)
-      {
-        wrapped->graphics->StreamOutput.pSODeclaration =
-            new D3D12_SO_DECLARATION_ENTRY[wrapped->graphics->StreamOutput.NumEntries];
-        memcpy((void *)wrapped->graphics->StreamOutput.pSODeclaration,
-               Descriptor.StreamOutput.pSODeclaration,
-               sizeof(D3D12_SO_DECLARATION_ENTRY) * wrapped->graphics->StreamOutput.NumEntries);
-
-        if(wrapped->graphics->StreamOutput.NumStrides)
-        {
-          wrapped->graphics->StreamOutput.pBufferStrides =
-              new UINT[wrapped->graphics->StreamOutput.NumStrides];
-          memcpy((void *)wrapped->graphics->StreamOutput.pBufferStrides,
-                 Descriptor.StreamOutput.pBufferStrides,
-                 sizeof(UINT) * wrapped->graphics->StreamOutput.NumStrides);
-        }
-        else
-        {
-          wrapped->graphics->StreamOutput.pBufferStrides = NULL;
-        }
-      }
-      else
-      {
-        wrapped->graphics->StreamOutput.pSODeclaration = NULL;
         wrapped->graphics->StreamOutput.pBufferStrides = NULL;
       }
-
-      // if this shader was initialised with nvidia's dynamic UAV, pull in that chunk as one of ours
-      // and unset it (there will be one for each create that actually used vendor extensions)
-      if(m_VendorEXT == GPUVendor::nVidia && m_GlobalEXTUAV != ~0U)
-      {
-        GetResourceDesc(pPipelineState)
-            .initialisationChunks.push_back((uint32_t)m_StructuredFile->chunks.size() - 2);
-        m_GlobalEXTUAV = ~0U;
-      }
-      GetResourceManager()->AddLiveResource(pPipelineState, ret);
     }
+    else
+    {
+      wrapped->graphics->StreamOutput.pSODeclaration = NULL;
+      wrapped->graphics->StreamOutput.pBufferStrides = NULL;
+    }
+
+    if(Replay_Debug_SingleThreadedCompilation())
+    {
+      RDResult res = DeferredPipelineCompile(m_pDevice, OrigDescriptor, wrapped);
+      Deserialise(OrigDescriptor);
+
+      if(res != ResultCode::Succeeded)
+      {
+        m_FailedReplayResult = res;
+        return false;
+      }
+    }
+    else
+    {
+      wrapped->deferredJob = Threading::JobSystem::AddJob([wrappedD3D12 = this, device = m_pDevice,
+                                                           OrigDescriptor, wrapped]() {
+        PerformanceTimer timer;
+        wrappedD3D12->CheckDeferredResult(DeferredPipelineCompile(device, OrigDescriptor, wrapped));
+        wrappedD3D12->AddDeferredTime(timer.GetMilliseconds());
+
+        Deserialise(OrigDescriptor);
+      });
+    }
+
+    // if this shader was initialised with nvidia's dynamic UAV, pull in that chunk as one of ours
+    // and unset it (there will be one for each create that actually used vendor extensions)
+    if(m_VendorEXT == GPUVendor::nVidia && m_GlobalEXTUAV != ~0U)
+    {
+      GetResourceDesc(pPipelineState)
+          .initialisationChunks.push_back((uint32_t)m_StructuredFile->chunks.size() - 2);
+      m_GlobalEXTUAV = ~0U;
+    }
+    GetResourceManager()->AddLiveResource(pPipelineState, wrapped);
   }
 
   return true;
@@ -735,7 +801,7 @@ HRESULT WrappedID3D12Device::CreateGraphicsPipelineState(const D3D12_GRAPHICS_PI
   }
   else
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
   }
 
   return ret;
@@ -756,59 +822,73 @@ bool WrappedID3D12Device::Serialise_CreateComputePipelineState(
 
   if(IsReplayingAndReading())
   {
-    D3D12_COMPUTE_PIPELINE_STATE_DESC unwrappedDesc = Descriptor;
-    unwrappedDesc.pRootSignature = Unwrap(unwrappedDesc.pRootSignature);
+    // we steal the serialised descriptor here so we can pass it to jobs without its contents and
+    // all of the allocated structures and arrays being deserialised. We add a job which waits on
+    // the compiles then deserialises this manually.
+    D3D12_COMPUTE_PIPELINE_STATE_DESC OrigDescriptor = Descriptor;
+    Descriptor = {};
 
     // add any missing hashes ourselves. This probably comes from a capture with experimental
     // enabled so it can load unhashed, but we want to be more proactive
-    if(!DXBC::DXBCContainer::IsHashedContainer(Descriptor.CS.pShaderBytecode,
-                                               Descriptor.CS.BytecodeLength))
-      DXBC::DXBCContainer::HashContainer((void *)Descriptor.CS.pShaderBytecode,
-                                         Descriptor.CS.BytecodeLength);
+    if(!DXBC::DXBCContainer::IsHashedContainer(OrigDescriptor.CS.pShaderBytecode,
+                                               OrigDescriptor.CS.BytecodeLength))
+      DXBC::DXBCContainer::HashContainer((void *)OrigDescriptor.CS.pShaderBytecode,
+                                         OrigDescriptor.CS.BytecodeLength);
 
-    ID3D12PipelineState *ret = NULL;
-    HRESULT hr = m_pDevice->CreateComputePipelineState(&unwrappedDesc, guid, (void **)&ret);
+    WrappedID3D12PipelineState *wrapped = new WrappedID3D12PipelineState(
+        GetResourceManager()->CreateDeferredHandle<ID3D12PipelineState>(), this);
 
-    if(FAILED(hr))
+    wrapped->compute = new D3D12_EXPANDED_PIPELINE_STATE_STREAM_DESC(OrigDescriptor);
+
+    WrappedID3D12Shader *entry = WrappedID3D12Shader::AddShader(wrapped->compute->CS, this);
+    entry->AddRef();
+
+    if(m_GlobalEXTUAV != ~0U)
+      entry->SetShaderExtSlot(m_GlobalEXTUAV, m_GlobalEXTUAVSpace);
+
+    AddResourceCurChunk(entry->GetResourceID());
+
+    AddResource(pPipelineState, ResourceType::PipelineState, "Compute Pipeline State");
+    if(OrigDescriptor.pRootSignature)
+      DerivedResource(OrigDescriptor.pRootSignature, pPipelineState);
+    DerivedResource(entry->GetResourceID(), pPipelineState);
+
+    wrapped->compute->CS.pShaderBytecode = entry;
+
+    wrapped->FetchRootSig(GetShaderCache());
+
+    if(Replay_Debug_SingleThreadedCompilation())
     {
-      SET_ERROR_RESULT(m_FailedReplayResult, ResultCode::APIReplayFailed,
-                       "Failed creating compute pipeline, HRESULT: %s", ToStr(hr).c_str());
-      return false;
+      RDResult res = DeferredPipelineCompile(m_pDevice, OrigDescriptor, wrapped);
+      Deserialise(OrigDescriptor);
+
+      if(res != ResultCode::Succeeded)
+      {
+        m_FailedReplayResult = res;
+        return false;
+      }
     }
     else
     {
-      WrappedID3D12PipelineState *wrapped = new WrappedID3D12PipelineState(ret, this);
-      ret = wrapped;
+      wrapped->deferredJob = Threading::JobSystem::AddJob([wrappedD3D12 = this, device = m_pDevice,
+                                                           OrigDescriptor, wrapped]() {
+        PerformanceTimer timer;
+        wrappedD3D12->CheckDeferredResult(DeferredPipelineCompile(device, OrigDescriptor, wrapped));
+        wrappedD3D12->AddDeferredTime(timer.GetMilliseconds());
 
-      wrapped->compute = new D3D12_EXPANDED_PIPELINE_STATE_STREAM_DESC(Descriptor);
-
-      WrappedID3D12Shader *entry = WrappedID3D12Shader::AddShader(wrapped->compute->CS, this);
-      entry->AddRef();
-
-      wrapped->FetchRootSig(GetShaderCache());
-
-      if(m_GlobalEXTUAV != ~0U)
-        entry->SetShaderExtSlot(m_GlobalEXTUAV, m_GlobalEXTUAVSpace);
-
-      AddResourceCurChunk(entry->GetResourceID());
-
-      AddResource(pPipelineState, ResourceType::PipelineState, "Compute Pipeline State");
-      if(Descriptor.pRootSignature)
-        DerivedResource(Descriptor.pRootSignature, pPipelineState);
-      DerivedResource(entry->GetResourceID(), pPipelineState);
-
-      wrapped->compute->CS.pShaderBytecode = entry;
-
-      // if this shader was initialised with nvidia's dynamic UAV, pull in that chunk as one of ours
-      // and unset it (there will be one for each create that actually used vendor extensions)
-      if(m_VendorEXT == GPUVendor::nVidia && m_GlobalEXTUAV != ~0U)
-      {
-        GetResourceDesc(pPipelineState)
-            .initialisationChunks.push_back((uint32_t)m_StructuredFile->chunks.size() - 2);
-        m_GlobalEXTUAV = ~0U;
-      }
-      GetResourceManager()->AddLiveResource(pPipelineState, ret);
+        Deserialise(OrigDescriptor);
+      });
     }
+
+    // if this shader was initialised with nvidia's dynamic UAV, pull in that chunk as one of ours
+    // and unset it (there will be one for each create that actually used vendor extensions)
+    if(m_VendorEXT == GPUVendor::nVidia && m_GlobalEXTUAV != ~0U)
+    {
+      GetResourceDesc(pPipelineState)
+          .initialisationChunks.push_back((uint32_t)m_StructuredFile->chunks.size() - 2);
+      m_GlobalEXTUAV = ~0U;
+    }
+    GetResourceManager()->AddLiveResource(pPipelineState, wrapped);
   }
 
   return true;
@@ -904,7 +984,7 @@ HRESULT WrappedID3D12Device::CreateComputePipelineState(const D3D12_COMPUTE_PIPE
   }
   else
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
   }
 
   return ret;
@@ -1042,7 +1122,7 @@ HRESULT WrappedID3D12Device::CreateDescriptorHeap(const D3D12_DESCRIPTOR_HEAP_DE
   }
   else
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
   }
 
   return ret;
@@ -1097,12 +1177,11 @@ bool WrappedID3D12Device::Serialise_CreateRootSignature(SerialiserType &ser, UIN
 
       WrappedID3D12RootSignature *wrapped = (WrappedID3D12RootSignature *)ret;
 
-      wrapped->sig = GetShaderCache()->GetRootSig(pBlobWithRootSignature, (size_t)blobLengthInBytes);
+      wrapped->sig = DecodeRootSig(pBlobWithRootSignature, (size_t)blobLengthInBytes);
 
       if(wrapped->sig.Flags & D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE)
         wrapped->localRootSigIdx =
-            GetResourceManager()->GetRaytracingResourceAndUtilHandler()->RegisterLocalRootSig(
-                wrapped->sig);
+            GetResourceManager()->GetRTManager()->RegisterLocalRootSig(wrapped->sig);
 
       {
         StructuredSerialiser structuriser(ser.GetStructuredFile().chunks.back(), &GetChunkName);
@@ -1154,6 +1233,8 @@ HRESULT WrappedID3D12Device::CreateRootSignature(UINT nodeMask, const void *pBlo
       wrapped = new WrappedID3D12RootSignature(real, this);
     }
 
+    wrapped->sig = DecodeRootSig(pBlobWithRootSignature, blobLengthInBytes);
+
     if(IsCaptureMode(m_State))
     {
       CACHE_THREAD_SERIALISER();
@@ -1167,12 +1248,9 @@ HRESULT WrappedID3D12Device::CreateRootSignature(UINT nodeMask, const void *pBlo
       record->Length = 0;
       wrapped->SetResourceRecord(record);
 
-      wrapped->sig = GetShaderCache()->GetRootSig(pBlobWithRootSignature, blobLengthInBytes);
-
       if(wrapped->sig.Flags & D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE)
         wrapped->localRootSigIdx =
-            GetResourceManager()->GetRaytracingResourceAndUtilHandler()->RegisterLocalRootSig(
-                wrapped->sig);
+            GetResourceManager()->GetRTManager()->RegisterLocalRootSig(wrapped->sig);
 
       if(!m_BindlessResourceUseActive)
       {
@@ -1214,16 +1292,12 @@ HRESULT WrappedID3D12Device::CreateRootSignature(UINT nodeMask, const void *pBlo
 
       record->AddChunk(scope.Get());
     }
-    else
-    {
-      wrapped->sig = GetShaderCache()->GetRootSig(pBlobWithRootSignature, blobLengthInBytes);
-    }
 
     *ppvRootSignature = (ID3D12RootSignature *)wrapped;
   }
   else
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
   }
 
   return ret;
@@ -1247,6 +1321,18 @@ bool WrappedID3D12Device::Serialise_DynamicDescriptorWrite(SerialiserType &ser,
       // safe to pass an invalid heap type to Create() as these descriptors will by definition not
       // be undefined
       RDCASSERT(desc.GetType() != D3D12DescriptorType::Undefined);
+
+      // to remove any ray query work, force AS descriptors to NULL
+      if(D3D12_Debug_RT_Auditing() && desc.GetType() == D3D12DescriptorType::SRV)
+      {
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = desc.GetSRV();
+        if(srvDesc.ViewDimension == D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE)
+        {
+          srvDesc.RaytracingAccelerationStructure.Location = 0;
+          desc.Init(NULL, &srvDesc);
+        }
+      }
+
       desc.Create(D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES, this, *handle);
       handle->GetHeap()->MarkMutableIndex(handle->GetHeapIndex());
     }
@@ -1598,7 +1684,7 @@ HRESULT WrappedID3D12Device::CreateHeap(const D3D12_HEAP_DESC *pDesc, REFIID rii
   }
   else
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
   }
 
   return ret;
@@ -1696,7 +1782,7 @@ HRESULT WrappedID3D12Device::CreateFence(UINT64 InitialValue, D3D12_FENCE_FLAGS 
   }
   else
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
   }
 
   return ret;
@@ -1778,7 +1864,7 @@ HRESULT WrappedID3D12Device::CreateQueryHeap(const D3D12_QUERY_HEAP_DESC *pDesc,
   }
   else
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
   }
 
   return ret;
@@ -1893,7 +1979,7 @@ HRESULT WrappedID3D12Device::CreateCommandSignature(const D3D12_COMMAND_SIGNATUR
   }
   else
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
   }
 
   return ret;
@@ -2251,17 +2337,23 @@ HRESULT WrappedID3D12Device::SetStablePowerState(BOOL Enable)
 HRESULT WrappedID3D12Device::CheckFeatureSupport(D3D12_FEATURE Feature, void *pFeatureSupportData,
                                                  UINT FeatureSupportDataSize)
 {
-  static uint64_t logged = 0;
+  static uint64_t logged[2] = {};
   bool dolog = true;
   if(uint32_t(Feature) < 64)
   {
     const uint64_t bit = 1ULL << uint32_t(Feature);
-    dolog = (logged & bit) == 0;
-    logged |= bit;
+    dolog = (logged[0] & bit) == 0;
+    logged[0] |= bit;
+  }
+  else if(uint32_t(Feature - 64) < 64)
+  {
+    const uint64_t bit = 1ULL << uint32_t(Feature - 64);
+    dolog = (logged[1] & bit) == 0;
+    logged[1] |= bit;
   }
 
   if(dolog)
-    RDCLOG("Checking feature support for %d", Feature);
+    RDCLOG("Checking feature support for %s", ToStr(Feature).c_str());
   HRESULT hr = m_pDevice->CheckFeatureSupport(Feature, pFeatureSupportData, FeatureSupportDataSize);
 
   if(FAILED(hr))
@@ -2299,24 +2391,6 @@ HRESULT WrappedID3D12Device::CheckFeatureSupport(D3D12_FEATURE Feature, void *pF
 
     return S_OK;
   }
-  else if(Feature == D3D12_FEATURE_D3D12_OPTIONS5)
-  {
-    D3D12_FEATURE_DATA_D3D12_OPTIONS5 *opts =
-        (D3D12_FEATURE_DATA_D3D12_OPTIONS5 *)pFeatureSupportData;
-    if(FeatureSupportDataSize != sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS5))
-      return E_INVALIDARG;
-
-    // don't support raytracing
-    if(!D3D12_Experimental_EnableRTSupport())
-    {
-      opts->RaytracingTier = D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
-
-      if(dolog)
-        RDCLOG("Forcing no raytracing tier support");
-    }
-
-    return S_OK;
-  }
   else if(Feature == D3D12_FEATURE_D3D12_OPTIONS7)
   {
     D3D12_FEATURE_DATA_D3D12_OPTIONS7 *opts =
@@ -2332,6 +2406,20 @@ HRESULT WrappedID3D12Device::CheckFeatureSupport(D3D12_FEATURE Feature, void *pF
 
     return S_OK;
   }
+  else if(Feature == D3D12_FEATURE_D3D12_OPTIONS16)
+  {
+    D3D12_FEATURE_DATA_D3D12_OPTIONS16 *opts =
+        (D3D12_FEATURE_DATA_D3D12_OPTIONS16 *)pFeatureSupportData;
+    if(FeatureSupportDataSize != sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS16))
+      return E_INVALIDARG;
+
+    opts->GPUUploadHeapSupported = FALSE;
+
+    if(dolog)
+      RDCLOG("Forcing no GPU upload heap support");
+
+    return S_OK;
+  }
   else if(Feature == D3D12_FEATURE_D3D12_OPTIONS18)
   {
     D3D12_FEATURE_DATA_D3D12_OPTIONS18 *opts =
@@ -2343,6 +2431,35 @@ HRESULT WrappedID3D12Device::CheckFeatureSupport(D3D12_FEATURE Feature, void *pF
 
     if(dolog)
       RDCLOG("Forcing no changed renderpass support");
+
+    return S_OK;
+  }
+  else if(Feature == D3D12_FEATURE_D3D12_OPTIONS20)
+  {
+    D3D12_FEATURE_DATA_D3D12_OPTIONS20 *opts =
+        (D3D12_FEATURE_DATA_D3D12_OPTIONS20 *)pFeatureSupportData;
+    if(FeatureSupportDataSize != sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS20))
+      return E_INVALIDARG;
+
+    // unknown what this does, disable it
+    opts->RecreateAtTier = D3D12_RECREATE_AT_TIER_NOT_SUPPORTED;
+
+    return S_OK;
+  }
+  else if(Feature == D3D12_FEATURE_D3D12_OPTIONS21)
+  {
+    D3D12_FEATURE_DATA_D3D12_OPTIONS21 *opts =
+        (D3D12_FEATURE_DATA_D3D12_OPTIONS21 *)pFeatureSupportData;
+    if(FeatureSupportDataSize != sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS21))
+      return E_INVALIDARG;
+
+    if(dolog)
+      RDCLOG("Forcing no EI 1.1 support");
+    opts->ExecuteIndirectTier = D3D12_EXECUTE_INDIRECT_TIER_1_0;
+
+    if(dolog)
+      RDCLOG("Forcing no work graph support");
+    opts->WorkGraphsTier = D3D12_WORK_GRAPHS_TIER_NOT_SUPPORTED;
 
     return S_OK;
   }

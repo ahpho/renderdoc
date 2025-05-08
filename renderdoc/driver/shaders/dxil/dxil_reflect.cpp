@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,8 +23,12 @@
  ******************************************************************************/
 
 #include "common/formatting.h"
+#include "core/settings.h"
+#include "strings/string_utils.h"
 #include "dxil_bytecode.h"
 #include "dxil_common.h"
+
+RDOC_EXTERN_CONFIG(bool, D3D_Hack_EnableGroups);
 
 namespace DXIL
 {
@@ -70,7 +74,7 @@ enum class StructMemberAnnotation
   Precise = 8,
   CBUsed = 9,
   // ResourceProperties = 10,
-  // BitFields = 11,
+  BitFields = 11,
   FieldWidth = 12,
   VectorSize = 13,
 };
@@ -155,6 +159,8 @@ struct TypeInfo
     ComponentType type;
     uint32_t fieldWidth;
     uint32_t vectorSize;
+
+    rdcarray<MemberData> bitfieldMembers;
   };
 
   struct StructData
@@ -199,70 +205,81 @@ struct TypeInfo
         const Metadata *memberIn = structMembers->children[m + 1];
         MemberData &memberOut = data.members[m];
 
-        for(size_t tag = 0; tag < memberIn->children.size(); tag += 2)
+        const rdcarray<Metadata *> &tagList = memberIn->children;
+
+        ProcessTagListForMember(tagList, memberOut);
+      }
+    }
+  }
+
+  void ProcessTagListForMember(const rdcarray<Metadata *> &tagList, MemberData &out)
+  {
+    for(size_t tag = 0; tag < tagList.size(); tag += 2)
+    {
+      StructMemberAnnotation fieldTag = getival<StructMemberAnnotation>(tagList[tag]);
+      switch(fieldTag)
+      {
+        case StructMemberAnnotation::SNorm:
         {
-          StructMemberAnnotation fieldTag = getival<StructMemberAnnotation>(memberIn->children[tag]);
-          switch(fieldTag)
-          {
-            case StructMemberAnnotation::SNorm:
-            {
-              if(getival<uint32_t>(memberIn->children[tag + 1]) != 0)
-                memberOut.flags = MemberData::Flags(memberOut.flags | MemberData::SNorm);
-              break;
-            }
-            case StructMemberAnnotation::UNorm:
-            {
-              if(getival<uint32_t>(memberIn->children[tag + 1]) != 0)
-                memberOut.flags = MemberData::Flags(memberOut.flags | MemberData::UNorm);
-              break;
-            }
-            case StructMemberAnnotation::Matrix:
-            {
-              const Metadata *matrixData = memberIn->children[tag + 1];
-              memberOut.rows = getival<uint8_t>(matrixData->children[0]);
-              memberOut.cols = getival<uint8_t>(matrixData->children[1]);
-              bool rowmajor = (getival<uint32_t>(matrixData->children[2]) == 1);
-              if(rowmajor)
-                memberOut.flags =
-                    MemberData::Flags(memberOut.flags | MemberData::RowMajor | MemberData::Matrix);
-              else
-                memberOut.flags = MemberData::Flags(memberOut.flags | MemberData::Matrix);
-              break;
-            }
-            case StructMemberAnnotation::CBufferOffset:
-              memberOut.offset = getival<uint32_t>(memberIn->children[tag + 1]);
-              break;
-            case StructMemberAnnotation::SemanticString:
-              memberOut.semantic = memberIn->children[tag + 1]->str;
-              break;
-            case StructMemberAnnotation::InterpolationMode: break;
-            case StructMemberAnnotation::FieldName:
-              memberOut.name = memberIn->children[tag + 1]->str;
-              break;
-            case StructMemberAnnotation::CompType:
-              memberOut.type = getival<ComponentType>(memberIn->children[tag + 1]);
-              break;
-            case StructMemberAnnotation::Precise:
-            {
-              if(getival<uint32_t>(memberIn->children[tag + 1]) != 0)
-                memberOut.flags = MemberData::Flags(memberOut.flags | MemberData::Precise);
-              break;
-            }
-            case StructMemberAnnotation::CBUsed:
-            {
-              if(getival<uint32_t>(memberIn->children[tag + 1]) != 0)
-                memberOut.flags = MemberData::Flags(memberOut.flags | MemberData::CBUsed);
-              break;
-            }
-            case StructMemberAnnotation::FieldWidth:
-              memberOut.fieldWidth = getival<uint32_t>(memberIn->children[tag + 1]);
-              break;
-            case StructMemberAnnotation::VectorSize:
-              memberOut.vectorSize = getival<uint32_t>(memberIn->children[tag + 1]);
-              break;
-            default: RDCWARN("Unexpected field tag %u", fieldTag); break;
-          }
+          if(getival<uint32_t>(tagList[tag + 1]) != 0)
+            out.flags = MemberData::Flags(out.flags | MemberData::SNorm);
+          break;
         }
+        case StructMemberAnnotation::UNorm:
+        {
+          if(getival<uint32_t>(tagList[tag + 1]) != 0)
+            out.flags = MemberData::Flags(out.flags | MemberData::UNorm);
+          break;
+        }
+        case StructMemberAnnotation::Matrix:
+        {
+          const Metadata *matrixData = tagList[tag + 1];
+          out.rows = getival<uint8_t>(matrixData->children[0]);
+          out.cols = getival<uint8_t>(matrixData->children[1]);
+          bool rowmajor = (getival<uint32_t>(matrixData->children[2]) == 1);
+          if(rowmajor)
+            out.flags = MemberData::Flags(out.flags | MemberData::RowMajor | MemberData::Matrix);
+          else
+            out.flags = MemberData::Flags(out.flags | MemberData::Matrix);
+          break;
+        }
+        case StructMemberAnnotation::CBufferOffset:
+          out.offset = getival<uint32_t>(tagList[tag + 1]);
+          break;
+        case StructMemberAnnotation::SemanticString: out.semantic = tagList[tag + 1]->str; break;
+        case StructMemberAnnotation::InterpolationMode: break;
+        case StructMemberAnnotation::FieldName: out.name = tagList[tag + 1]->str; break;
+        case StructMemberAnnotation::CompType:
+          out.type = getival<ComponentType>(tagList[tag + 1]);
+          break;
+        case StructMemberAnnotation::Precise:
+        {
+          if(getival<uint32_t>(tagList[tag + 1]) != 0)
+            out.flags = MemberData::Flags(out.flags | MemberData::Precise);
+          break;
+        }
+        case StructMemberAnnotation::CBUsed:
+        {
+          if(getival<uint32_t>(tagList[tag + 1]) != 0)
+            out.flags = MemberData::Flags(out.flags | MemberData::CBUsed);
+          break;
+        }
+        case StructMemberAnnotation::FieldWidth:
+          out.fieldWidth = getival<uint32_t>(tagList[tag + 1]);
+          break;
+        case StructMemberAnnotation::VectorSize:
+          out.vectorSize = getival<uint32_t>(tagList[tag + 1]);
+          break;
+        case StructMemberAnnotation::BitFields:
+        {
+          out.bitfieldMembers.resize(tagList[tag + 1]->children.size());
+          for(size_t i = 0; i < tagList[tag + 1]->children.size(); i++)
+          {
+            ProcessTagListForMember(tagList[tag + 1]->children[i]->children, out.bitfieldMembers[i]);
+          }
+          break;
+        }
+        default: RDCWARN("Unexpected field tag %u", fieldTag); break;
       }
     }
   }
@@ -285,6 +302,9 @@ EntryPointInterface::Signature::Signature(const Metadata *signature)
   cols = getival<uint8_t>(signature->children[SignatureElement::Cols]);
   startRow = getival<int32_t>(signature->children[SignatureElement::StartRow]);
   startCol = getival<int8_t>(signature->children[SignatureElement::StartCol]);
+  // System value entries have row, col = -1, reset start column to 0 to make parameter matching simpler
+  if((startRow == -1) && (startCol == -1))
+    startCol = 0;
 }
 
 EntryPointInterface::ResourceBase::ResourceBase(ResourceClass resourceClass, const Metadata *md)
@@ -301,6 +321,8 @@ EntryPointInterface::ResourceBase::ResourceBase(ResourceClass resourceClass, con
     SRV &srv = srvData;
     srv.shape = getival<ResourceKind>(md->children[(size_t)ResField::SRVShape]);
     srv.sampleCount = getival<uint32_t>(md->children[(size_t)ResField::SRVSampleCount]);
+    srv.compType = ComponentType::Invalid;
+    srv.elementStride = ~0U;
     const Metadata *tags = md->children[(size_t)ResField::SRVTags];
     for(size_t t = 0; tags && t < tags->children.size(); t += 2)
     {
@@ -327,6 +349,11 @@ EntryPointInterface::ResourceBase::ResourceBase(ResourceClass resourceClass, con
     uav.hasCounter = (getival<uint32_t>(md->children[(size_t)ResField::UAVHiddenCounter]) == 1);
     uav.rasterizerOrderedView =
         (getival<uint32_t>(md->children[(size_t)ResField::UAVRasterOrder]) == 1);
+    uav.compType = ComponentType::Invalid;
+    uav.elementStride = ~0U;
+    uav.samplerFeedback = SamplerFeedbackType::LastEntry;
+    uav.atomic64Use = false;
+
     const Metadata *tags = md->children[(size_t)ResField::UAVTags];
     for(size_t t = 0; tags && t < tags->children.size(); t += 2)
     {
@@ -355,6 +382,7 @@ EntryPointInterface::ResourceBase::ResourceBase(ResourceClass resourceClass, con
     CBuffer &cbuffer = cbufferData;
     cbuffer.sizeInBytes = getival<uint32_t>(md->children[(size_t)ResField::CBufferByteSize]);
     const Metadata *tags = md->children[(size_t)ResField::CBufferTags];
+    cbuffer.isTBuffer = false;
     for(size_t t = 0; tags && t < tags->children.size(); t += 2)
     {
       RDCASSERT(tags->children[t]->isConstant);
@@ -708,6 +736,12 @@ void Program::FetchComputeProperties(DXBC::Reflection *reflection)
           reflection->DispatchThreadsDimension[1] = getival<uint32_t>(threadDim.children[1]);
           reflection->DispatchThreadsDimension[2] = getival<uint32_t>(threadDim.children[2]);
           return;
+        }
+        else if(shaderTypeTag == ShaderEntryTag::WaveSize)
+        {
+          Metadata &sizeData = *tags.children[t + 1];
+          RDCASSERTEQUAL(sizeData.children.size(), 1);
+          reflection->WaveSize = getival<uint32_t>(sizeData.children[0]);
         }
       }
 
@@ -1126,6 +1160,31 @@ static DXBC::CBufferVariableType MakeCBufferVariableType(const TypeInfo &typeInf
   {
     CBufferVariable var;
 
+    if(!it->second.members[i].bitfieldMembers.empty())
+    {
+      for(size_t b = 0; b < it->second.members[i].bitfieldMembers.size(); b++)
+      {
+        const TypeInfo::MemberData &bitfieldMember = it->second.members[i].bitfieldMembers[b];
+
+        var.name = bitfieldMember.name;
+        var.offset = it->second.members[i].offset;
+        var.bitFieldOffset = bitfieldMember.offset & 0xffff;
+        var.bitFieldSize = bitfieldMember.fieldWidth & 0xffff;
+
+        var.type.varType = VarTypeForComponentType(bitfieldMember.type);
+        var.type.bytesize = VarTypeByteSize(var.type.varType);
+        var.type.name = ToStr(var.type.varType);
+        var.type.rows = var.type.cols = var.type.elements = 1;
+        var.type.varClass = CLASS_SCALAR;
+
+        ret.bytesize = var.offset + var.type.bytesize;
+
+        ret.members.push_back(var);
+      }
+
+      continue;
+    }
+
     var.name = it->second.members[i].name;
     var.offset = it->second.members[i].offset;
 
@@ -1226,6 +1285,12 @@ static void AddResourceBind(DXBC::Reflection *refl, const TypeInfo &typeInfo, co
   RDCASSERT(resType->type == Type::Pointer);
   resType = resType->inner;
 
+  bool structType = resType->type == Type::Struct;
+
+  const Type *bufType = NULL;
+  if(resType->type == Type::Struct && resType->members.size() == 1)
+    bufType = resType->members[0];
+
   // textures are a struct containing the inner type and a mips type
   if(resType->type == Type::Struct && !resType->members.empty())
     resType = resType->members[0];
@@ -1245,6 +1310,9 @@ static void AddResourceBind(DXBC::Reflection *refl, const TypeInfo &typeInfo, co
     else if(resType->scalarType == Type::Int)
       bind.retType = RETURN_TYPE_SINT;
   }
+
+  if(bufType && (resType->type == Type::Scalar))
+    structType = false;
 
   const Metadata *tags =
       srv ? r->children[(size_t)ResField::SRVTags] : r->children[(size_t)ResField::UAVTags];
@@ -1366,20 +1434,23 @@ static void AddResourceBind(DXBC::Reflection *refl, const TypeInfo &typeInfo, co
       bind.type = srv ? ShaderInputBind::TYPE_BYTEADDRESS : ShaderInputBind::TYPE_UAV_RWBYTEADDRESS;
       defName = srv ? "ByteAddressBuffer" : "RWByteAddressBuffer";
       bind.dimension = ShaderInputBind::DIM_BUFFER;
-      bind.retType = RETURN_TYPE_MIXED;
+      if(bind.retType == RETURN_TYPE_UNKNOWN && structType)
+        bind.retType = RETURN_TYPE_MIXED;
       break;
     case ResourceKind::StructuredBuffer:
       bind.type = srv ? ShaderInputBind::TYPE_STRUCTURED : ShaderInputBind::TYPE_UAV_RWSTRUCTURED;
       defName = srv ? "StructuredBuffer" : "RWStructuredBuffer";
       bind.dimension = ShaderInputBind::DIM_BUFFER;
-      bind.retType = RETURN_TYPE_MIXED;
+      if(bind.retType == RETURN_TYPE_UNKNOWN && structType)
+        bind.retType = RETURN_TYPE_MIXED;
       break;
     case ResourceKind::StructuredBufferWithCounter:
       bind.type = srv ? ShaderInputBind::TYPE_STRUCTURED
                       : ShaderInputBind::TYPE_UAV_RWSTRUCTURED_WITH_COUNTER;
       defName = srv ? "StructuredBufferWithCounter" : "RWStructuredBufferWithCounter";
       bind.dimension = ShaderInputBind::DIM_BUFFER;
-      bind.retType = RETURN_TYPE_MIXED;
+      if(bind.retType == RETURN_TYPE_UNKNOWN && structType)
+        bind.retType = RETURN_TYPE_MIXED;
       break;
   }
 
@@ -1401,6 +1472,7 @@ static void AddResourceBind(DXBC::Reflection *refl, const TypeInfo &typeInfo, co
       if(!typeInfo.structData.empty())
       {
         refl->ResourceBinds[bind.name] = MakeCBufferVariableType(typeInfo, baseType->inner);
+        RecalculateScalarOffsetsSizes(refl->ResourceBinds[bind.name]);
       }
       else
       {
@@ -1420,6 +1492,18 @@ static void AddResourceBind(DXBC::Reflection *refl, const TypeInfo &typeInfo, co
     refl->SRVs.push_back(bind);
   else
     refl->UAVs.push_back(bind);
+}
+
+const DXIL::EntryPointInterface *Program::GetEntryPointInterface() const
+{
+  RDCASSERT(!m_EntryPointInterfaces.isEmpty());
+  for(size_t e = 0; e < m_EntryPointInterfaces.size(); ++e)
+  {
+    if(m_EntryPoint == m_EntryPointInterfaces[e].name)
+      return &m_EntryPointInterfaces[e];
+  }
+  RDCERR("Couldn't find entry point interface for %s", m_EntryPoint.c_str());
+  return NULL;
 }
 
 rdcarray<ShaderEntryPoint> Program::GetEntryPoints()
@@ -1460,12 +1544,32 @@ rdcarray<ShaderEntryPoint> Program::GetEntryPoints()
   return ret;
 }
 
-DXBC::Reflection *Program::GetReflection()
+void Program::FetchEntryPoint()
+{
+  if(m_EntryPoint.empty())
+  {
+    DXMeta dx(m_NamedMeta);
+    if(dx.entryPoints && dx.entryPoints->children.size() > 0 &&
+       dx.entryPoints->children[0]->children.size() > 2)
+    {
+      m_EntryPoint = dx.entryPoints->children[0]->children[1]->str;
+    }
+    else
+    {
+      RDCERR("Didn't find dx.entryPoints");
+      m_EntryPoint = "main";
+    }
+  }
+}
+
+DXBC::Reflection *Program::BuildReflection()
 {
   const bool dxcStyleFormatting = m_DXCStyle;
   using namespace DXBC;
 
   Reflection *refl = new Reflection;
+  Files.clear();
+  m_CompileFlags.flags.clear();
 
   DXMeta dx(m_NamedMeta);
 
@@ -1528,13 +1632,25 @@ DXBC::Reflection *Program::GetReflection()
     {
       if(f->children.size() != 2)
         continue;
-      Files.push_back({f->children[0]->str, f->children[1]->str});
+      bool found = false;
+      rdcstr shaderFilePath = standardise_directory_separator(f->children[0]->str);
+      for(const ShaderSourceFile &shaderSource : Files)
+      {
+        if(shaderSource.filename == shaderFilePath)
+        {
+          found = true;
+          break;
+        }
+      }
+
+      if(!found)
+        Files.push_back({shaderFilePath, f->children[1]->str});
     }
 
     // push the main filename to the front
     if(dx.source.mainFileName && !dx.source.mainFileName->children.empty())
     {
-      rdcstr mainFile = dx.source.mainFileName->children[0]->str;
+      rdcstr mainFile = standardise_directory_separator(dx.source.mainFileName->children[0]->str);
 
       if(!mainFile.empty())
       {
@@ -1548,6 +1664,8 @@ DXBC::Reflection *Program::GetReflection()
         }
       }
     }
+    if(!Files.empty())
+      m_CompileFlags.flags.push_back({"preferSourceDebug", "1"});
   }
 
   if(dx.source.args && dx.source.args->children.size() == 1)
@@ -1574,11 +1692,14 @@ DXBC::Reflection *Program::GetReflection()
       }
     }
 
+    if(cmdline.empty())
+      cmdline = GetDefaultCommandLine();
+
     m_CompileFlags.flags.push_back({"@cmdline", cmdline});
   }
   else
   {
-    m_CompileFlags.flags.push_back({"@cmdline", "-T " + m_Profile});
+    m_CompileFlags.flags.push_back({"@cmdline", GetDefaultCommandLine()});
   }
 
   if(dx.resources)
@@ -1708,21 +1829,277 @@ DXBC::Reflection *Program::GetReflection()
 
 rdcstr Program::GetDebugStatus()
 {
-  return "Debugging DXIL is not supported";
+  if((m_Type != DXBC::ShaderType::Vertex) && (m_Type != DXBC::ShaderType::Compute) &&
+     (m_Type != DXBC::ShaderType::Pixel))
+    return "Only DXIL Vertex, Pixel and Compute shaders are supported for debugging";
+
+  for(size_t i = 0; i < m_Functions.size(); i++)
+  {
+    const Function &f = *m_Functions[i];
+    // Only support "dx.op" external functions
+    if(f.external)
+    {
+      if(!f.name.beginsWith("dx.op.") && !f.name.beginsWith("llvm.dbg.") &&
+         !f.name.beginsWith("llvm.lifetime.") && !f.name.beginsWith("llvm.invariant."))
+        return StringFormat::Fmt("Unsupported external function '%s'", f.name.c_str());
+    }
+
+    for(const Instruction *inst : f.instructions)
+    {
+      switch(inst->op)
+      {
+        case Operation::AddrSpaceCast:
+        case Operation::InsertValue:
+          return StringFormat::Fmt("Unsupported instruction '%s'", ToStr(inst->op).c_str());
+        case Operation::Call:
+        {
+          const Function *callFunc = inst->getFuncCall();
+          rdcstr funcCallName = inst->getFuncCall()->name;
+          if(funcCallName.beginsWith("dx.op."))
+          {
+            DXOp dxOpCode = DXOp::NumOpCodes;
+            RDCASSERT(getival<DXOp>(inst->args[0], dxOpCode));
+            RDCASSERT(dxOpCode < DXOp::NumOpCodes, dxOpCode, DXOp::NumOpCodes);
+            switch(dxOpCode)
+            {
+              case DXOp::QuadReadLaneAt:
+              case DXOp::QuadOp:
+                // Only supported on pixel shaders
+                if(m_Type != DXBC::ShaderType::Pixel)
+                  return StringFormat::Fmt(
+                      "Only supported when debugging pixel shaders dx.op call `%s` %s",
+                      callFunc->name.c_str(), ToStr(dxOpCode).c_str());
+                continue;
+              case DXOp::WaveIsFirstLane:
+              case DXOp::WaveGetLaneIndex:
+              case DXOp::WaveGetLaneCount:
+              case DXOp::WaveAnyTrue:
+              case DXOp::WaveAllTrue:
+              case DXOp::WaveActiveAllEqual:
+              case DXOp::WaveActiveBallot:
+              case DXOp::WaveReadLaneAt:
+              case DXOp::WaveReadLaneFirst:
+              case DXOp::WaveActiveOp:
+              case DXOp::WaveActiveBit:
+              case DXOp::WavePrefixOp:
+              case DXOp::WavePrefixBitCount:
+              case DXOp::WaveAllBitCount:
+              case DXOp::WaveMatch:
+              case DXOp::WaveMultiPrefixOp:
+              case DXOp::WaveMultiPrefixBitCount:
+                if(!D3D_Hack_EnableGroups())
+                  return StringFormat::Fmt("Unsupported dx.op call `%s` %s", callFunc->name.c_str(),
+                                           ToStr(dxOpCode).c_str());
+                continue;
+              case DXOp::TempRegLoad:
+              case DXOp::TempRegStore:
+              case DXOp::MinPrecXRegLoad:
+              case DXOp::MinPrecXRegStore:
+              case DXOp::CBufferLoad:
+              case DXOp::BufferUpdateCounter:
+              case DXOp::CheckAccessFullyMapped:
+              case DXOp::EvalSnapped:
+              case DXOp::EvalSampleIndex:
+              case DXOp::EvalCentroid:
+              case DXOp::EmitStream:
+              case DXOp::CutStream:
+              case DXOp::EmitThenCutStream:
+              case DXOp::GSInstanceID:
+              case DXOp::LoadOutputControlPoint:
+              case DXOp::LoadPatchConstant:
+              case DXOp::DomainLocation:
+              case DXOp::StorePatchConstant:
+              case DXOp::OutputControlPointID:
+              case DXOp::CycleCounterLegacy:
+              case DXOp::AttributeAtVertex:
+              case DXOp::InstanceID:
+              case DXOp::InstanceIndex:
+              case DXOp::HitKind:
+              case DXOp::RayFlags:
+              case DXOp::DispatchRaysIndex:
+              case DXOp::DispatchRaysDimensions:
+              case DXOp::WorldRayOrigin:
+              case DXOp::WorldRayDirection:
+              case DXOp::ObjectRayOrigin:
+              case DXOp::ObjectRayDirection:
+              case DXOp::ObjectToWorld:
+              case DXOp::WorldToObject:
+              case DXOp::RayTMin:
+              case DXOp::RayTCurrent:
+              case DXOp::IgnoreHit:
+              case DXOp::AcceptHitAndEndSearch:
+              case DXOp::TraceRay:
+              case DXOp::ReportHit:
+              case DXOp::CallShader:
+              case DXOp::CreateHandleForLib:
+              case DXOp::PrimitiveIndex:
+              case DXOp::SetMeshOutputCounts:
+              case DXOp::EmitIndices:
+              case DXOp::GetMeshPayload:
+              case DXOp::StoreVertexOutput:
+              case DXOp::StorePrimitiveOutput:
+              case DXOp::DispatchMesh:
+              case DXOp::WriteSamplerFeedback:
+              case DXOp::WriteSamplerFeedbackBias:
+              case DXOp::WriteSamplerFeedbackLevel:
+              case DXOp::WriteSamplerFeedbackGrad:
+              case DXOp::AllocateRayQuery:
+              case DXOp::RayQuery_TraceRayInline:
+              case DXOp::RayQuery_Proceed:
+              case DXOp::RayQuery_Abort:
+              case DXOp::RayQuery_CommitNonOpaqueTriangleHit:
+              case DXOp::RayQuery_CommitProceduralPrimitiveHit:
+              case DXOp::RayQuery_CommittedStatus:
+              case DXOp::RayQuery_CandidateType:
+              case DXOp::RayQuery_CandidateObjectToWorld3x4:
+              case DXOp::RayQuery_CandidateWorldToObject3x4:
+              case DXOp::RayQuery_CommittedObjectToWorld3x4:
+              case DXOp::RayQuery_CommittedWorldToObject3x4:
+              case DXOp::RayQuery_CandidateProceduralPrimitiveNonOpaque:
+              case DXOp::RayQuery_CandidateTriangleFrontFace:
+              case DXOp::RayQuery_CommittedTriangleFrontFace:
+              case DXOp::RayQuery_CandidateTriangleBarycentrics:
+              case DXOp::RayQuery_CommittedTriangleBarycentrics:
+              case DXOp::RayQuery_RayFlags:
+              case DXOp::RayQuery_WorldRayOrigin:
+              case DXOp::RayQuery_WorldRayDirection:
+              case DXOp::RayQuery_RayTMin:
+              case DXOp::RayQuery_CandidateTriangleRayT:
+              case DXOp::RayQuery_CommittedRayT:
+              case DXOp::RayQuery_CandidateInstanceIndex:
+              case DXOp::RayQuery_CandidateInstanceID:
+              case DXOp::RayQuery_CandidateGeometryIndex:
+              case DXOp::RayQuery_CandidatePrimitiveIndex:
+              case DXOp::RayQuery_CandidateObjectRayOrigin:
+              case DXOp::RayQuery_CandidateObjectRayDirection:
+              case DXOp::RayQuery_CommittedInstanceIndex:
+              case DXOp::RayQuery_CommittedInstanceID:
+              case DXOp::RayQuery_CommittedGeometryIndex:
+              case DXOp::RayQuery_CommittedPrimitiveIndex:
+              case DXOp::RayQuery_CommittedObjectRayOrigin:
+              case DXOp::RayQuery_CommittedObjectRayDirection:
+              case DXOp::GeometryIndex:
+              case DXOp::RayQuery_CandidateInstanceContributionToHitGroupIndex:
+              case DXOp::RayQuery_CommittedInstanceContributionToHitGroupIndex:
+              case DXOp::TextureGatherRaw:
+              case DXOp::TextureStoreSample:
+              case DXOp::WaveMatrix_Annotate:
+              case DXOp::WaveMatrix_Depth:
+              case DXOp::WaveMatrix_Fill:
+              case DXOp::WaveMatrix_LoadRawBuf:
+              case DXOp::WaveMatrix_LoadGroupShared:
+              case DXOp::WaveMatrix_StoreRawBuf:
+              case DXOp::WaveMatrix_StoreGroupShared:
+              case DXOp::WaveMatrix_Multiply:
+              case DXOp::WaveMatrix_MultiplyAccumulate:
+              case DXOp::WaveMatrix_ScalarOp:
+              case DXOp::WaveMatrix_SumAccumulate:
+              case DXOp::WaveMatrix_Add:
+              case DXOp::AllocateNodeOutputRecords:
+              case DXOp::GetNodeRecordPtr:
+              case DXOp::IncrementOutputCount:
+              case DXOp::OutputComplete:
+              case DXOp::GetInputRecordCount:
+              case DXOp::FinishedCrossGroupSharing:
+              case DXOp::BarrierByMemoryType:
+              case DXOp::BarrierByMemoryHandle:
+              case DXOp::BarrierByNodeRecordHandle:
+              case DXOp::CreateNodeOutputHandle:
+              case DXOp::IndexNodeHandle:
+              case DXOp::AnnotateNodeHandle:
+              case DXOp::CreateNodeInputRecordHandle:
+              case DXOp::AnnotateNodeRecordHandle:
+              case DXOp::NodeOutputIsValid:
+              case DXOp::GetRemainingRecursionLevels:
+              case DXOp::StartVertexLocation:
+              case DXOp::StartInstanceLocation:
+              case DXOp::NumOpCodes:
+                return StringFormat::Fmt("Unsupported dx.op call `%s` %s", callFunc->name.c_str(),
+                                         ToStr(dxOpCode).c_str());
+              default: break;
+            }
+            break;
+          }
+          else if(funcCallName.beginsWith("llvm.dbg."))
+          {
+            break;
+          }
+          else if(funcCallName.beginsWith("llvm.lifetime."))
+          {
+            break;
+          }
+          else if(funcCallName.beginsWith("llvm.invariant."))
+          {
+            break;
+          }
+          else
+          {
+            return StringFormat::Fmt("Unsupported function call '%s'", ToStr(callFunc->name).c_str());
+          }
+          break;
+        }
+        default: break;
+      }
+    }
+  }
+
+  // no unsupported instructions used
+  return rdcstr();
 }
 
 void Program::GetLineInfo(size_t instruction, uintptr_t offset, LineColumnInfo &lineInfo) const
 {
+  bool getEntryPoint = (instruction == ~0U);
+  if(getEntryPoint)
+    RDCASSERT(!m_EntryPoint.empty());
+
   lineInfo = LineColumnInfo();
 
   for(size_t i = 0; i < m_Functions.size(); i++)
   {
     const Function &f = *m_Functions[i];
 
-    if(instruction < f.instructions.size())
+    bool getLineInfo = (getEntryPoint) ? false : (instruction < f.instructions.size());
+    if(getEntryPoint)
     {
-      lineInfo.disassemblyLine = f.instructions[instruction]->disassemblyLine;
-      break;
+      if(f.name == m_EntryPoint)
+      {
+        getLineInfo = true;
+        instruction = 0;
+      }
+    }
+    if(getLineInfo)
+    {
+      const Instruction *const inst = f.instructions[instruction];
+      uint32_t dbgLoc = ShouldIgnoreSourceMapping(*inst) ? ~0U : inst->debugLoc;
+      if(dbgLoc != ~0U)
+      {
+        const DebugLocation &debugLoc = m_DebugLocations[dbgLoc];
+        int32_t fileIndex = -1;
+        Metadata *scope = debugLoc.scope;
+        const DIBase *const dwarfInfo = scope->dwarf;
+        rdcstr shaderFilePath = standardise_directory_separator(GetDebugScopeFilePath(dwarfInfo));
+        RDCASSERT(!shaderFilePath.empty());
+        for(int32_t iFile = 0; iFile < Files.count(); iFile++)
+        {
+          rdcstr filePath = Files[iFile].filename;
+          if(filePath == shaderFilePath)
+          {
+            fileIndex = iFile;
+            break;
+          }
+        }
+
+        lineInfo.fileIndex = fileIndex;
+        lineInfo.lineStart = (uint32_t)debugLoc.line;
+        lineInfo.lineEnd = (uint32_t)debugLoc.line;
+        // Without column end data ignore the column start data in DebugLocation
+        lineInfo.colStart = 0;
+        lineInfo.colEnd = 0;
+      }
+
+      lineInfo.disassemblyLine = inst->disassemblyLine;
+      return;
     }
     instruction -= f.instructions.size();
   }
@@ -1733,24 +2110,29 @@ void Program::GetCallstack(size_t instruction, uintptr_t offset, rdcarray<rdcstr
   callstack.clear();
 }
 
-bool Program::HasSourceMapping() const
-{
-  // not yet implemented and only relevant for debugging
-  return false;
-}
-
 void Program::GetLocals(const DXBC::DXBCContainer *dxbc, size_t instruction, uintptr_t offset,
                         rdcarray<SourceVariableMapping> &locals) const
 {
   locals.clear();
+
+  for(const LocalSourceVariable &localVar : m_Locals)
+  {
+    if(localVar.startInst > instruction)
+      continue;
+    if(instruction > localVar.endInst)
+      continue;
+
+    locals.append(localVar.sourceVars);
+  }
 }
 
-const ResourceReference *Program::GetResourceReference(const rdcstr &handleStr) const
+const ResourceReference *Program::GetResourceReference(const DXILDebug::Id handleId) const
 {
-  if(m_ResourceHandles.count(handleStr) > 0)
+  auto it = m_ResourceByIdHandles.find(handleId);
+  if(it != m_ResourceByIdHandles.end())
   {
-    size_t resRefIndex = m_ResourceHandles.find(handleStr)->second;
-    if(resRefIndex < m_ResourceHandles.size())
+    size_t resRefIndex = it->second;
+    if(resRefIndex < m_ResourceReferences.size())
     {
       return &m_ResourceReferences[resRefIndex];
     }

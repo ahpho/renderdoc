@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -120,6 +120,7 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
   COPY_STRUCT(VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2, VkBufferImageCopy2);                            \
   COPY_STRUCT(VK_STRUCTURE_TYPE_BUFFER_OPAQUE_CAPTURE_ADDRESS_CREATE_INFO,                           \
               VkBufferOpaqueCaptureAddressCreateInfo);                                               \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO, VkBufferUsageFlags2CreateInfo);    \
   COPY_STRUCT(VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR, VkCalibratedTimestampInfoKHR);        \
   COPY_STRUCT(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, VkCommandBufferBeginInfo);                \
   COPY_STRUCT(VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_CONDITIONAL_RENDERING_INFO_EXT,           \
@@ -161,8 +162,8 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkDeviceMemoryOverallocationCreateInfoAMD);                                            \
   COPY_STRUCT(VK_STRUCTURE_TYPE_DEVICE_PRIVATE_DATA_CREATE_INFO, VkDevicePrivateDataCreateInfo);     \
   COPY_STRUCT(VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, VkDeviceQueueCreateInfo);                  \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR,                        \
-              VkDeviceQueueGlobalPriorityCreateInfoKHR);                                             \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO,                            \
+              VkDeviceQueueGlobalPriorityCreateInfo);                                                \
   COPY_STRUCT(VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2, VkDeviceQueueInfo2);                            \
   COPY_STRUCT(VK_STRUCTURE_TYPE_DISPLAY_MODE_PROPERTIES_2_KHR, VkDisplayModeProperties2KHR);         \
   COPY_STRUCT(VK_STRUCTURE_TYPE_DISPLAY_NATIVE_HDR_SURFACE_CAPABILITIES_AMD,                         \
@@ -186,6 +187,8 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkGraphicsPipelineLibraryCreateInfoEXT);                                               \
   COPY_STRUCT(VK_STRUCTURE_TYPE_HDR_METADATA_EXT, VkHdrMetadataEXT)                                  \
   COPY_STRUCT(VK_STRUCTURE_TYPE_IMAGE_BLIT_2, VkImageBlit2);                                         \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_IMAGE_COMPRESSION_CONTROL_EXT, VkImageCompressionControlEXT);        \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_IMAGE_COMPRESSION_PROPERTIES_EXT, VkImageCompressionPropertiesEXT);  \
   COPY_STRUCT(VK_STRUCTURE_TYPE_IMAGE_COPY_2, VkImageCopy2);                                         \
   COPY_STRUCT(VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, VkImageCreateInfo);                               \
   COPY_STRUCT(VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO, VkImageFormatListCreateInfo);         \
@@ -193,6 +196,7 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
   COPY_STRUCT(VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO,                                \
               VkImagePlaneMemoryRequirementsInfo);                                                   \
   COPY_STRUCT(VK_STRUCTURE_TYPE_IMAGE_RESOLVE_2, VkImageResolve2);                                   \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_IMAGE_SUBRESOURCE_2, VkImageSubresource2);                           \
   COPY_STRUCT(VK_STRUCTURE_TYPE_IMAGE_STENCIL_USAGE_CREATE_INFO, VkImageStencilUsageCreateInfo);     \
   COPY_STRUCT(VK_STRUCTURE_TYPE_IMAGE_VIEW_ASTC_DECODE_MODE_EXT, VkImageViewASTCDecodeModeEXT);      \
   COPY_STRUCT(VK_STRUCTURE_TYPE_IMAGE_VIEW_MIN_LOD_CREATE_INFO_EXT, VkImageViewMinLodCreateInfoEXT); \
@@ -242,8 +246,10 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkPhysicalDeviceCoherentMemoryFeaturesAMD);                                            \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COLOR_WRITE_ENABLE_FEATURES_EXT,                     \
               VkPhysicalDeviceColorWriteEnableFeaturesEXT);                                          \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_FEATURES_NV,              \
-              VkPhysicalDeviceComputeShaderDerivativesFeaturesNV);                                   \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_FEATURES_KHR,             \
+              VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR);                                  \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_PROPERTIES_KHR,           \
+              VkPhysicalDeviceComputeShaderDerivativesPropertiesKHR);                                \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CONDITIONAL_RENDERING_FEATURES_EXT,                  \
               VkPhysicalDeviceConditionalRenderingFeaturesEXT);                                      \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CONSERVATIVE_RASTERIZATION_PROPERTIES_EXT,           \
@@ -254,8 +260,8 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkPhysicalDeviceCustomBorderColorPropertiesEXT);                                       \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEDICATED_ALLOCATION_IMAGE_ALIASING_FEATURES_NV,     \
               VkPhysicalDeviceDedicatedAllocationImageAliasingFeaturesNV);                           \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLAMP_ZERO_ONE_FEATURES_EXT,                   \
-              VkPhysicalDeviceDepthClampZeroOneFeaturesEXT)                                          \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLAMP_ZERO_ONE_FEATURES_KHR,                   \
+              VkPhysicalDeviceDepthClampZeroOneFeaturesKHR)                                          \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT,                     \
               VkPhysicalDeviceDepthClipControlFeaturesEXT)                                           \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT,                      \
@@ -272,6 +278,8 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkPhysicalDeviceDriverProperties);                                                     \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,                          \
               VkPhysicalDeviceDynamicRenderingFeatures)                                              \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES,               \
+              VkPhysicalDeviceDynamicRenderingLocalReadFeatures)                                     \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT,                 \
               VkPhysicalDeviceExtendedDynamicStateFeaturesEXT);                                      \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT,               \
@@ -293,15 +301,13 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR)                                  \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_PROPERTIES_KHR,          \
               VkPhysicalDeviceFragmentShaderBarycentricPropertiesKHR)                                \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GLOBAL_PRIORITY_QUERY_FEATURES_KHR,                  \
-              VkPhysicalDeviceGlobalPriorityQueryFeaturesKHR)                                        \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GLOBAL_PRIORITY_QUERY_FEATURES,                      \
+              VkPhysicalDeviceGlobalPriorityQueryFeatures)                                           \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT,              \
               VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT)                                    \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_PROPERTIES_EXT,            \
               VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT)                                  \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GROUP_PROPERTIES, VkPhysicalDeviceGroupProperties)   \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES,                        \
-              VkPhysicalDeviceShaderFloat16Int8Features);                                            \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_FEATURES_EXT,                   \
               VkPhysicalDeviceFragmentDensityMapFeaturesEXT);                                        \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_PROPERTIES_EXT,                 \
@@ -327,6 +333,10 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES, VkPhysicalDeviceIDProperties);        \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_2D_VIEW_OF_3D_FEATURES_EXT,                    \
               VkPhysicalDeviceImage2DViewOf3DFeaturesEXT);                                           \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_FEATURES_EXT,              \
+              VkPhysicalDeviceImageCompressionControlFeaturesEXT);                                   \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_FEATURES_EXT,    \
+              VkPhysicalDeviceImageCompressionControlSwapchainFeaturesEXT);                          \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,                                 \
               VkPhysicalDeviceImageFormatInfo2);                                                     \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_VIEW_IMAGE_FORMAT_INFO_EXT,                    \
@@ -335,8 +345,8 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkPhysicalDeviceImagelessFramebufferFeatures)                                          \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_ROBUSTNESS_FEATURES,                           \
               VkPhysicalDeviceImageRobustnessFeatures)                                               \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_KHR,                       \
-              VkPhysicalDeviceIndexTypeUint8FeaturesKHR);                                            \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES,                           \
+              VkPhysicalDeviceIndexTypeUint8Features);                                               \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_VIEW_MIN_LOD_FEATURES_EXT,                     \
               VkPhysicalDeviceImageViewMinLodFeaturesEXT)                                            \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INLINE_UNIFORM_BLOCK_FEATURES,                       \
@@ -349,6 +359,10 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkPhysicalDeviceMaintenance4Features);                                                 \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_PROPERTIES,                            \
               VkPhysicalDeviceMaintenance4Properties);                                               \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES,                              \
+              VkPhysicalDeviceMaintenance5Features);                                                 \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_PROPERTIES,                            \
+              VkPhysicalDeviceMaintenance5Properties);                                               \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT,                        \
               VkPhysicalDeviceMemoryBudgetPropertiesEXT);                                            \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2,                                 \
@@ -373,10 +387,10 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkPhysicalDeviceNestedCommandBufferPropertiesEXT);                                     \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NON_SEAMLESS_CUBE_MAP_FEATURES_EXT,                  \
               VkPhysicalDeviceNonSeamlessCubeMapFeaturesEXT);                                        \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES_EXT,                     \
-              VkPhysicalDeviceLineRasterizationFeaturesEXT)                                          \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_PROPERTIES_EXT,                   \
-              VkPhysicalDeviceLineRasterizationPropertiesEXT)                                        \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES,                         \
+              VkPhysicalDeviceLineRasterizationFeatures)                                             \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_PROPERTIES,                       \
+              VkPhysicalDeviceLineRasterizationProperties)                                           \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT,           \
               VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT);                                 \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT,                         \
@@ -410,14 +424,18 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkPhysicalDeviceProvokingVertexFeaturesEXT);                                           \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_PROPERTIES_EXT,                     \
               VkPhysicalDeviceProvokingVertexPropertiesEXT);                                         \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES_KHR,                      \
-              VkPhysicalDevicePushDescriptorPropertiesKHR);                                          \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES,                          \
+              VkPhysicalDevicePushDescriptorProperties);                                             \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_FEATURES_EXT,  \
               VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT);                        \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR,              \
+              VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR);                                    \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,                   \
               VkPhysicalDeviceRayTracingPipelineFeaturesKHR);                                        \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR,                 \
               VkPhysicalDeviceRayTracingPipelinePropertiesKHR);                                      \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_POSITION_FETCH_FEATURES_KHR,             \
+              VkPhysicalDeviceRayTracingPositionFetchFeaturesKHR);                                   \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,                              \
               VkPhysicalDeviceRayQueryFeaturesKHR);                                                  \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RGBA10X6_FORMATS_FEATURES_EXT,                       \
@@ -450,6 +468,12 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures);                               \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES,                     \
               VkPhysicalDeviceShaderDrawParametersFeatures);                                         \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_EXPECT_ASSUME_FEATURES,                       \
+              VkPhysicalDeviceShaderExpectAssumeFeatures);                                           \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES,                        \
+              VkPhysicalDeviceShaderFloat16Int8Features);                                            \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT_CONTROLS_2_FEATURES,                    \
+              VkPhysicalDeviceShaderFloatControls2Features)                                          \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT64_FEATURES_EXT,              \
               VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT)                                     \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_FOOTPRINT_FEATURES_NV,                  \
@@ -458,12 +482,20 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkPhysicalDeviceShaderIntegerDotProductFeatures);                                      \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES,               \
               VkPhysicalDeviceShaderIntegerDotProductProperties);                                    \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MAXIMAL_RECONVERGENCE_FEATURES_KHR,           \
+              VkPhysicalDeviceShaderMaximalReconvergenceFeaturesKHR);                                \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT,                          \
               VkPhysicalDeviceShaderObjectFeaturesEXT);                                              \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_PROPERTIES_EXT,                        \
               VkPhysicalDeviceShaderObjectPropertiesEXT);                                            \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_QUAD_CONTROL_FEATURES_KHR,                    \
+              VkPhysicalDeviceShaderQuadControlFeaturesKHR);                                         \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_RELAXED_EXTENDED_INSTRUCTION_FEATURES_KHR,    \
+              VkPhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR);                          \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES,             \
               VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures)                                   \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_ROTATE_FEATURES,                     \
+              VkPhysicalDeviceShaderSubgroupRotateFeatures)                                          \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_UNIFORM_CONTROL_FLOW_FEATURES_KHR,   \
               VkPhysicalDeviceShaderSubgroupUniformControlFlowFeaturesKHR)                           \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_TERMINATE_INVOCATION_FEATURES,                \
@@ -496,13 +528,13 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_PROPERTIES_EXT,                   \
               VkPhysicalDeviceTransformFeedbackPropertiesEXT);                                       \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES,                          \
-              VkPhysicalDeviceVariablePointerFeatures);                                              \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES_KHR,               \
-              VkPhysicalDeviceVertexAttributeDivisorFeaturesKHR);                                    \
+              VkPhysicalDeviceVariablePointersFeatures);                                             \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES,                   \
+              VkPhysicalDeviceVertexAttributeDivisorFeatures);                                       \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT,             \
               VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT);                                  \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_KHR,             \
-              VkPhysicalDeviceVertexAttributeDivisorPropertiesKHR);                                  \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES,                 \
+              VkPhysicalDeviceVertexAttributeDivisorProperties);                                     \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT,             \
               VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT);                                   \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES,             \
@@ -536,6 +568,8 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkPipelineColorBlendStateCreateInfo);                                                  \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_COLOR_WRITE_CREATE_INFO_EXT,                                \
               VkPipelineColorWriteCreateInfoEXT);                                                    \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO,                                 \
+              VkPipelineCreateFlags2CreateInfo);                                                     \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,                            \
               VkPipelineDepthStencilStateCreateInfo);                                                \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_DISCARD_RECTANGLE_STATE_CREATE_INFO_EXT,                    \
@@ -557,8 +591,8 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkPipelineRasterizationConservativeStateCreateInfoEXT);                                \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT,             \
               VkPipelineRasterizationDepthClipStateCreateInfoEXT);                                   \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO_EXT,                   \
-              VkPipelineRasterizationLineStateCreateInfoEXT)                                         \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO,                       \
+              VkPipelineRasterizationLineStateCreateInfo)                                            \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_PROVOKING_VERTEX_STATE_CREATE_INFO_EXT,       \
               VkPipelineRasterizationProvokingVertexStateCreateInfoEXT)                              \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,                            \
@@ -574,8 +608,8 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkPipelineTessellationDomainOriginStateCreateInfo);                                    \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,                             \
               VkPipelineTessellationStateCreateInfo);                                                \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_KHR,                 \
-              VkPipelineVertexInputDivisorStateCreateInfoKHR);                                       \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO,                     \
+              VkPipelineVertexInputDivisorStateCreateInfo);                                          \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,                             \
               VkPipelineVertexInputStateCreateInfo);                                                 \
   COPY_STRUCT(VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLIP_CONTROL_CREATE_INFO_EXT,                \
@@ -589,8 +623,8 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
   COPY_STRUCT(VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, VkQueryPoolCreateInfo);                      \
   COPY_STRUCT(VK_STRUCTURE_TYPE_QUERY_POOL_PERFORMANCE_CREATE_INFO_KHR,                              \
               VkQueryPoolPerformanceCreateInfoKHR);                                                  \
-  COPY_STRUCT(VK_STRUCTURE_TYPE_QUEUE_FAMILY_GLOBAL_PRIORITY_PROPERTIES_KHR,                         \
-              VkQueueFamilyGlobalPriorityPropertiesKHR);                                             \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_QUEUE_FAMILY_GLOBAL_PRIORITY_PROPERTIES,                             \
+              VkQueueFamilyGlobalPriorityProperties);                                                \
   COPY_STRUCT(VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2, VkQueueFamilyProperties2);                \
   COPY_STRUCT(VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_INTERFACE_CREATE_INFO_KHR,                      \
               VkRayTracingPipelineInterfaceCreateInfoKHR);                                           \
@@ -635,6 +669,7 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
   COPY_STRUCT(VK_STRUCTURE_TYPE_SUBPASS_END_INFO, VkSubpassEndInfo);                                 \
   COPY_STRUCT(VK_STRUCTURE_TYPE_SUBPASS_RESOLVE_PERFORMANCE_QUERY_EXT,                               \
               VkSubpassResolvePerformanceQueryEXT);                                                  \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_SUBRESOURCE_LAYOUT_2, VkSubresourceLayout2);                         \
   COPY_STRUCT(VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_EXT, VkSurfaceCapabilities2EXT);              \
   COPY_STRUCT(VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR, VkSurfaceCapabilities2KHR);              \
   COPY_STRUCT(VK_STRUCTURE_TYPE_SURFACE_FORMAT_2_KHR, VkSurfaceFormat2KHR);                          \
@@ -663,6 +698,11 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
               VkVertexInputBindingDescription2EXT);                                                  \
   COPY_STRUCT(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK,                           \
               VkWriteDescriptorSetInlineUniformBlock);                                               \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_LOCATION_INFO,                                  \
+              VkRenderingAttachmentLocationInfo);                                                    \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_RENDERING_AREA_INFO, VkRenderingAreaInfo);                           \
+  COPY_STRUCT(VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO,                               \
+              VkRenderingInputAttachmentIndexInfo);                                                  \
   COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO,                            \
                            VkLayerInstanceCreateInfo);                                               \
   COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO, VkLayerDeviceCreateInfo);    \
@@ -802,438 +842,513 @@ static void AppendModifiedChainedStruct(byte *&tempMem, VkStruct *outputStruct,
 
 // define cases for structs we don't handle at all - only the body of the case needs to be defined
 // per-function.
-#define UNHANDLED_STRUCTS()                                                                 \
-  /* Surface creation structs would pull in dependencies on OS-specific includes, */        \
-  /* so we treat them as unsupported. */                                                    \
-  case VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR:                                   \
-  case VK_STRUCTURE_TYPE_DIRECTFB_SURFACE_CREATE_INFO_EXT:                                  \
-  case VK_STRUCTURE_TYPE_DISPLAY_MODE_CREATE_INFO_KHR:                                      \
-  case VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR:                                   \
-  case VK_STRUCTURE_TYPE_IMAGEPIPE_SURFACE_CREATE_INFO_FUCHSIA:                             \
-  case VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_MVK:                                       \
-  case VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK:                                     \
-  case VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT:                                     \
-  case VK_STRUCTURE_TYPE_VI_SURFACE_CREATE_INFO_NN:                                         \
-  case VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR:                                   \
-  case VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR:                                     \
-  case VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR:                                       \
-  case VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR:                                      \
-  /* Output structure containing objects. Must be *wrapped* not unwrapped. */               \
-  /* So we treat this as unhandled in generic code and require specific handling. */        \
-  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:           \
-  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV:                             \
-  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_MOTION_TRIANGLES_DATA_NV:          \
-  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV:                                    \
-  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV:                \
-  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MOTION_INFO_NV:                             \
-  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_OPACITY_MICROMAP_EXT:             \
-  case VK_STRUCTURE_TYPE_AMIGO_PROFILING_SUBMIT_INFO_SEC:                                   \
-  case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_2_ANDROID:               \
-  case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_RESOLVE_PROPERTIES_ANDROID:         \
-  case VK_STRUCTURE_TYPE_ATTACHMENT_SAMPLE_COUNT_INFO_AMD:                                  \
-  case VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV:                        \
-  case VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_BUFFER_EMBEDDED_SAMPLERS_INFO_EXT:                 \
-  case VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO_KHR:                                     \
-  case VK_STRUCTURE_TYPE_BIND_MEMORY_STATUS_KHR:                                            \
-  case VK_STRUCTURE_TYPE_BIND_VIDEO_SESSION_MEMORY_INFO_KHR:                                \
-  case VK_STRUCTURE_TYPE_BLIT_IMAGE_CUBIC_WEIGHTS_INFO_QCOM:                                \
-  case VK_STRUCTURE_TYPE_BUFFER_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:                           \
-  case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_BUFFER_CREATE_INFO_FUCHSIA:                      \
-  case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_CONSTRAINTS_INFO_FUCHSIA:                        \
-  case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_CREATE_INFO_FUCHSIA:                             \
-  case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_IMAGE_CREATE_INFO_FUCHSIA:                       \
-  case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_PROPERTIES_FUCHSIA:                              \
-  case VK_STRUCTURE_TYPE_BUFFER_CONSTRAINTS_INFO_FUCHSIA:                                   \
-  case VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO_KHR:                              \
-  case VK_STRUCTURE_TYPE_CHECKPOINT_DATA_2_NV:                                              \
-  case VK_STRUCTURE_TYPE_CHECKPOINT_DATA_NV:                                                \
-  case VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDER_PASS_TRANSFORM_INFO_QCOM:        \
-  case VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_VIEWPORT_SCISSOR_INFO_NV:               \
-  case VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_INDIRECT_BUFFER_INFO_NV:                          \
-  case VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR:                                 \
-  case VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_NV:                                  \
-  case VK_STRUCTURE_TYPE_COPY_COMMAND_TRANSFORM_INFO_QCOM:                                  \
-  case VK_STRUCTURE_TYPE_COPY_IMAGE_TO_IMAGE_INFO_EXT:                                      \
-  case VK_STRUCTURE_TYPE_COPY_IMAGE_TO_MEMORY_INFO_EXT:                                     \
-  case VK_STRUCTURE_TYPE_COPY_MEMORY_TO_IMAGE_INFO_EXT:                                     \
-  case VK_STRUCTURE_TYPE_COPY_MEMORY_TO_MICROMAP_INFO_EXT:                                  \
-  case VK_STRUCTURE_TYPE_COPY_MICROMAP_INFO_EXT:                                            \
-  case VK_STRUCTURE_TYPE_COPY_MICROMAP_TO_MEMORY_INFO_EXT:                                  \
-  case VK_STRUCTURE_TYPE_CU_FUNCTION_CREATE_INFO_NVX:                                       \
-  case VK_STRUCTURE_TYPE_CU_LAUNCH_INFO_NVX:                                                \
-  case VK_STRUCTURE_TYPE_CU_MODULE_CREATE_INFO_NVX:                                         \
-  case VK_STRUCTURE_TYPE_CUDA_FUNCTION_CREATE_INFO_NV:                                      \
-  case VK_STRUCTURE_TYPE_CUDA_LAUNCH_INFO_NV:                                               \
-  case VK_STRUCTURE_TYPE_CUDA_MODULE_CREATE_INFO_NV:                                        \
-  case VK_STRUCTURE_TYPE_DEPTH_BIAS_INFO_EXT:                                               \
-  case VK_STRUCTURE_TYPE_DEPTH_BIAS_REPRESENTATION_INFO_EXT:                                \
-  case VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT:                                       \
-  case VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT:                                \
-  case VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_PUSH_DESCRIPTOR_BUFFER_HANDLE_EXT:       \
-  case VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT:                                           \
-  case VK_STRUCTURE_TYPE_DESCRIPTOR_SET_BINDING_REFERENCE_VALVE:                            \
-  case VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_HOST_MAPPING_INFO_VALVE:                     \
-  case VK_STRUCTURE_TYPE_DEVICE_ADDRESS_BINDING_CALLBACK_DATA_EXT:                          \
-  case VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT:                       \
-  case VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV:                          \
-  case VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT:                                           \
-  case VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT:                                             \
-  case VK_STRUCTURE_TYPE_DEVICE_IMAGE_SUBRESOURCE_INFO_KHR:                                 \
-  case VK_STRUCTURE_TYPE_DEVICE_MEMORY_REPORT_CALLBACK_DATA_EXT:                            \
-  case VK_STRUCTURE_TYPE_DEVICE_QUEUE_SHADER_CORE_CONTROL_CREATE_INFO_ARM:                  \
-  case VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_INFO_LUNARG:                                 \
-  case VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_LIST_LUNARG:                                 \
-  case VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_2_EXT:                         \
-  case VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT:                           \
-  case VK_STRUCTURE_TYPE_EXPORT_METAL_BUFFER_INFO_EXT:                                      \
-  case VK_STRUCTURE_TYPE_EXPORT_METAL_COMMAND_QUEUE_INFO_EXT:                               \
-  case VK_STRUCTURE_TYPE_EXPORT_METAL_DEVICE_INFO_EXT:                                      \
-  case VK_STRUCTURE_TYPE_EXPORT_METAL_IO_SURFACE_INFO_EXT:                                  \
-  case VK_STRUCTURE_TYPE_EXPORT_METAL_OBJECT_CREATE_INFO_EXT:                               \
-  case VK_STRUCTURE_TYPE_EXPORT_METAL_OBJECTS_INFO_EXT:                                     \
-  case VK_STRUCTURE_TYPE_EXPORT_METAL_SHARED_EVENT_INFO_EXT:                                \
-  case VK_STRUCTURE_TYPE_EXPORT_METAL_TEXTURE_INFO_EXT:                                     \
-  case VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_QNX:                                               \
-  case VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_ACQUIRE_UNMODIFIED_EXT:                            \
-  case VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT:                                                \
-  case VK_STRUCTURE_TYPE_FRAMEBUFFER_MIXED_SAMPLES_COMBINATION_NV:                          \
-  case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_INFO_NV:                                        \
-  case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_MEMORY_REQUIREMENTS_INFO_NV:                    \
-  case VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV:                                                  \
-  case VK_STRUCTURE_TYPE_GEOMETRY_NV:                                                       \
-  case VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV:                                             \
-  case VK_STRUCTURE_TYPE_GET_LATENCY_MARKER_INFO_NV:                                        \
-  case VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_SHADER_GROUPS_CREATE_INFO_NV:                    \
-  case VK_STRUCTURE_TYPE_GRAPHICS_SHADER_GROUP_CREATE_INFO_NV:                              \
-  case VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT:                                  \
-  case VK_STRUCTURE_TYPE_HOST_IMAGE_COPY_DEVICE_PERFORMANCE_QUERY_EXT:                      \
-  case VK_STRUCTURE_TYPE_HOST_IMAGE_LAYOUT_TRANSITION_INFO_EXT:                             \
-  case VK_STRUCTURE_TYPE_IMAGE_ALIGNMENT_CONTROL_CREATE_INFO_MESA:                          \
-  case VK_STRUCTURE_TYPE_IMAGE_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:                            \
-  case VK_STRUCTURE_TYPE_IMAGE_COMPRESSION_CONTROL_EXT:                                     \
-  case VK_STRUCTURE_TYPE_IMAGE_COMPRESSION_PROPERTIES_EXT:                                  \
-  case VK_STRUCTURE_TYPE_IMAGE_CONSTRAINTS_INFO_FUCHSIA:                                    \
-  case VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT:                \
-  case VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT:                    \
-  case VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_PROPERTIES_EXT:                          \
-  case VK_STRUCTURE_TYPE_IMAGE_FORMAT_CONSTRAINTS_INFO_FUCHSIA:                             \
-  case VK_STRUCTURE_TYPE_IMAGE_SUBRESOURCE_2_EXT:                                           \
-  case VK_STRUCTURE_TYPE_IMAGE_TO_MEMORY_COPY_EXT:                                          \
-  case VK_STRUCTURE_TYPE_IMAGE_VIEW_ADDRESS_PROPERTIES_NVX:                                 \
-  case VK_STRUCTURE_TYPE_IMAGE_VIEW_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:                       \
-  case VK_STRUCTURE_TYPE_IMAGE_VIEW_HANDLE_INFO_NVX:                                        \
-  case VK_STRUCTURE_TYPE_IMAGE_VIEW_SAMPLE_WEIGHT_CREATE_INFO_QCOM:                         \
-  case VK_STRUCTURE_TYPE_IMAGE_VIEW_SLICED_CREATE_INFO_EXT:                                 \
-  case VK_STRUCTURE_TYPE_IMPORT_MEMORY_BUFFER_COLLECTION_FUCHSIA:                           \
-  case VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT:                               \
-  case VK_STRUCTURE_TYPE_IMPORT_MEMORY_ZIRCON_HANDLE_INFO_FUCHSIA:                          \
-  case VK_STRUCTURE_TYPE_IMPORT_METAL_BUFFER_INFO_EXT:                                      \
-  case VK_STRUCTURE_TYPE_IMPORT_METAL_IO_SURFACE_INFO_EXT:                                  \
-  case VK_STRUCTURE_TYPE_IMPORT_METAL_SHARED_EVENT_INFO_EXT:                                \
-  case VK_STRUCTURE_TYPE_IMPORT_METAL_TEXTURE_INFO_EXT:                                     \
-  case VK_STRUCTURE_TYPE_IMPORT_SCREEN_BUFFER_INFO_QNX:                                     \
-  case VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_ZIRCON_HANDLE_INFO_FUCHSIA:                       \
-  case VK_STRUCTURE_TYPE_INDIRECT_COMMANDS_LAYOUT_CREATE_INFO_NV:                           \
-  case VK_STRUCTURE_TYPE_INDIRECT_COMMANDS_LAYOUT_TOKEN_NV:                                 \
-  case VK_STRUCTURE_TYPE_INITIALIZE_PERFORMANCE_API_INFO_INTEL:                             \
-  case VK_STRUCTURE_TYPE_LATENCY_SLEEP_INFO_NV:                                             \
-  case VK_STRUCTURE_TYPE_LATENCY_SLEEP_MODE_INFO_NV:                                        \
-  case VK_STRUCTURE_TYPE_LATENCY_SUBMISSION_PRESENT_ID_NV:                                  \
-  case VK_STRUCTURE_TYPE_LATENCY_SURFACE_CAPABILITIES_NV:                                   \
-  case VK_STRUCTURE_TYPE_LATENCY_TIMINGS_FRAME_REPORT_NV:                                   \
-  case VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT:                                    \
-  case VK_STRUCTURE_TYPE_MEMORY_GET_REMOTE_ADDRESS_INFO_NV:                                 \
-  case VK_STRUCTURE_TYPE_MEMORY_GET_ZIRCON_HANDLE_INFO_FUCHSIA:                             \
-  case VK_STRUCTURE_TYPE_MEMORY_HOST_POINTER_PROPERTIES_EXT:                                \
-  case VK_STRUCTURE_TYPE_MEMORY_MAP_INFO_KHR:                                               \
-  case VK_STRUCTURE_TYPE_MEMORY_MAP_PLACED_INFO_EXT:                                        \
-  case VK_STRUCTURE_TYPE_MEMORY_TO_IMAGE_COPY_EXT:                                          \
-  case VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO_KHR:                                             \
-  case VK_STRUCTURE_TYPE_MEMORY_ZIRCON_HANDLE_PROPERTIES_FUCHSIA:                           \
-  case VK_STRUCTURE_TYPE_MICROMAP_BUILD_INFO_EXT:                                           \
-  case VK_STRUCTURE_TYPE_MICROMAP_BUILD_SIZES_INFO_EXT:                                     \
-  case VK_STRUCTURE_TYPE_MICROMAP_CREATE_INFO_EXT:                                          \
-  case VK_STRUCTURE_TYPE_MICROMAP_VERSION_INFO_EXT:                                         \
-  case VK_STRUCTURE_TYPE_MULTIVIEW_PER_VIEW_ATTRIBUTES_INFO_NVX:                            \
-  case VK_STRUCTURE_TYPE_MULTIVIEW_PER_VIEW_RENDER_AREAS_RENDER_PASS_BEGIN_INFO_QCOM:       \
-  case VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT:                    \
-  case VK_STRUCTURE_TYPE_OPTICAL_FLOW_EXECUTE_INFO_NV:                                      \
-  case VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_INFO_NV:                                 \
-  case VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_PROPERTIES_NV:                           \
-  case VK_STRUCTURE_TYPE_OPTICAL_FLOW_SESSION_CREATE_INFO_NV:                               \
-  case VK_STRUCTURE_TYPE_OPTICAL_FLOW_SESSION_CREATE_PRIVATE_DATA_INFO_NV:                  \
-  case VK_STRUCTURE_TYPE_OUT_OF_BAND_QUEUE_TYPE_INFO_NV:                                    \
-  case VK_STRUCTURE_TYPE_PERFORMANCE_CONFIGURATION_ACQUIRE_INFO_INTEL:                      \
-  case VK_STRUCTURE_TYPE_PERFORMANCE_MARKER_INFO_INTEL:                                     \
-  case VK_STRUCTURE_TYPE_PERFORMANCE_OVERRIDE_INFO_INTEL:                                   \
-  case VK_STRUCTURE_TYPE_PERFORMANCE_STREAM_MARKER_INFO_INTEL:                              \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ADDRESS_BINDING_REPORT_FEATURES_EXT:               \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_AMIGO_PROFILING_FEATURES_SEC:                      \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_FEATURES_EXT:             \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_PROPERTIES_EXT:           \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_FEATURES_HUAWEI:            \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_PROPERTIES_HUAWEI:          \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_VRS_FEATURES_HUAWEI:        \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR:                   \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_NV:                    \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_PROPERTIES_KHR:                 \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_PROPERTIES_NV:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COPY_MEMORY_INDIRECT_FEATURES_NV:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COPY_MEMORY_INDIRECT_PROPERTIES_NV:                \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CORNER_SAMPLED_IMAGE_FEATURES_NV:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COVERAGE_REDUCTION_MODE_FEATURES_NV:               \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUBIC_CLAMP_FEATURES_QCOM:                         \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUBIC_WEIGHTS_FEATURES_QCOM:                       \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUDA_KERNEL_LAUNCH_FEATURES_NV:                    \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUDA_KERNEL_LAUNCH_PROPERTIES_NV:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_BIAS_CONTROL_FEATURES_EXT:                   \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_DENSITY_MAP_PROPERTIES_EXT:      \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT:                    \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_POOL_OVERALLOCATION_FEATURES_NV:        \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_SET_HOST_MAPPING_FEATURES_VALVE:        \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_COMPUTE_FEATURES_NV:     \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_FEATURES_NV:             \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_PROPERTIES_NV:           \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_MEMORY_REPORT_FEATURES_EXT:                 \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DIAGNOSTICS_CONFIG_FEATURES_NV:                    \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT:                                \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES_KHR:         \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_UNUSED_ATTACHMENTS_FEATURES_EXT: \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXCLUSIVE_SCISSOR_FEATURES_NV:                     \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_SPARSE_ADDRESS_SPACE_FEATURES_NV:         \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_SPARSE_ADDRESS_SPACE_PROPERTIES_NV:       \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_FEATURES_ANDROID:          \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_PROPERTIES_ANDROID:        \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT:               \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_RDMA_FEATURES_NV:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_SCREEN_BUFFER_FEATURES_QNX:        \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT:                                \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_ENUMS_FEATURES_NV:           \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_ENUMS_PROPERTIES_NV:         \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT:                       \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES_EXT:                      \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_PROPERTIES_EXT:                    \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_ALIGNMENT_CONTROL_FEATURES_MESA:             \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_ALIGNMENT_CONTROL_PROPERTIES_MESA:           \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_FEATURES_EXT:            \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_FEATURES_EXT:  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT:                \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_2_FEATURES_QCOM:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_2_PROPERTIES_QCOM:                \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_FEATURES_QCOM:                    \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_PROPERTIES_QCOM:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_SLICED_VIEW_OF_3D_FEATURES_EXT:              \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INHERITED_VIEWPORT_SCISSOR_FEATURES_NV:            \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INVOCATION_MASK_FEATURES_HUAWEI:                   \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LAYERED_DRIVER_PROPERTIES_MSFT:                    \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LEGACY_DITHERING_FEATURES_EXT:                     \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LEGACY_VERTEX_ATTRIBUTES_FEATURES_EXT:             \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LEGACY_VERTEX_ATTRIBUTES_PROPERTIES_EXT:           \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINEAR_COLOR_ATTACHMENT_FEATURES_NV:               \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR:                        \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_PROPERTIES_KHR:                      \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_FEATURES_KHR:                        \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_PROPERTIES_KHR:                      \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAP_MEMORY_PLACED_FEATURES_EXT:                    \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAP_MEMORY_PLACED_PROPERTIES_EXT:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_DECOMPRESSION_FEATURES_NV:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_DECOMPRESSION_PROPERTIES_NV:                \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV:                           \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_NV:                         \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTI_DRAW_FEATURES_EXT:                           \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTI_DRAW_PROPERTIES_EXT:                         \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_ATTRIBUTES_PROPERTIES_NVX:      \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_RENDER_AREAS_FEATURES_QCOM:     \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_VIEWPORTS_FEATURES_QCOM:        \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT:                     \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_PROPERTIES_EXT:                   \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV:                          \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_PROPERTIES_NV:                        \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PER_STAGE_DESCRIPTOR_SET_FEATURES_NV:              \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_LIBRARY_GROUP_HANDLES_FEATURES_EXT:       \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROPERTIES_FEATURES_EXT:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROTECTED_ACCESS_FEATURES_EXT:            \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_FEATURES_EXT:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_PROPERTIES_EXT:                \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_BARRIER_FEATURES_NV:                       \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAW_ACCESS_CHAINS_FEATURES_NV:                     \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_INVOCATION_REORDER_FEATURES_NV:        \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_INVOCATION_REORDER_PROPERTIES_NV:      \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR:            \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MOTION_BLUR_FEATURES_NV:               \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_POSITION_FETCH_FEATURES_KHR:           \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PROPERTIES_NV:                         \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_VALIDATION_FEATURES_NV:                \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RELAXED_LINE_RASTERIZATION_FEATURES_IMG:           \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RENDER_PASS_STRIPED_FEATURES_ARM:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RENDER_PASS_STRIPED_PROPERTIES_ARM:                \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_REPRESENTATIVE_FRAGMENT_TEST_FEATURES_NV:          \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCHEDULING_CONTROLS_FEATURES_ARM:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCHEDULING_CONTROLS_PROPERTIES_ARM:                \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT16_VECTOR_FEATURES_NV:          \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_BUILTINS_FEATURES_ARM:                 \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_BUILTINS_PROPERTIES_ARM:               \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_PROPERTIES_2_AMD:                      \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_PROPERTIES_ARM:                        \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_EARLY_AND_LATE_FRAGMENT_TESTS_FEATURES_AMD: \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_EXPECT_ASSUME_FEATURES_KHR:                 \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT_CONTROLS_2_FEATURES_KHR:              \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_FUNCTIONS_2_FEATURES_INTEL:         \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MAXIMAL_RECONVERGENCE_FEATURES_KHR:         \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MODULE_IDENTIFIER_FEATURES_EXT:             \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MODULE_IDENTIFIER_PROPERTIES_EXT:           \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_QUAD_CONTROL_FEATURES_KHR:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SM_BUILTINS_FEATURES_NV:                    \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_RELAXED_EXTENDED_INSTRUCTION_FEATURES_KHR:  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_REPLICATED_COMPOSITES_FEATURES_EXT:         \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SM_BUILTINS_PROPERTIES_NV:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_ROTATE_FEATURES_KHR:               \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_TILE_IMAGE_FEATURES_EXT:                    \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_TILE_IMAGE_PROPERTIES_EXT:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADING_RATE_IMAGE_FEATURES_NV:                    \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADING_RATE_IMAGE_PROPERTIES_NV:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_MERGE_FEEDBACK_FEATURES_EXT:               \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_SHADING_FEATURES_HUAWEI:                   \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_SHADING_PROPERTIES_HUAWEI:                 \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TILE_PROPERTIES_FEATURES_QCOM:                     \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR:               \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR:                             \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR:                  \
-  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_YCBCR_DEGAMMA_FEATURES_QCOM:                       \
-  case VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_ADVANCED_STATE_CREATE_INFO_EXT:               \
-  case VK_STRUCTURE_TYPE_PIPELINE_COMPILER_CONTROL_CREATE_INFO_AMD:                         \
-  case VK_STRUCTURE_TYPE_PIPELINE_COVERAGE_MODULATION_STATE_CREATE_INFO_NV:                 \
-  case VK_STRUCTURE_TYPE_PIPELINE_COVERAGE_REDUCTION_STATE_CREATE_INFO_NV:                  \
-  case VK_STRUCTURE_TYPE_PIPELINE_COVERAGE_TO_COLOR_STATE_CREATE_INFO_NV:                   \
-  case VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO_KHR:                           \
-  case VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_ENUM_STATE_CREATE_INFO_NV:          \
-  case VK_STRUCTURE_TYPE_PIPELINE_INDIRECT_DEVICE_ADDRESS_INFO_NV:                          \
-  case VK_STRUCTURE_TYPE_PIPELINE_PROPERTIES_IDENTIFIER_EXT:                                \
-  case VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_RASTERIZATION_ORDER_AMD:              \
-  case VK_STRUCTURE_TYPE_PIPELINE_REPRESENTATIVE_FRAGMENT_TEST_STATE_CREATE_INFO_NV:        \
-  case VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO_EXT:                               \
-  case VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_MODULE_IDENTIFIER_CREATE_INFO_EXT:           \
-  case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_COARSE_SAMPLE_ORDER_STATE_CREATE_INFO_NV:        \
-  case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_EXCLUSIVE_SCISSOR_STATE_CREATE_INFO_NV:          \
-  case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_SHADING_RATE_IMAGE_STATE_CREATE_INFO_NV:         \
-  case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_SWIZZLE_STATE_CREATE_INFO_NV:                    \
-  case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_W_SCALING_STATE_CREATE_INFO_NV:                  \
-  case VK_STRUCTURE_TYPE_PRESENT_FRAME_TOKEN_GGP:                                           \
-  case VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO_KHR:                                           \
-  case VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_INFO_KHR:                                      \
-  case VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_WITH_TEMPLATE_INFO_KHR:                        \
-  case VK_STRUCTURE_TYPE_QUERY_LOW_LATENCY_SUPPORT_NV:                                      \
-  case VK_STRUCTURE_TYPE_QUERY_POOL_PERFORMANCE_QUERY_CREATE_INFO_INTEL:                    \
-  case VK_STRUCTURE_TYPE_QUERY_POOL_VIDEO_ENCODE_FEEDBACK_CREATE_INFO_KHR:                  \
-  case VK_STRUCTURE_TYPE_QUEUE_FAMILY_CHECKPOINT_PROPERTIES_2_NV:                           \
-  case VK_STRUCTURE_TYPE_QUEUE_FAMILY_CHECKPOINT_PROPERTIES_NV:                             \
-  case VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_KHR:                   \
-  case VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR:                                 \
-  case VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV:                               \
-  case VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_NV:                           \
-  case VK_STRUCTURE_TYPE_RENDER_PASS_CREATION_CONTROL_EXT:                                  \
-  case VK_STRUCTURE_TYPE_RENDER_PASS_CREATION_FEEDBACK_CREATE_INFO_EXT:                     \
-  case VK_STRUCTURE_TYPE_RENDER_PASS_STRIPE_BEGIN_INFO_ARM:                                 \
-  case VK_STRUCTURE_TYPE_RENDER_PASS_STRIPE_INFO_ARM:                                       \
-  case VK_STRUCTURE_TYPE_RENDER_PASS_STRIPE_SUBMIT_INFO_ARM:                                \
-  case VK_STRUCTURE_TYPE_RENDER_PASS_SUBPASS_FEEDBACK_CREATE_INFO_EXT:                      \
-  case VK_STRUCTURE_TYPE_RENDER_PASS_TRANSFORM_BEGIN_INFO_QCOM:                             \
-  case VK_STRUCTURE_TYPE_RENDERING_AREA_INFO_KHR:                                           \
-  case VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_LOCATION_INFO_KHR:                            \
-  case VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO_KHR:                         \
-  case VK_STRUCTURE_TYPE_SAMPLER_BLOCK_MATCH_WINDOW_CREATE_INFO_QCOM:                       \
-  case VK_STRUCTURE_TYPE_SAMPLER_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:                          \
-  case VK_STRUCTURE_TYPE_SAMPLER_CUBIC_WEIGHTS_CREATE_INFO_QCOM:                            \
-  case VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_YCBCR_DEGAMMA_CREATE_INFO_QCOM:           \
-  case VK_STRUCTURE_TYPE_SCREEN_BUFFER_FORMAT_PROPERTIES_QNX:                               \
-  case VK_STRUCTURE_TYPE_SCREEN_BUFFER_PROPERTIES_QNX:                                      \
-  case VK_STRUCTURE_TYPE_SCREEN_SURFACE_CREATE_INFO_QNX:                                    \
-  case VK_STRUCTURE_TYPE_SEMAPHORE_GET_ZIRCON_HANDLE_INFO_FUCHSIA:                          \
-  case VK_STRUCTURE_TYPE_SET_DESCRIPTOR_BUFFER_OFFSETS_INFO_EXT:                            \
-  case VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV:                                        \
-  case VK_STRUCTURE_TYPE_SHADER_MODULE_IDENTIFIER_EXT:                                      \
-  case VK_STRUCTURE_TYPE_STREAM_DESCRIPTOR_SURFACE_CREATE_INFO_GGP:                         \
-  case VK_STRUCTURE_TYPE_SUBPASS_SHADING_PIPELINE_CREATE_INFO_HUAWEI:                       \
-  case VK_STRUCTURE_TYPE_SUBRESOURCE_HOST_MEMCPY_SIZE_EXT:                                  \
-  case VK_STRUCTURE_TYPE_SUBRESOURCE_LAYOUT_2_EXT:                                          \
-  case VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_BARRIER_NV:                           \
-  case VK_STRUCTURE_TYPE_SWAPCHAIN_LATENCY_CREATE_INFO_NV:                                  \
-  case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_BARRIER_CREATE_INFO_NV:                          \
-  case VK_STRUCTURE_TYPE_SYSMEM_COLOR_SPACE_FUCHSIA:                                        \
-  case VK_STRUCTURE_TYPE_TILE_PROPERTIES_QCOM:                                              \
-  case VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR:                                       \
-  case VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR:                                            \
-  case VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR:                                     \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_CAPABILITIES_KHR:                                 \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_DPB_SLOT_INFO_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_PICTURE_INFO_KHR:                                 \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_PROFILE_INFO_KHR:                                 \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_SESSION_PARAMETERS_CREATE_INFO_KHR:               \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR:                                     \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR:                               \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_INFO_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_KHR:                 \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_CREATE_INFO_KHR:              \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_DPB_SLOT_INFO_KHR:                               \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PICTURE_INFO_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_INFO_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_KHR:                 \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_CREATE_INFO_KHR:              \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR:                                             \
-  case VK_STRUCTURE_TYPE_VIDEO_DECODE_USAGE_INFO_KHR:                                       \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR:                                     \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_DPB_SLOT_INFO_KHR:                               \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_GOP_REMAINING_FRAME_INFO_KHR:                    \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_KHR:                             \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PICTURE_INFO_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_QUALITY_LEVEL_PROPERTIES_KHR:                    \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR:                           \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR:                     \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_CREATE_INFO_KHR:                         \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_ADD_INFO_KHR:                 \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_CREATE_INFO_KHR:              \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_FEEDBACK_INFO_KHR:            \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_GET_INFO_KHR:                 \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_DPB_SLOT_INFO_KHR:                               \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_GOP_REMAINING_FRAME_INFO_KHR:                    \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_KHR:                     \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PICTURE_INFO_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_QUALITY_LEVEL_PROPERTIES_KHR:                    \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR:                           \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR:                     \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_CREATE_INFO_KHR:                         \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_ADD_INFO_KHR:                 \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_CREATE_INFO_KHR:              \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_FEEDBACK_INFO_KHR:            \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_GET_INFO_KHR:                 \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR:                                             \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR:                               \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_PROPERTIES_KHR:                         \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR:                                \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR:                          \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_SESSION_PARAMETERS_FEEDBACK_INFO_KHR:                 \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_SESSION_PARAMETERS_GET_INFO_KHR:                      \
-  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR:                                       \
-  case VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR:                                         \
-  case VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR:                                       \
-  case VK_STRUCTURE_TYPE_VIDEO_INLINE_QUERY_INFO_KHR:                                       \
-  case VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR:                                   \
-  case VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR:                                            \
-  case VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR:                                       \
-  case VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR:                                     \
-  case VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR:                                     \
-  case VK_STRUCTURE_TYPE_VIDEO_SESSION_MEMORY_REQUIREMENTS_KHR:                             \
-  case VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_CREATE_INFO_KHR:                          \
-  case VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_UPDATE_INFO_KHR:                          \
-  case VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV:
+#define UNHANDLED_STRUCTS()                                                                  \
+  /* Surface creation structs would pull in dependencies on OS-specific includes, */         \
+  /* so we treat them as unsupported. */                                                     \
+  case VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR:                                    \
+  case VK_STRUCTURE_TYPE_DIRECTFB_SURFACE_CREATE_INFO_EXT:                                   \
+  case VK_STRUCTURE_TYPE_DISPLAY_MODE_CREATE_INFO_KHR:                                       \
+  case VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR:                                    \
+  case VK_STRUCTURE_TYPE_IMAGEPIPE_SURFACE_CREATE_INFO_FUCHSIA:                              \
+  case VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_MVK:                                        \
+  case VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK:                                      \
+  case VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT:                                      \
+  case VK_STRUCTURE_TYPE_VI_SURFACE_CREATE_INFO_NN:                                          \
+  case VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR:                                    \
+  case VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR:                                      \
+  case VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR:                                        \
+  case VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR:                                       \
+  /* Output structure containing objects. Must be *wrapped* not unwrapped. */                \
+  /* So we treat this as unhandled in generic code and require specific handling. */         \
+  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:            \
+  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV:                              \
+  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_LINEAR_SWEPT_SPHERES_DATA_NV:       \
+  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_MOTION_TRIANGLES_DATA_NV:           \
+  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_SPHERES_DATA_NV:                    \
+  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV:                                     \
+  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV:                 \
+  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MOTION_INFO_NV:                              \
+  case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_OPACITY_MICROMAP_EXT:              \
+  case VK_STRUCTURE_TYPE_AMIGO_PROFILING_SUBMIT_INFO_SEC:                                    \
+  case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_RESOLVE_PROPERTIES_ANDROID:          \
+  case VK_STRUCTURE_TYPE_ANTI_LAG_DATA_AMD:                                                  \
+  case VK_STRUCTURE_TYPE_ANTI_LAG_PRESENTATION_INFO_AMD:                                     \
+  case VK_STRUCTURE_TYPE_ATTACHMENT_SAMPLE_COUNT_INFO_AMD:                                   \
+  case VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV:                         \
+  case VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_BUFFER_EMBEDDED_SAMPLERS_INFO_EXT:                  \
+  case VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO:                                          \
+  case VK_STRUCTURE_TYPE_BIND_MEMORY_STATUS:                                                 \
+  case VK_STRUCTURE_TYPE_BIND_VIDEO_SESSION_MEMORY_INFO_KHR:                                 \
+  case VK_STRUCTURE_TYPE_BLIT_IMAGE_CUBIC_WEIGHTS_INFO_QCOM:                                 \
+  case VK_STRUCTURE_TYPE_BUFFER_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:                            \
+  case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_BUFFER_CREATE_INFO_FUCHSIA:                       \
+  case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_CONSTRAINTS_INFO_FUCHSIA:                         \
+  case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_CREATE_INFO_FUCHSIA:                              \
+  case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_IMAGE_CREATE_INFO_FUCHSIA:                        \
+  case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_PROPERTIES_FUCHSIA:                               \
+  case VK_STRUCTURE_TYPE_BUFFER_CONSTRAINTS_INFO_FUCHSIA:                                    \
+  case VK_STRUCTURE_TYPE_BUILD_PARTITIONED_ACCELERATION_STRUCTURE_INFO_NV:                   \
+  case VK_STRUCTURE_TYPE_CHECKPOINT_DATA_2_NV:                                               \
+  case VK_STRUCTURE_TYPE_CHECKPOINT_DATA_NV:                                                 \
+  case VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_CLUSTERS_BOTTOM_LEVEL_INPUT_NV:      \
+  case VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_COMMANDS_INFO_NV:                    \
+  case VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV:                       \
+  case VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_MOVE_OBJECTS_INPUT_NV:               \
+  case VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_TRIANGLE_CLUSTER_INPUT_NV:           \
+  case VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDER_PASS_TRANSFORM_INFO_QCOM:         \
+  case VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_VIEWPORT_SCISSOR_INFO_NV:                \
+  case VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_INDIRECT_BUFFER_INFO_NV:                           \
+  case VK_STRUCTURE_TYPE_CONVERT_COOPERATIVE_VECTOR_MATRIX_INFO_NV:                          \
+  case VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_FLEXIBLE_DIMENSIONS_PROPERTIES_NV:               \
+  case VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR:                                  \
+  case VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_NV:                                   \
+  case VK_STRUCTURE_TYPE_COOPERATIVE_VECTOR_PROPERTIES_NV:                                   \
+  case VK_STRUCTURE_TYPE_COPY_COMMAND_TRANSFORM_INFO_QCOM:                                   \
+  case VK_STRUCTURE_TYPE_COPY_IMAGE_TO_IMAGE_INFO:                                           \
+  case VK_STRUCTURE_TYPE_COPY_IMAGE_TO_MEMORY_INFO:                                          \
+  case VK_STRUCTURE_TYPE_COPY_MEMORY_TO_IMAGE_INFO:                                          \
+  case VK_STRUCTURE_TYPE_COPY_MEMORY_TO_MICROMAP_INFO_EXT:                                   \
+  case VK_STRUCTURE_TYPE_COPY_MICROMAP_INFO_EXT:                                             \
+  case VK_STRUCTURE_TYPE_COPY_MICROMAP_TO_MEMORY_INFO_EXT:                                   \
+  case VK_STRUCTURE_TYPE_CU_FUNCTION_CREATE_INFO_NVX:                                        \
+  case VK_STRUCTURE_TYPE_CU_LAUNCH_INFO_NVX:                                                 \
+  case VK_STRUCTURE_TYPE_CU_MODULE_CREATE_INFO_NVX:                                          \
+  case VK_STRUCTURE_TYPE_CU_MODULE_TEXTURING_MODE_CREATE_INFO_NVX:                           \
+  case VK_STRUCTURE_TYPE_CUDA_FUNCTION_CREATE_INFO_NV:                                       \
+  case VK_STRUCTURE_TYPE_CUDA_LAUNCH_INFO_NV:                                                \
+  case VK_STRUCTURE_TYPE_CUDA_MODULE_CREATE_INFO_NV:                                         \
+  case VK_STRUCTURE_TYPE_DEPTH_BIAS_INFO_EXT:                                                \
+  case VK_STRUCTURE_TYPE_DEPTH_BIAS_REPRESENTATION_INFO_EXT:                                 \
+  case VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT:                                        \
+  case VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT:                                 \
+  case VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_PUSH_DESCRIPTOR_BUFFER_HANDLE_EXT:        \
+  case VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT:                                            \
+  case VK_STRUCTURE_TYPE_DESCRIPTOR_SET_BINDING_REFERENCE_VALVE:                             \
+  case VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_HOST_MAPPING_INFO_VALVE:                      \
+  case VK_STRUCTURE_TYPE_DEVICE_ADDRESS_BINDING_CALLBACK_DATA_EXT:                           \
+  case VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT:                        \
+  case VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV:                           \
+  case VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT:                                            \
+  case VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT:                                              \
+  case VK_STRUCTURE_TYPE_DEVICE_MEMORY_REPORT_CALLBACK_DATA_EXT:                             \
+  case VK_STRUCTURE_TYPE_DEVICE_PIPELINE_BINARY_INTERNAL_CACHE_CONTROL_KHR:                  \
+  case VK_STRUCTURE_TYPE_DEVICE_QUEUE_SHADER_CORE_CONTROL_CREATE_INFO_ARM:                   \
+  case VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_INFO_LUNARG:                                  \
+  case VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_LIST_LUNARG:                                  \
+  case VK_STRUCTURE_TYPE_DISPLAY_MODE_STEREO_PROPERTIES_NV:                                  \
+  case VK_STRUCTURE_TYPE_DISPLAY_SURFACE_STEREO_CREATE_INFO_NV:                              \
+  case VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_2_EXT:                          \
+  case VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT:                            \
+  case VK_STRUCTURE_TYPE_EXPORT_METAL_BUFFER_INFO_EXT:                                       \
+  case VK_STRUCTURE_TYPE_EXPORT_METAL_COMMAND_QUEUE_INFO_EXT:                                \
+  case VK_STRUCTURE_TYPE_EXPORT_METAL_DEVICE_INFO_EXT:                                       \
+  case VK_STRUCTURE_TYPE_EXPORT_METAL_IO_SURFACE_INFO_EXT:                                   \
+  case VK_STRUCTURE_TYPE_EXPORT_METAL_OBJECT_CREATE_INFO_EXT:                                \
+  case VK_STRUCTURE_TYPE_EXPORT_METAL_OBJECTS_INFO_EXT:                                      \
+  case VK_STRUCTURE_TYPE_EXPORT_METAL_SHARED_EVENT_INFO_EXT:                                 \
+  case VK_STRUCTURE_TYPE_EXPORT_METAL_TEXTURE_INFO_EXT:                                      \
+  case VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_QNX:                                                \
+  case VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_ACQUIRE_UNMODIFIED_EXT:                             \
+  case VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT:                                                 \
+  case VK_STRUCTURE_TYPE_FRAMEBUFFER_MIXED_SAMPLES_COMBINATION_NV:                           \
+  case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_INFO_EXT:                                        \
+  case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_INFO_NV:                                         \
+  case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_MEMORY_REQUIREMENTS_INFO_EXT:                    \
+  case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_MEMORY_REQUIREMENTS_INFO_NV:                     \
+  case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_PIPELINE_INFO_EXT:                               \
+  case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_SHADER_INFO_EXT:                                 \
+  case VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV:                                                   \
+  case VK_STRUCTURE_TYPE_GEOMETRY_NV:                                                        \
+  case VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV:                                              \
+  case VK_STRUCTURE_TYPE_GET_LATENCY_MARKER_INFO_NV:                                         \
+  case VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_SHADER_GROUPS_CREATE_INFO_NV:                     \
+  case VK_STRUCTURE_TYPE_GRAPHICS_SHADER_GROUP_CREATE_INFO_NV:                               \
+  case VK_STRUCTURE_TYPE_HDR_VIVID_DYNAMIC_METADATA_HUAWEI:                                  \
+  case VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT:                                   \
+  case VK_STRUCTURE_TYPE_HOST_IMAGE_COPY_DEVICE_PERFORMANCE_QUERY:                           \
+  case VK_STRUCTURE_TYPE_HOST_IMAGE_LAYOUT_TRANSITION_INFO:                                  \
+  case VK_STRUCTURE_TYPE_IMAGE_ALIGNMENT_CONTROL_CREATE_INFO_MESA:                           \
+  case VK_STRUCTURE_TYPE_IMAGE_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:                             \
+  case VK_STRUCTURE_TYPE_IMAGE_CONSTRAINTS_INFO_FUCHSIA:                                     \
+  case VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT:                 \
+  case VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT:                     \
+  case VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_PROPERTIES_EXT:                           \
+  case VK_STRUCTURE_TYPE_IMAGE_FORMAT_CONSTRAINTS_INFO_FUCHSIA:                              \
+  case VK_STRUCTURE_TYPE_IMAGE_TO_MEMORY_COPY:                                               \
+  case VK_STRUCTURE_TYPE_IMAGE_VIEW_ADDRESS_PROPERTIES_NVX:                                  \
+  case VK_STRUCTURE_TYPE_IMAGE_VIEW_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:                        \
+  case VK_STRUCTURE_TYPE_IMAGE_VIEW_HANDLE_INFO_NVX:                                         \
+  case VK_STRUCTURE_TYPE_IMAGE_VIEW_SAMPLE_WEIGHT_CREATE_INFO_QCOM:                          \
+  case VK_STRUCTURE_TYPE_IMAGE_VIEW_SLICED_CREATE_INFO_EXT:                                  \
+  case VK_STRUCTURE_TYPE_IMPORT_MEMORY_BUFFER_COLLECTION_FUCHSIA:                            \
+  case VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT:                                \
+  case VK_STRUCTURE_TYPE_IMPORT_MEMORY_METAL_HANDLE_INFO_EXT:                                \
+  case VK_STRUCTURE_TYPE_IMPORT_MEMORY_ZIRCON_HANDLE_INFO_FUCHSIA:                           \
+  case VK_STRUCTURE_TYPE_IMPORT_METAL_BUFFER_INFO_EXT:                                       \
+  case VK_STRUCTURE_TYPE_IMPORT_METAL_IO_SURFACE_INFO_EXT:                                   \
+  case VK_STRUCTURE_TYPE_IMPORT_METAL_SHARED_EVENT_INFO_EXT:                                 \
+  case VK_STRUCTURE_TYPE_IMPORT_METAL_TEXTURE_INFO_EXT:                                      \
+  case VK_STRUCTURE_TYPE_IMPORT_SCREEN_BUFFER_INFO_QNX:                                      \
+  case VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_ZIRCON_HANDLE_INFO_FUCHSIA:                        \
+  case VK_STRUCTURE_TYPE_INDIRECT_COMMANDS_LAYOUT_CREATE_INFO_EXT:                           \
+  case VK_STRUCTURE_TYPE_INDIRECT_COMMANDS_LAYOUT_CREATE_INFO_NV:                            \
+  case VK_STRUCTURE_TYPE_INDIRECT_COMMANDS_LAYOUT_TOKEN_EXT:                                 \
+  case VK_STRUCTURE_TYPE_INDIRECT_COMMANDS_LAYOUT_TOKEN_NV:                                  \
+  case VK_STRUCTURE_TYPE_INDIRECT_EXECUTION_SET_CREATE_INFO_EXT:                             \
+  case VK_STRUCTURE_TYPE_INDIRECT_EXECUTION_SET_PIPELINE_INFO_EXT:                           \
+  case VK_STRUCTURE_TYPE_INDIRECT_EXECUTION_SET_SHADER_INFO_EXT:                             \
+  case VK_STRUCTURE_TYPE_INDIRECT_EXECUTION_SET_SHADER_LAYOUT_INFO_EXT:                      \
+  case VK_STRUCTURE_TYPE_INITIALIZE_PERFORMANCE_API_INFO_INTEL:                              \
+  case VK_STRUCTURE_TYPE_LATENCY_SLEEP_INFO_NV:                                              \
+  case VK_STRUCTURE_TYPE_LATENCY_SLEEP_MODE_INFO_NV:                                         \
+  case VK_STRUCTURE_TYPE_LATENCY_SUBMISSION_PRESENT_ID_NV:                                   \
+  case VK_STRUCTURE_TYPE_LATENCY_SURFACE_CAPABILITIES_NV:                                    \
+  case VK_STRUCTURE_TYPE_LATENCY_TIMINGS_FRAME_REPORT_NV:                                    \
+  case VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT:                                     \
+  case VK_STRUCTURE_TYPE_MEMORY_BARRIER_ACCESS_FLAGS_3_KHR:                                  \
+  case VK_STRUCTURE_TYPE_MEMORY_GET_METAL_HANDLE_INFO_EXT:                                   \
+  case VK_STRUCTURE_TYPE_MEMORY_GET_REMOTE_ADDRESS_INFO_NV:                                  \
+  case VK_STRUCTURE_TYPE_MEMORY_GET_ZIRCON_HANDLE_INFO_FUCHSIA:                              \
+  case VK_STRUCTURE_TYPE_MEMORY_HOST_POINTER_PROPERTIES_EXT:                                 \
+  case VK_STRUCTURE_TYPE_MEMORY_MAP_INFO:                                                    \
+  case VK_STRUCTURE_TYPE_MEMORY_MAP_PLACED_INFO_EXT:                                         \
+  case VK_STRUCTURE_TYPE_MEMORY_METAL_HANDLE_PROPERTIES_EXT:                                 \
+  case VK_STRUCTURE_TYPE_MEMORY_TO_IMAGE_COPY:                                               \
+  case VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO:                                                  \
+  case VK_STRUCTURE_TYPE_MEMORY_ZIRCON_HANDLE_PROPERTIES_FUCHSIA:                            \
+  case VK_STRUCTURE_TYPE_MICROMAP_BUILD_INFO_EXT:                                            \
+  case VK_STRUCTURE_TYPE_MICROMAP_BUILD_SIZES_INFO_EXT:                                      \
+  case VK_STRUCTURE_TYPE_MICROMAP_CREATE_INFO_EXT:                                           \
+  case VK_STRUCTURE_TYPE_MICROMAP_VERSION_INFO_EXT:                                          \
+  case VK_STRUCTURE_TYPE_MULTIVIEW_PER_VIEW_ATTRIBUTES_INFO_NVX:                             \
+  case VK_STRUCTURE_TYPE_MULTIVIEW_PER_VIEW_RENDER_AREAS_RENDER_PASS_BEGIN_INFO_QCOM:        \
+  case VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT:                     \
+  case VK_STRUCTURE_TYPE_OPTICAL_FLOW_EXECUTE_INFO_NV:                                       \
+  case VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_INFO_NV:                                  \
+  case VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_PROPERTIES_NV:                            \
+  case VK_STRUCTURE_TYPE_OPTICAL_FLOW_SESSION_CREATE_INFO_NV:                                \
+  case VK_STRUCTURE_TYPE_OPTICAL_FLOW_SESSION_CREATE_PRIVATE_DATA_INFO_NV:                   \
+  case VK_STRUCTURE_TYPE_OUT_OF_BAND_QUEUE_TYPE_INFO_NV:                                     \
+  case VK_STRUCTURE_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_FLAGS_NV:                        \
+  case VK_STRUCTURE_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_INSTANCES_INPUT_NV:              \
+  case VK_STRUCTURE_TYPE_PERFORMANCE_CONFIGURATION_ACQUIRE_INFO_INTEL:                       \
+  case VK_STRUCTURE_TYPE_PERFORMANCE_MARKER_INFO_INTEL:                                      \
+  case VK_STRUCTURE_TYPE_PERFORMANCE_OVERRIDE_INFO_INTEL:                                    \
+  case VK_STRUCTURE_TYPE_PERFORMANCE_STREAM_MARKER_INFO_INTEL:                               \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ADDRESS_BINDING_REPORT_FEATURES_EXT:                \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_AMIGO_PROFILING_FEATURES_SEC:                       \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD:                              \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_FEATURES_EXT:              \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_PROPERTIES_EXT:            \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_FEATURES_NV:         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_PROPERTIES_NV:       \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_FEATURES_HUAWEI:             \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_PROPERTIES_HUAWEI:           \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_VRS_FEATURES_HUAWEI:         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMMAND_BUFFER_INHERITANCE_FEATURES_NV:             \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_2_FEATURES_NV:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_2_PROPERTIES_NV:                 \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR:                    \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_NV:                     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_PROPERTIES_KHR:                  \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_PROPERTIES_NV:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_VECTOR_FEATURES_NV:                     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_VECTOR_PROPERTIES_NV:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COPY_MEMORY_INDIRECT_FEATURES_NV:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COPY_MEMORY_INDIRECT_PROPERTIES_NV:                 \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CORNER_SAMPLED_IMAGE_FEATURES_NV:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COVERAGE_REDUCTION_MODE_FEATURES_NV:                \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUBIC_CLAMP_FEATURES_QCOM:                          \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUBIC_WEIGHTS_FEATURES_QCOM:                        \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUDA_KERNEL_LAUNCH_FEATURES_NV:                     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUDA_KERNEL_LAUNCH_PROPERTIES_NV:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_BIAS_CONTROL_FEATURES_EXT:                    \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLAMP_CONTROL_FEATURES_EXT:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_DENSITY_MAP_PROPERTIES_EXT:       \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT:                     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_POOL_OVERALLOCATION_FEATURES_NV:         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_SET_HOST_MAPPING_FEATURES_VALVE:         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_COMPUTE_FEATURES_NV:      \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_FEATURES_EXT:             \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_FEATURES_NV:              \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_PROPERTIES_EXT:           \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_PROPERTIES_NV:            \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_MEMORY_REPORT_FEATURES_EXT:                  \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DIAGNOSTICS_CONFIG_FEATURES_NV:                     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT:                                 \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_UNUSED_ATTACHMENTS_FEATURES_EXT:  \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXCLUSIVE_SCISSOR_FEATURES_NV:                      \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_SPARSE_ADDRESS_SPACE_FEATURES_NV:          \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_SPARSE_ADDRESS_SPACE_PROPERTIES_NV:        \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_FEATURES_ANDROID:           \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_PROPERTIES_ANDROID:         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT:                \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_RDMA_FEATURES_NV:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_SCREEN_BUFFER_FEATURES_QNX:         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT:                                 \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_ENUMS_FEATURES_NV:            \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_ENUMS_PROPERTIES_NV:          \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT:                        \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HDR_VIVID_FEATURES_HUAWEI:                          \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES:                           \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_PROPERTIES:                         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_ALIGNMENT_CONTROL_FEATURES_MESA:              \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_ALIGNMENT_CONTROL_PROPERTIES_MESA:            \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT:                 \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_2_FEATURES_QCOM:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_2_PROPERTIES_QCOM:                 \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_FEATURES_QCOM:                     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_PROPERTIES_QCOM:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_SLICED_VIEW_OF_3D_FEATURES_EXT:               \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INHERITED_VIEWPORT_SCISSOR_FEATURES_NV:             \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INVOCATION_MASK_FEATURES_HUAWEI:                    \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LAYERED_API_PROPERTIES_KHR:                         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LAYERED_API_PROPERTIES_LIST_KHR:                    \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LAYERED_API_VULKAN_PROPERTIES_KHR:                  \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LAYERED_DRIVER_PROPERTIES_MSFT:                     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LEGACY_DITHERING_FEATURES_EXT:                      \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LEGACY_VERTEX_ATTRIBUTES_FEATURES_EXT:              \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LEGACY_VERTEX_ATTRIBUTES_PROPERTIES_EXT:            \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINEAR_COLOR_ATTACHMENT_FEATURES_NV:                \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_FEATURES:                             \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_PROPERTIES:                           \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_7_FEATURES_KHR:                         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_7_PROPERTIES_KHR:                       \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_8_FEATURES_KHR:                         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAP_MEMORY_PLACED_FEATURES_EXT:                     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAP_MEMORY_PLACED_PROPERTIES_EXT:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_DECOMPRESSION_FEATURES_NV:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_DECOMPRESSION_PROPERTIES_NV:                 \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV:                            \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_NV:                          \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTI_DRAW_FEATURES_EXT:                            \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTI_DRAW_PROPERTIES_EXT:                          \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_ATTRIBUTES_PROPERTIES_NVX:       \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_RENDER_AREAS_FEATURES_QCOM:      \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_VIEWPORTS_FEATURES_QCOM:         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT:                      \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_PROPERTIES_EXT:                    \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV:                           \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_PROPERTIES_NV:                         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PARTITIONED_ACCELERATION_STRUCTURE_FEATURES_NV:     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PARTITIONED_ACCELERATION_STRUCTURE_PROPERTIES_NV:   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PER_STAGE_DESCRIPTOR_SET_FEATURES_NV:               \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_BINARY_FEATURES_KHR:                       \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_BINARY_PROPERTIES_KHR:                     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_LIBRARY_GROUP_HANDLES_FEATURES_EXT:        \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_OPACITY_MICROMAP_FEATURES_ARM:             \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROPERTIES_FEATURES_EXT:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROTECTED_ACCESS_FEATURES:                 \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_FEATURES:                       \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_PROPERTIES:                     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_BARRIER_FEATURES_NV:                        \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_EXT:        \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAW_ACCESS_CHAINS_FEATURES_NV:                      \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_INVOCATION_REORDER_FEATURES_NV:         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_INVOCATION_REORDER_PROPERTIES_NV:       \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_LINEAR_SWEPT_SPHERES_FEATURES_NV:       \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MOTION_BLUR_FEATURES_NV:                \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PROPERTIES_NV:                          \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_VALIDATION_FEATURES_NV:                 \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RELAXED_LINE_RASTERIZATION_FEATURES_IMG:            \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RENDER_PASS_STRIPED_FEATURES_ARM:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RENDER_PASS_STRIPED_PROPERTIES_ARM:                 \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_REPRESENTATIVE_FRAGMENT_TEST_FEATURES_NV:           \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCHEDULING_CONTROLS_FEATURES_ARM:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCHEDULING_CONTROLS_PROPERTIES_ARM:                 \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT16_VECTOR_FEATURES_NV:           \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_BUILTINS_FEATURES_ARM:                  \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_BUILTINS_PROPERTIES_ARM:                \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_PROPERTIES_2_AMD:                       \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_PROPERTIES_ARM:                         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_EARLY_AND_LATE_FRAGMENT_TESTS_FEATURES_AMD:  \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_FUNCTIONS_2_FEATURES_INTEL:          \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MODULE_IDENTIFIER_FEATURES_EXT:              \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MODULE_IDENTIFIER_PROPERTIES_EXT:            \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_REPLICATED_COMPOSITES_FEATURES_EXT:          \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SM_BUILTINS_FEATURES_NV:                     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SM_BUILTINS_PROPERTIES_NV:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_TILE_IMAGE_FEATURES_EXT:                     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_TILE_IMAGE_PROPERTIES_EXT:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADING_RATE_IMAGE_FEATURES_NV:                     \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADING_RATE_IMAGE_PROPERTIES_NV:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_MERGE_FEEDBACK_FEATURES_EXT:                \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_SHADING_FEATURES_HUAWEI:                    \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_SHADING_PROPERTIES_HUAWEI:                  \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TILE_PROPERTIES_FEATURES_QCOM:                      \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_ROBUSTNESS_FEATURES_EXT:           \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_AV1_FEATURES_KHR:                      \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR:                \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_QUANTIZATION_MAP_FEATURES_KHR:         \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR:                              \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_2_FEATURES_KHR:                   \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES:                                \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_PROPERTIES:                              \
+  case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_YCBCR_DEGAMMA_FEATURES_QCOM:                        \
+  case VK_STRUCTURE_TYPE_PIPELINE_BINARY_CREATE_INFO_KHR:                                    \
+  case VK_STRUCTURE_TYPE_PIPELINE_BINARY_DATA_INFO_KHR:                                      \
+  case VK_STRUCTURE_TYPE_PIPELINE_BINARY_HANDLES_INFO_KHR:                                   \
+  case VK_STRUCTURE_TYPE_PIPELINE_BINARY_INFO_KHR:                                           \
+  case VK_STRUCTURE_TYPE_PIPELINE_BINARY_KEY_KHR:                                            \
+  case VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_ADVANCED_STATE_CREATE_INFO_EXT:                \
+  case VK_STRUCTURE_TYPE_PIPELINE_COMPILER_CONTROL_CREATE_INFO_AMD:                          \
+  case VK_STRUCTURE_TYPE_PIPELINE_COVERAGE_MODULATION_STATE_CREATE_INFO_NV:                  \
+  case VK_STRUCTURE_TYPE_PIPELINE_COVERAGE_REDUCTION_STATE_CREATE_INFO_NV:                   \
+  case VK_STRUCTURE_TYPE_PIPELINE_COVERAGE_TO_COLOR_STATE_CREATE_INFO_NV:                    \
+  case VK_STRUCTURE_TYPE_PIPELINE_CREATE_INFO_KHR:                                           \
+  case VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_ENUM_STATE_CREATE_INFO_NV:           \
+  case VK_STRUCTURE_TYPE_PIPELINE_INDIRECT_DEVICE_ADDRESS_INFO_NV:                           \
+  case VK_STRUCTURE_TYPE_PIPELINE_PROPERTIES_IDENTIFIER_EXT:                                 \
+  case VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_RASTERIZATION_ORDER_AMD:               \
+  case VK_STRUCTURE_TYPE_PIPELINE_REPRESENTATIVE_FRAGMENT_TEST_STATE_CREATE_INFO_NV:         \
+  case VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO:                                    \
+  case VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_MODULE_IDENTIFIER_CREATE_INFO_EXT:            \
+  case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_COARSE_SAMPLE_ORDER_STATE_CREATE_INFO_NV:         \
+  case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLAMP_CONTROL_CREATE_INFO_EXT:              \
+  case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_EXCLUSIVE_SCISSOR_STATE_CREATE_INFO_NV:           \
+  case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_SHADING_RATE_IMAGE_STATE_CREATE_INFO_NV:          \
+  case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_SWIZZLE_STATE_CREATE_INFO_NV:                     \
+  case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_W_SCALING_STATE_CREATE_INFO_NV:                   \
+  case VK_STRUCTURE_TYPE_PRESENT_FRAME_TOKEN_GGP:                                            \
+  case VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO:                                                \
+  case VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_INFO:                                           \
+  case VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_WITH_TEMPLATE_INFO:                             \
+  case VK_STRUCTURE_TYPE_QUERY_LOW_LATENCY_SUPPORT_NV:                                       \
+  case VK_STRUCTURE_TYPE_QUERY_POOL_PERFORMANCE_QUERY_CREATE_INFO_INTEL:                     \
+  case VK_STRUCTURE_TYPE_QUERY_POOL_VIDEO_ENCODE_FEEDBACK_CREATE_INFO_KHR:                   \
+  case VK_STRUCTURE_TYPE_QUEUE_FAMILY_CHECKPOINT_PROPERTIES_2_NV:                            \
+  case VK_STRUCTURE_TYPE_QUEUE_FAMILY_CHECKPOINT_PROPERTIES_NV:                              \
+  case VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_KHR:                    \
+  case VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR:                                  \
+  case VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CLUSTER_ACCELERATION_STRUCTURE_CREATE_INFO_NV: \
+  case VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV:                                \
+  case VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_NV:                            \
+  case VK_STRUCTURE_TYPE_RELEASE_CAPTURED_PIPELINE_DATA_INFO_KHR:                            \
+  case VK_STRUCTURE_TYPE_RENDER_PASS_CREATION_CONTROL_EXT:                                   \
+  case VK_STRUCTURE_TYPE_RENDER_PASS_CREATION_FEEDBACK_CREATE_INFO_EXT:                      \
+  case VK_STRUCTURE_TYPE_RENDER_PASS_STRIPE_BEGIN_INFO_ARM:                                  \
+  case VK_STRUCTURE_TYPE_RENDER_PASS_STRIPE_INFO_ARM:                                        \
+  case VK_STRUCTURE_TYPE_RENDER_PASS_STRIPE_SUBMIT_INFO_ARM:                                 \
+  case VK_STRUCTURE_TYPE_RENDER_PASS_SUBPASS_FEEDBACK_CREATE_INFO_EXT:                       \
+  case VK_STRUCTURE_TYPE_RENDER_PASS_TRANSFORM_BEGIN_INFO_QCOM:                              \
+  case VK_STRUCTURE_TYPE_SAMPLER_BLOCK_MATCH_WINDOW_CREATE_INFO_QCOM:                        \
+  case VK_STRUCTURE_TYPE_SAMPLER_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:                           \
+  case VK_STRUCTURE_TYPE_SAMPLER_CUBIC_WEIGHTS_CREATE_INFO_QCOM:                             \
+  case VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_YCBCR_DEGAMMA_CREATE_INFO_QCOM:            \
+  case VK_STRUCTURE_TYPE_SCREEN_BUFFER_FORMAT_PROPERTIES_QNX:                                \
+  case VK_STRUCTURE_TYPE_SCREEN_BUFFER_PROPERTIES_QNX:                                       \
+  case VK_STRUCTURE_TYPE_SCREEN_SURFACE_CREATE_INFO_QNX:                                     \
+  case VK_STRUCTURE_TYPE_SEMAPHORE_GET_ZIRCON_HANDLE_INFO_FUCHSIA:                           \
+  case VK_STRUCTURE_TYPE_SET_DESCRIPTOR_BUFFER_OFFSETS_INFO_EXT:                             \
+  case VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV:                                         \
+  case VK_STRUCTURE_TYPE_SHADER_MODULE_IDENTIFIER_EXT:                                       \
+  case VK_STRUCTURE_TYPE_STREAM_DESCRIPTOR_SURFACE_CREATE_INFO_GGP:                          \
+  case VK_STRUCTURE_TYPE_SUBPASS_SHADING_PIPELINE_CREATE_INFO_HUAWEI:                        \
+  case VK_STRUCTURE_TYPE_SUBRESOURCE_HOST_MEMCPY_SIZE:                                       \
+  case VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_BARRIER_NV:                            \
+  case VK_STRUCTURE_TYPE_SWAPCHAIN_LATENCY_CREATE_INFO_NV:                                   \
+  case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_BARRIER_CREATE_INFO_NV:                           \
+  case VK_STRUCTURE_TYPE_SYSMEM_COLOR_SPACE_FUCHSIA:                                         \
+  case VK_STRUCTURE_TYPE_TILE_PROPERTIES_QCOM:                                               \
+  case VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR:                                        \
+  case VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR:                                             \
+  case VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR:                                      \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_CAPABILITIES_KHR:                                  \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_DPB_SLOT_INFO_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_INLINE_SESSION_PARAMETERS_INFO_KHR:                \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_PICTURE_INFO_KHR:                                  \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_PROFILE_INFO_KHR:                                  \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_SESSION_PARAMETERS_CREATE_INFO_KHR:                \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR:                                      \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR:                                \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_INLINE_SESSION_PARAMETERS_INFO_KHR:               \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_INFO_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_KHR:                  \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_CREATE_INFO_KHR:               \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_DPB_SLOT_INFO_KHR:                                \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_INLINE_SESSION_PARAMETERS_INFO_KHR:               \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PICTURE_INFO_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_INFO_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_KHR:                  \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_CREATE_INFO_KHR:               \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR:                                              \
+  case VK_STRUCTURE_TYPE_VIDEO_DECODE_USAGE_INFO_KHR:                                        \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_CAPABILITIES_KHR:                                  \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_DPB_SLOT_INFO_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_GOP_REMAINING_FRAME_INFO_KHR:                      \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_PICTURE_INFO_KHR:                                  \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_PROFILE_INFO_KHR:                                  \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUALITY_LEVEL_PROPERTIES_KHR:                      \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUANTIZATION_MAP_CAPABILITIES_KHR:                 \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_INFO_KHR:                             \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_LAYER_INFO_KHR:                       \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_SESSION_CREATE_INFO_KHR:                           \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_SESSION_PARAMETERS_CREATE_INFO_KHR:                \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR:                                      \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_DPB_SLOT_INFO_KHR:                                \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_GOP_REMAINING_FRAME_INFO_KHR:                     \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_KHR:                              \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PICTURE_INFO_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_QUALITY_LEVEL_PROPERTIES_KHR:                     \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_QUANTIZATION_MAP_CAPABILITIES_KHR:                \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR:                            \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR:                      \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_CREATE_INFO_KHR:                          \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_ADD_INFO_KHR:                  \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_CREATE_INFO_KHR:               \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_FEEDBACK_INFO_KHR:             \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_GET_INFO_KHR:                  \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_DPB_SLOT_INFO_KHR:                                \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_GOP_REMAINING_FRAME_INFO_KHR:                     \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_KHR:                      \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PICTURE_INFO_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_QUALITY_LEVEL_PROPERTIES_KHR:                     \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_QUANTIZATION_MAP_CAPABILITIES_KHR:                \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR:                            \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR:                      \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_CREATE_INFO_KHR:                          \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_ADD_INFO_KHR:                  \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_CREATE_INFO_KHR:               \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_FEEDBACK_INFO_KHR:             \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_GET_INFO_KHR:                  \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR:                                              \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR:                                \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_PROPERTIES_KHR:                          \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_CAPABILITIES_KHR:                     \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_INFO_KHR:                             \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_SESSION_PARAMETERS_CREATE_INFO_KHR:   \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR:                                 \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR:                           \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_SESSION_PARAMETERS_FEEDBACK_INFO_KHR:                  \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_SESSION_PARAMETERS_GET_INFO_KHR:                       \
+  case VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR:                                        \
+  case VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR:                                          \
+  case VK_STRUCTURE_TYPE_VIDEO_FORMAT_AV1_QUANTIZATION_MAP_PROPERTIES_KHR:                   \
+  case VK_STRUCTURE_TYPE_VIDEO_FORMAT_H265_QUANTIZATION_MAP_PROPERTIES_KHR:                  \
+  case VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR:                                        \
+  case VK_STRUCTURE_TYPE_VIDEO_FORMAT_QUANTIZATION_MAP_PROPERTIES_KHR:                       \
+  case VK_STRUCTURE_TYPE_VIDEO_INLINE_QUERY_INFO_KHR:                                        \
+  case VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR:                                    \
+  case VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR:                                             \
+  case VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR:                                        \
+  case VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR:                                      \
+  case VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR:                                      \
+  case VK_STRUCTURE_TYPE_VIDEO_SESSION_MEMORY_REQUIREMENTS_KHR:                              \
+  case VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_CREATE_INFO_KHR:                           \
+  case VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_UPDATE_INFO_KHR:                           \
+  case VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV:                     \
+  case VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_PARTITIONED_ACCELERATION_STRUCTURE_NV:         \
+  case VK_STRUCTURE_TYPE_WRITE_INDIRECT_EXECUTION_SET_PIPELINE_EXT:                          \
+  case VK_STRUCTURE_TYPE_WRITE_INDIRECT_EXECUTION_SET_SHADER_EXT:
 
 size_t GetNextPatchSize(const void *pNext)
 {
@@ -1408,6 +1523,15 @@ size_t GetNextPatchSize(const void *pNext)
 
         VkDeviceImageMemoryRequirements *info = (VkDeviceImageMemoryRequirements *)next;
         memSize += GetNextPatchSize(info->pCreateInfo);
+        break;
+      }
+      case VK_STRUCTURE_TYPE_DEVICE_IMAGE_SUBRESOURCE_INFO:
+      {
+        memSize += sizeof(VkDeviceImageSubresourceInfo);
+
+        VkDeviceImageSubresourceInfo *info = (VkDeviceImageSubresourceInfo *)next;
+        memSize += GetNextPatchSize(info->pCreateInfo);
+        memSize += GetNextPatchSize(info->pSubresource);
         break;
       }
       case VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO:
@@ -1701,6 +1825,8 @@ size_t GetNextPatchSize(const void *pNext)
 #if ENABLED(RDOC_ANDROID)
         COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID,
                                  VkImportAndroidHardwareBufferInfoANDROID);
+        COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_2_ANDROID,
+                                 VkAndroidHardwareBufferFormatProperties2ANDROID);
         COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_USAGE_ANDROID,
                                  VkAndroidHardwareBufferUsageANDROID);
         COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID, VkExternalFormatANDROID);
@@ -1712,6 +1838,7 @@ size_t GetNextPatchSize(const void *pNext)
                                  VkMemoryGetAndroidHardwareBufferInfoANDROID);
 #else
       case VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID:
+      case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_2_ANDROID:
       case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_USAGE_ANDROID:
       case VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID:
       case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_ANDROID:
@@ -2076,7 +2203,7 @@ void UnwrapNextChain(CaptureState state, const char *structName, byte *&tempMem,
         *out = *in;
         UnwrapInPlace(out->layout);
         UnwrapInPlace(out->stage.module);
-        if(out->flags & VK_PIPELINE_CREATE_DERIVATIVE_BIT)
+        if(GetPipelineCreateFlags(out) & VK_PIPELINE_CREATE_DERIVATIVE_BIT)
           UnwrapInPlace(out->basePipelineHandle);
 
         AppendModifiedChainedStruct(tempMem, out, nextChainTail);
@@ -2340,6 +2467,24 @@ void UnwrapNextChain(CaptureState state, const char *structName, byte *&tempMem,
 
         break;
       }
+      case VK_STRUCTURE_TYPE_DEVICE_IMAGE_SUBRESOURCE_INFO:
+      {
+        const VkDeviceImageSubresourceInfo *in = (const VkDeviceImageSubresourceInfo *)nextInput;
+        VkDeviceImageSubresourceInfo *out = (VkDeviceImageSubresourceInfo *)tempMem;
+
+        // append immediately so tempMem is incremented
+        AppendModifiedChainedStruct(tempMem, out, nextChainTail);
+
+        *out = *in;
+        out->pCreateInfo = AllocStructCopy(tempMem, in->pCreateInfo);
+        UnwrapNextChain(state, "VkImageCreateInfo", tempMem, (VkBaseInStructure *)out->pCreateInfo);
+
+        out->pSubresource = AllocStructCopy(tempMem, in->pSubresource);
+        UnwrapNextChain(state, "VkImageSubresource2", tempMem,
+                        (VkBaseInStructure *)out->pSubresource);
+
+        break;
+      }
       case VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO:
       {
         const VkFramebufferCreateInfo *in = (const VkFramebufferCreateInfo *)nextInput;
@@ -2467,11 +2612,11 @@ void UnwrapNextChain(CaptureState state, const char *structName, byte *&tempMem,
         UnwrapNextChain(state, "VkPipelineDynamicStateCreateInfo", tempMem,
                         (VkBaseInStructure *)out->pDynamicState);
 
-        UnwrapInPlace(out->layout);
-        UnwrapInPlace(out->renderPass);
+        out->layout = Unwrap(in->layout);
+        out->renderPass = Unwrap(in->renderPass);
         out->subpass = in->subpass;
-        if(out->flags & VK_PIPELINE_CREATE_DERIVATIVE_BIT)
-          UnwrapInPlace(out->basePipelineHandle);
+        if(GetPipelineCreateFlags(out) & VK_PIPELINE_CREATE_DERIVATIVE_BIT)
+          out->basePipelineHandle = Unwrap(in->basePipelineHandle);
         else
           out->basePipelineHandle = VK_NULL_HANDLE;
         out->basePipelineIndex = in->basePipelineIndex;
@@ -2619,7 +2764,7 @@ void UnwrapNextChain(CaptureState state, const char *structName, byte *&tempMem,
         UnwrapNextChain(state, "VkPipelineDynamicStateCreateInfo", tempMem,
                         (VkBaseInStructure *)out->pDynamicState);
         UnwrapInPlace(out->layout);
-        if(out->flags & VK_PIPELINE_CREATE_DERIVATIVE_BIT)
+        if(GetPipelineCreateFlags(out) & VK_PIPELINE_CREATE_DERIVATIVE_BIT)
           UnwrapInPlace(out->basePipelineHandle);
         else
           out->basePipelineHandle = VK_NULL_HANDLE;
@@ -2967,6 +3112,8 @@ void UnwrapNextChain(CaptureState state, const char *structName, byte *&tempMem,
 #if ENABLED(RDOC_ANDROID)
         COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID,
                                  VkImportAndroidHardwareBufferInfoANDROID);
+        COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_2_ANDROID,
+                                 VkAndroidHardwareBufferFormatProperties2ANDROID);
         COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_USAGE_ANDROID,
                                  VkAndroidHardwareBufferUsageANDROID);
         COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID, VkExternalFormatANDROID);
@@ -2979,6 +3126,7 @@ void UnwrapNextChain(CaptureState state, const char *structName, byte *&tempMem,
                                    UnwrapInPlace(out->memory));
 #else
       case VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID:
+      case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_2_ANDROID:
       case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_USAGE_ANDROID:
       case VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID:
       case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_ANDROID:
@@ -3215,6 +3363,10 @@ void CopyNextChainForPatching(const char *structName, byte *&tempMem, VkBaseInSt
         CopyNextChainedStruct(sizeof(VkDeviceImageMemoryRequirements), tempMem, nextInput,
                               nextChainTail);
         break;
+      case VK_STRUCTURE_TYPE_DEVICE_IMAGE_SUBRESOURCE_INFO:
+        CopyNextChainedStruct(sizeof(VkDeviceImageSubresourceInfo), tempMem, nextInput,
+                              nextChainTail);
+        break;
       case VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO:
         CopyNextChainedStruct(sizeof(VkFramebufferCreateInfo), tempMem, nextInput, nextChainTail);
         break;
@@ -3286,6 +3438,8 @@ void CopyNextChainForPatching(const char *structName, byte *&tempMem, VkBaseInSt
 #if ENABLED(RDOC_ANDROID)
         COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID,
                                  VkImportAndroidHardwareBufferInfoANDROID);
+        COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_2_ANDROID,
+                                 VkAndroidHardwareBufferFormatProperties2ANDROID);
         COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_USAGE_ANDROID,
                                  VkAndroidHardwareBufferUsageANDROID);
         COPY_STRUCT_CAPTURE_ONLY(VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID, VkExternalFormatANDROID);
@@ -3298,6 +3452,7 @@ void CopyNextChainForPatching(const char *structName, byte *&tempMem, VkBaseInSt
                                    UnwrapInPlace(out->memory));
 #else
       case VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID:
+      case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_2_ANDROID:
       case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_USAGE_ANDROID:
       case VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID:
       case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_ANDROID:

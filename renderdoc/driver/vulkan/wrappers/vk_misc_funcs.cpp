@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,11 @@
 
 #include "../vk_core.h"
 #include "../vk_debug.h"
+#include "core/settings.h"
+
+RDOC_CONFIG(
+    bool, Vulkan_Hack_DisableRPNormalisation, false,
+    "Disable default behaviour to normalise renderpasses to be more consistent and debuggable.");
 
 static void PatchSeparateStencil(VkAttachmentDescription &att, const VkAttachmentReference *ref)
 {
@@ -151,6 +156,18 @@ static void MakeSubpassLoadRP(RPCreateInfo &info, const RPCreateInfo *origInfo, 
   }
 }
 
+template <typename type>
+bool RemoveForcedRef()
+{
+  return false;
+}
+
+template <>
+bool RemoveForcedRef<VkAccelerationStructureKHR>()
+{
+  return true;
+}
+
 // note, for threading reasons we ensure to release the wrappers before
 // releasing the underlying object. Otherwise after releasing the vulkan object
 // that same handle could be returned by create on another thread, and we
@@ -161,7 +178,11 @@ static void MakeSubpassLoadRP(RPCreateInfo &info, const RPCreateInfo *origInfo, 
     if(obj == VK_NULL_HANDLE)                                                            \
       return;                                                                            \
     type unwrappedObj = Unwrap(obj);                                                     \
-    m_ForcedReferences.removeOne(GetRecord(obj));                                        \
+    if(RemoveForcedRef<type>())                                                          \
+    {                                                                                    \
+      SCOPED_LOCK(m_ForcedReferencesLock);                                               \
+      m_ForcedReferences.removeOne(GetRecord(obj));                                      \
+    }                                                                                    \
     if(IsReplayMode(m_State))                                                            \
       m_CreationInfo.erase(GetResID(obj));                                               \
     GetResourceManager()->ReleaseWrappedResource(obj, true);                             \
@@ -1041,28 +1062,35 @@ bool WrappedVulkan::Serialise_vkCreateRenderPass(SerialiserType &ser, VkDevice d
     VkAttachmentDescription *att = (VkAttachmentDescription *)CreateInfo.pAttachments;
     for(uint32_t i = 0; i < CreateInfo.attachmentCount; i++)
     {
-      if(att[i].storeOp != VK_ATTACHMENT_STORE_OP_NONE)
-        att[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-      if(att[i].stencilStoreOp != VK_ATTACHMENT_STORE_OP_NONE)
-        att[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
-
-      if(m_ReplayOptions.optimisation != ReplayOptimisationLevel::Fastest)
+      if(Vulkan_Hack_DisableRPNormalisation())
       {
-        if(att[i].loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
-          att[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        if(att[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
-          att[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        RDCWARN("RP attachment normalisation not applied!");
+      }
+      else
+      {
+        if(att[i].storeOp != VK_ATTACHMENT_STORE_OP_NONE)
+          att[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        if(att[i].stencilStoreOp != VK_ATTACHMENT_STORE_OP_NONE)
+          att[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
 
-        if(att[i].loadOp == VK_ATTACHMENT_LOAD_OP_LOAD &&
-           att[i].initialLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+        if(m_ReplayOptions.optimisation != ReplayOptimisationLevel::Fastest)
         {
-          att[i].initialLayout = VK_IMAGE_LAYOUT_GENERAL;
-        }
+          if(att[i].loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+            att[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+          if(att[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+            att[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 
-        if(att[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD &&
-           att[i].initialLayout == VK_IMAGE_LAYOUT_UNDEFINED)
-        {
-          att[i].initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+          if(att[i].loadOp == VK_ATTACHMENT_LOAD_OP_LOAD &&
+             att[i].initialLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+          {
+            att[i].initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+          }
+
+          if(att[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD &&
+             att[i].initialLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+          {
+            att[i].initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+          }
         }
       }
 
@@ -1120,10 +1148,25 @@ bool WrappedVulkan::Serialise_vkCreateRenderPass(SerialiserType &ser, VkDevice d
         // without doing a clear or a DONT_CARE load.
         for(uint32_t i = 0; i < CreateInfo.attachmentCount; i++)
         {
-          if(att[i].loadOp != VK_ATTACHMENT_LOAD_OP_NONE_KHR)
+          if(att[i].loadOp != VK_ATTACHMENT_LOAD_OP_NONE)
             att[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-          if(att[i].stencilLoadOp != VK_ATTACHMENT_LOAD_OP_NONE_KHR)
+          if(att[i].stencilLoadOp != VK_ATTACHMENT_LOAD_OP_NONE)
             att[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+
+          if(Vulkan_Hack_DisableRPNormalisation())
+          {
+            if((att[i].loadOp == VK_ATTACHMENT_LOAD_OP_LOAD ||
+                att[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD) &&
+               att[i].initialLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+            {
+              att[i].initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+            }
+
+            if(att[i].storeOp != VK_ATTACHMENT_STORE_OP_NONE)
+              att[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            if(att[i].stencilStoreOp != VK_ATTACHMENT_STORE_OP_NONE)
+              att[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+          }
         }
 
         VkRenderPassCreateInfo loadInfo = CreateInfo;
@@ -1225,9 +1268,9 @@ VkResult WrappedVulkan::vkCreateRenderPass(VkDevice device, const VkRenderPassCr
       for(uint32_t i = 0; i < info.attachmentCount; i++)
       {
         atts[i] = info.pAttachments[i];
-        if(atts[i].loadOp != VK_ATTACHMENT_LOAD_OP_NONE_KHR)
+        if(atts[i].loadOp != VK_ATTACHMENT_LOAD_OP_NONE)
           atts[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        if(atts[i].stencilLoadOp != VK_ATTACHMENT_LOAD_OP_NONE_KHR)
+        if(atts[i].stencilLoadOp != VK_ATTACHMENT_LOAD_OP_NONE)
           atts[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
       }
 
@@ -1295,36 +1338,35 @@ bool WrappedVulkan::Serialise_vkCreateRenderPass2(SerialiserType &ser, VkDevice 
     VkAttachmentDescription2 *att = (VkAttachmentDescription2 *)CreateInfo.pAttachments;
     for(uint32_t i = 0; i < CreateInfo.attachmentCount; i++)
     {
-      if(att[i].storeOp != VK_ATTACHMENT_STORE_OP_NONE)
-        att[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-      if(att[i].stencilStoreOp != VK_ATTACHMENT_STORE_OP_NONE)
-        att[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
-
-      if(m_ReplayOptions.optimisation != ReplayOptimisationLevel::Fastest)
+      if(Vulkan_Hack_DisableRPNormalisation())
       {
-        if(att[i].loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
-          att[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        if(att[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
-          att[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        RDCWARN("RP attachment normalisation not applied!");
       }
-
-      if(m_ReplayOptions.optimisation != ReplayOptimisationLevel::Fastest)
+      else
       {
-        if(att[i].loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
-          att[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        if(att[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
-          att[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        if(att[i].storeOp != VK_ATTACHMENT_STORE_OP_NONE)
+          att[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        if(att[i].stencilStoreOp != VK_ATTACHMENT_STORE_OP_NONE)
+          att[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
 
-        if(att[i].loadOp == VK_ATTACHMENT_LOAD_OP_LOAD &&
-           att[i].initialLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+        if(m_ReplayOptions.optimisation != ReplayOptimisationLevel::Fastest)
         {
-          att[i].initialLayout = VK_IMAGE_LAYOUT_GENERAL;
-        }
+          if(att[i].loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+            att[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+          if(att[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+            att[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 
-        if(att[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD &&
-           att[i].initialLayout == VK_IMAGE_LAYOUT_UNDEFINED)
-        {
-          att[i].initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+          if(att[i].loadOp == VK_ATTACHMENT_LOAD_OP_LOAD &&
+             att[i].initialLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+          {
+            att[i].initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+          }
+
+          if(att[i].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD &&
+             att[i].initialLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+          {
+            att[i].initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+          }
         }
       }
 
@@ -1379,9 +1421,9 @@ bool WrappedVulkan::Serialise_vkCreateRenderPass2(SerialiserType &ser, VkDevice 
         // without doing a clear or a DONT_CARE load.
         for(uint32_t i = 0; i < CreateInfo.attachmentCount; i++)
         {
-          if(att[i].loadOp != VK_ATTACHMENT_LOAD_OP_NONE_KHR)
+          if(att[i].loadOp != VK_ATTACHMENT_LOAD_OP_NONE)
             att[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-          if(att[i].stencilLoadOp != VK_ATTACHMENT_LOAD_OP_NONE_KHR)
+          if(att[i].stencilLoadOp != VK_ATTACHMENT_LOAD_OP_NONE)
             att[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
         }
 
@@ -1486,9 +1528,9 @@ VkResult WrappedVulkan::vkCreateRenderPass2(VkDevice device,
       for(uint32_t i = 0; i < info.attachmentCount; i++)
       {
         atts[i] = info.pAttachments[i];
-        if(atts[i].loadOp != VK_ATTACHMENT_LOAD_OP_NONE_KHR)
+        if(atts[i].loadOp != VK_ATTACHMENT_LOAD_OP_NONE)
           atts[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        if(atts[i].stencilLoadOp != VK_ATTACHMENT_LOAD_OP_NONE_KHR)
+        if(atts[i].stencilLoadOp != VK_ATTACHMENT_LOAD_OP_NONE)
           atts[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
       }
 
@@ -1579,7 +1621,7 @@ bool WrappedVulkan::Serialise_vkCreateQueryPool(SerialiserType &ser, VkDevice de
                                             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 
       vkr = ObjDisp(cmd)->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-      CheckVkResult(vkr);
+      CHECK_VKR(this, vkr);
 
       ObjDisp(cmd)->CmdResetQueryPool(Unwrap(cmd), Unwrap(pool), 0, CreateInfo.queryCount);
 
@@ -1591,6 +1633,18 @@ bool WrappedVulkan::Serialise_vkCreateQueryPool(SerialiserType &ser, VkDevice de
           ObjDisp(cmd)->CmdWriteTimestamp(Unwrap(cmd), VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                                           Unwrap(pool), i);
         }
+        else if(CreateInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR ||
+                CreateInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SIZE_KHR ||
+                CreateInfo.queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_SIZE_KHR ||
+                CreateInfo.queryType ==
+                    VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_BOTTOM_LEVEL_POINTERS_KHR)
+        {
+          /*
+          ObjDisp(cmd)->CmdWriteAccelerationStructuresPropertiesKHR(
+              Unwrap(commandBuffer), 1, UnwrapPtr(m_DummyQueryAS), CreateInfo.queryType,
+              Unwrap(pool), i);
+              */
+        }
         else
         {
           ObjDisp(cmd)->CmdBeginQuery(Unwrap(cmd), Unwrap(pool), i, 0);
@@ -1601,7 +1655,7 @@ bool WrappedVulkan::Serialise_vkCreateQueryPool(SerialiserType &ser, VkDevice de
         if(i > 0 && (i % (128 * 1024)) == 0)
         {
           vkr = ObjDisp(cmd)->EndCommandBuffer(Unwrap(cmd));
-          CheckVkResult(vkr);
+          CHECK_VKR(this, vkr);
 
           SubmitCmds();
           FlushQ();
@@ -1609,12 +1663,12 @@ bool WrappedVulkan::Serialise_vkCreateQueryPool(SerialiserType &ser, VkDevice de
           cmd = GetNextCmd();
 
           vkr = ObjDisp(cmd)->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-          CheckVkResult(vkr);
+          CHECK_VKR(this, vkr);
         }
       }
 
       vkr = ObjDisp(cmd)->EndCommandBuffer(Unwrap(cmd));
-      CheckVkResult(vkr);
+      CHECK_VKR(this, vkr);
     }
 
     AddResource(QueryPool, ResourceType::Query, "Query Pool");
@@ -1649,6 +1703,14 @@ VkResult WrappedVulkan::vkCreateQueryPool(VkDevice device, const VkQueryPoolCrea
       }
 
       VkResourceRecord *record = GetResourceManager()->AddResourceRecord(*pQueryPool);
+
+      // We swap out the queried compacted AS size for the uncompacted size as they can differ
+      // between capture and replay
+      if(pCreateInfo->queryType == VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR)
+      {
+        record->queryPoolInfo = new QueryPoolInfo(this, device, pCreateInfo);
+      }
+
       record->AddChunk(chunk);
     }
     else
@@ -1665,8 +1727,44 @@ VkResult WrappedVulkan::vkGetQueryPoolResults(VkDevice device, VkQueryPool query
                                               size_t dataSize, void *pData, VkDeviceSize stride,
                                               VkQueryResultFlags flags)
 {
-  return ObjDisp(device)->GetQueryPoolResults(Unwrap(device), Unwrap(queryPool), firstQuery,
-                                              queryCount, dataSize, pData, stride, flags);
+  VkResult result = ObjDisp(device)->GetQueryPoolResults(
+      Unwrap(device), Unwrap(queryPool), firstQuery, queryCount, dataSize, pData, stride, flags);
+
+  const QueryPoolInfo *qpInfo = GetRecord(queryPool)->queryPoolInfo;
+  if(qpInfo)
+  {
+    VkMappedMemoryRange range = {
+        VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, NULL,
+        qpInfo->m_Buffer.UnwrappedMemory(),    firstQuery * sizeof(uint64_t),
+        queryCount * sizeof(uint64_t),
+    };
+    ObjDisp(device)->InvalidateMappedMemoryRanges(Unwrap(device), 1, &range);
+
+    const bool is64bit = (flags & VK_QUERY_RESULT_64_BIT) > 0;
+    const bool hasAvailability = (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) > 0;
+    const size_t resultSize = is64bit ? sizeof(uint64_t) : sizeof(uint32_t);
+
+    // If the stride matches the source buffer, then we can copy everything in a single block
+    if(is64bit && !hasAvailability && stride == resultSize)
+    {
+      memcpy(pData, qpInfo->m_MappedMem + (firstQuery * resultSize), queryCount * resultSize);
+    }
+    else
+    {
+      for(size_t i = 0; i < queryCount; ++i)
+        memcpy((byte *)pData + (i * stride), qpInfo->m_MappedMem + ((firstQuery + i) * resultSize),
+               resultSize);
+    }
+
+    if(hasAvailability)
+    {
+      const uint64_t availability = 1;
+      for(size_t i = 0; i < queryCount; ++i)
+        memcpy((byte *)pData + (queryCount * stride) + resultSize, &availability, resultSize);
+    }
+  }
+
+  return result;
 }
 
 template <typename SerialiserType>
@@ -2080,6 +2178,9 @@ static ObjData GetObjData(VkObjectType objType, uint64_t object)
     case VK_OBJECT_TYPE_UNKNOWN:
     case VK_OBJECT_TYPE_VIDEO_SESSION_KHR:
     case VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR:
+    case VK_OBJECT_TYPE_PIPELINE_BINARY_KHR:
+    case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT:
+    case VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT:
     case VK_OBJECT_TYPE_MAX_ENUM: break;
   }
 
@@ -2235,79 +2336,6 @@ bool WrappedVulkan::Serialise_vkDebugMarkerSetObjectNameEXT(
     else
       m_CreationInfo.m_Names[GetResourceManager()->GetLiveID(Object)] = ObjectName;
 
-    VkDebugMarkerObjectNameInfoEXT name = {VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_NAME_INFO_EXT};
-    name.pObjectName = ObjectName;
-    WrappedVkRes *res = GetResourceManager()->GetLiveResource(Object);
-
-    if(res)
-    {
-      if(IsDispatchableRes(res))
-      {
-        WrappedVkDispRes *disp = (WrappedVkDispRes *)res;
-        name.object = disp->real.handle;
-      }
-      else
-      {
-        WrappedVkNonDispRes *nondisp = (WrappedVkNonDispRes *)res;
-        name.object = nondisp->real.handle;
-      }
-
-      VkDebugReportObjectTypeEXT type = VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT;
-
-      switch(IdentifyTypeByPtr(res))
-      {
-        case eResUnknown: type = VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT; break;
-        case eResPhysicalDevice: type = VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT; break;
-        case eResInstance: type = VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT; break;
-        case eResDevice: type = VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT; break;
-        case eResQueue: type = VK_DEBUG_REPORT_OBJECT_TYPE_QUEUE_EXT; break;
-        case eResDeviceMemory: type = VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT; break;
-        case eResBuffer: type = VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT; break;
-        case eResBufferView: type = VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_VIEW_EXT; break;
-        case eResImage: type = VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT; break;
-        case eResImageView: type = VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT; break;
-        case eResFramebuffer: type = VK_DEBUG_REPORT_OBJECT_TYPE_FRAMEBUFFER_EXT; break;
-        case eResRenderPass: type = VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT; break;
-        case eResShaderModule: type = VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT; break;
-        case eResPipelineCache: type = VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_CACHE_EXT; break;
-        case eResPipelineLayout: type = VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT; break;
-        case eResPipeline: type = VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_EXT; break;
-        case eResSampler: type = VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_EXT; break;
-        case eResDescriptorPool: type = VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_POOL_EXT; break;
-        case eResDescriptorSetLayout:
-          type = VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT_EXT;
-          break;
-        case eResDescriptorSet: type = VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT; break;
-        case eResCommandPool: type = VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_POOL_EXT; break;
-        case eResCommandBuffer: type = VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT; break;
-        case eResFence: type = VK_DEBUG_REPORT_OBJECT_TYPE_FENCE_EXT; break;
-        case eResEvent: type = VK_DEBUG_REPORT_OBJECT_TYPE_EVENT_EXT; break;
-        case eResQueryPool: type = VK_DEBUG_REPORT_OBJECT_TYPE_QUERY_POOL_EXT; break;
-        case eResSemaphore: type = VK_DEBUG_REPORT_OBJECT_TYPE_SEMAPHORE_EXT; break;
-        case eResSwapchain: type = VK_DEBUG_REPORT_OBJECT_TYPE_SWAPCHAIN_KHR_EXT; break;
-        case eResSurface: type = VK_DEBUG_REPORT_OBJECT_TYPE_SURFACE_KHR_EXT; break;
-        case eResDescUpdateTemplate:
-          type = VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_EXT;
-          break;
-        case eResSamplerConversion:
-          type = VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION_EXT;
-          break;
-        case eResAccelerationStructureKHR:
-          type = VK_DEBUG_REPORT_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR_EXT;
-          break;
-        case eResShaderEXT:
-          RDCWARN("There is no VkDebugReportObjectTypeEXT for VkShaderEXT");
-          break;
-      }
-
-      if(ObjDisp(m_Device)->DebugMarkerSetObjectNameEXT &&
-         type != VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT)
-      {
-        name.objectType = type;
-        ObjDisp(m_Device)->DebugMarkerSetObjectNameEXT(Unwrap(m_Device), &name);
-      }
-    }
-
     ResourceDescription &descr = GetResourceDesc(Object);
 
     AddResourceCurChunk(descr);
@@ -2339,6 +2367,22 @@ VkResult WrappedVulkan::vkDebugMarkerSetObjectNameEXT(VkDevice device,
       Serialise_vkDebugMarkerSetObjectNameEXT(ser, device, pNameInfo);
 
       Chunk *chunk = scope.Get();
+
+      data.record->LockChunks();
+      while(data.record->HasChunks())
+      {
+        Chunk *end = data.record->GetLastChunk();
+
+        if(end->GetChunkType<VulkanChunk>() == VulkanChunk::vkDebugMarkerSetObjectNameEXT)
+        {
+          end->Delete();
+          data.record->PopChunk();
+          continue;
+        }
+
+        break;
+      }
+      data.record->UnlockChunks();
 
       data.record->AddChunk(chunk);
     }
@@ -2436,69 +2480,6 @@ bool WrappedVulkan::Serialise_vkSetDebugUtilsObjectNameEXT(
     else
       m_CreationInfo.m_Names[GetResourceManager()->GetLiveID(Object)] = ObjectName;
 
-    VkDebugUtilsObjectNameInfoEXT name = {VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT};
-    name.pObjectName = ObjectName;
-    WrappedVkRes *res = GetResourceManager()->GetLiveResource(Object, true);
-
-    if(res)
-    {
-      if(IsDispatchableRes(res))
-      {
-        WrappedVkDispRes *disp = (WrappedVkDispRes *)res;
-        name.objectHandle = disp->real.handle;
-      }
-      else
-      {
-        WrappedVkNonDispRes *nondisp = (WrappedVkNonDispRes *)res;
-        name.objectHandle = nondisp->real.handle;
-      }
-
-      VkObjectType type = VK_OBJECT_TYPE_UNKNOWN;
-
-      switch(IdentifyTypeByPtr(res))
-      {
-        case eResUnknown: type = VK_OBJECT_TYPE_UNKNOWN; break;
-        case eResPhysicalDevice: type = VK_OBJECT_TYPE_PHYSICAL_DEVICE; break;
-        case eResInstance: type = VK_OBJECT_TYPE_INSTANCE; break;
-        case eResDevice: type = VK_OBJECT_TYPE_DEVICE; break;
-        case eResQueue: type = VK_OBJECT_TYPE_QUEUE; break;
-        case eResDeviceMemory: type = VK_OBJECT_TYPE_DEVICE_MEMORY; break;
-        case eResBuffer: type = VK_OBJECT_TYPE_BUFFER; break;
-        case eResBufferView: type = VK_OBJECT_TYPE_BUFFER_VIEW; break;
-        case eResImage: type = VK_OBJECT_TYPE_IMAGE; break;
-        case eResImageView: type = VK_OBJECT_TYPE_IMAGE_VIEW; break;
-        case eResFramebuffer: type = VK_OBJECT_TYPE_FRAMEBUFFER; break;
-        case eResRenderPass: type = VK_OBJECT_TYPE_RENDER_PASS; break;
-        case eResShaderModule: type = VK_OBJECT_TYPE_SHADER_MODULE; break;
-        case eResPipelineCache: type = VK_OBJECT_TYPE_PIPELINE_CACHE; break;
-        case eResPipelineLayout: type = VK_OBJECT_TYPE_PIPELINE_LAYOUT; break;
-        case eResPipeline: type = VK_OBJECT_TYPE_PIPELINE; break;
-        case eResSampler: type = VK_OBJECT_TYPE_SAMPLER; break;
-        case eResDescriptorPool: type = VK_OBJECT_TYPE_DESCRIPTOR_POOL; break;
-        case eResDescriptorSetLayout: type = VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT; break;
-        case eResDescriptorSet: type = VK_OBJECT_TYPE_DESCRIPTOR_SET; break;
-        case eResCommandPool: type = VK_OBJECT_TYPE_COMMAND_POOL; break;
-        case eResCommandBuffer: type = VK_OBJECT_TYPE_COMMAND_BUFFER; break;
-        case eResFence: type = VK_OBJECT_TYPE_FENCE; break;
-        case eResEvent: type = VK_OBJECT_TYPE_EVENT; break;
-        case eResQueryPool: type = VK_OBJECT_TYPE_QUERY_POOL; break;
-        case eResSemaphore: type = VK_OBJECT_TYPE_SEMAPHORE; break;
-        case eResSwapchain: type = VK_OBJECT_TYPE_SWAPCHAIN_KHR; break;
-        case eResSurface: type = VK_OBJECT_TYPE_SURFACE_KHR; break;
-        case eResDescUpdateTemplate: type = VK_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE; break;
-        case eResSamplerConversion: type = VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION; break;
-        case eResAccelerationStructureKHR: type = VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR; break;
-        case eResShaderEXT: type = VK_OBJECT_TYPE_SHADER_EXT; break;
-      }
-
-      if(ObjDisp(m_Device)->SetDebugUtilsObjectNameEXT && type != VK_OBJECT_TYPE_UNKNOWN &&
-         type != VK_OBJECT_TYPE_PHYSICAL_DEVICE)
-      {
-        name.objectType = type;
-        ObjDisp(m_Device)->SetDebugUtilsObjectNameEXT(Unwrap(m_Device), &name);
-      }
-    }
-
     ResourceDescription &descr = GetResourceDesc(Object);
 
     AddResourceCurChunk(descr);
@@ -2530,6 +2511,22 @@ VkResult WrappedVulkan::vkSetDebugUtilsObjectNameEXT(VkDevice device,
       Serialise_vkSetDebugUtilsObjectNameEXT(ser, device, pNameInfo);
 
       Chunk *chunk = scope.Get();
+
+      data.record->LockChunks();
+      while(data.record->HasChunks())
+      {
+        Chunk *end = data.record->GetLastChunk();
+
+        if(end->GetChunkType<VulkanChunk>() == VulkanChunk::vkSetDebugUtilsObjectNameEXT)
+        {
+          end->Delete();
+          data.record->PopChunk();
+          continue;
+        }
+
+        break;
+      }
+      data.record->UnlockChunks();
 
       data.record->AddChunk(chunk);
     }

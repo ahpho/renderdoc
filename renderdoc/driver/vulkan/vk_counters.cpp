@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -164,6 +164,11 @@ rdcarray<GPUCounter> VulkanReplay::EnumerateCounters()
 
     m_KHRCounters.resize(khrCounters);
     m_KHRCountersDescriptions.resize(khrCounters);
+
+    for(VkPerformanceCounterKHR &count : m_KHRCounters)
+      count.sType = VK_STRUCTURE_TYPE_PERFORMANCE_COUNTER_KHR;
+    for(VkPerformanceCounterDescriptionKHR &desc : m_KHRCountersDescriptions)
+      desc.sType = VK_STRUCTURE_TYPE_PERFORMANCE_COUNTER_DESCRIPTION_KHR;
 
     ObjDisp(physDev)->EnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(
         Unwrap(physDev), 0, &khrCounters, &m_KHRCounters[0], &m_KHRCountersDescriptions[0]);
@@ -587,19 +592,27 @@ rdcarray<CounterResult> VulkanReplay::FetchCountersAMD(const rdcarray<GPUCounter
 
 struct VulkanKHRCallback : public VulkanActionCallback
 {
-  VulkanKHRCallback(WrappedVulkan *vk, VulkanReplay *rp, VkQueryPool qp)
-      : m_pDriver(vk), m_pReplay(rp), m_QueryPool(qp)
+  VulkanKHRCallback(WrappedVulkan *vk, VulkanReplay *rp, VkQueryPool qp, uint32_t qf)
+      : m_pDriver(vk), m_pReplay(rp), m_QueryPool(qp), m_QueueFamily(qf)
   {
     m_pDriver->SetActionCB(this);
   }
   ~VulkanKHRCallback() { m_pDriver->SetActionCB(NULL); }
   void PreDraw(uint32_t eid, ActionFlags flags, VkCommandBuffer cmd) override
   {
+    // ignore commands not from our queue family
+    if(m_pDriver->FindCommandQueueFamily(GetResID(cmd)) != m_QueueFamily)
+      return;
+
     ObjDisp(cmd)->CmdBeginQuery(Unwrap(cmd), m_QueryPool, (uint32_t)m_Results.size(), 0);
   }
 
   bool PostDraw(uint32_t eid, ActionFlags flags, VkCommandBuffer cmd) override
   {
+    // ignore commands not from our queue family
+    if(m_pDriver->FindCommandQueueFamily(GetResID(cmd)) != m_QueueFamily)
+      return false;
+
     ObjDisp(cmd)->CmdEndQuery(Unwrap(cmd), m_QueryPool, (uint32_t)m_Results.size());
     m_Results.push_back(eid);
     return false;
@@ -621,14 +634,23 @@ struct VulkanKHRCallback : public VulkanActionCallback
   }
   void PreMisc(uint32_t eid, ActionFlags flags, VkCommandBuffer cmd) override
   {
+    // ignore renderpass boundaries as it's illegal to start and end queries across the boundary
+    if(flags & ActionFlags::PassBoundary)
+      return;
     PreDraw(eid, flags, cmd);
   }
   bool PostMisc(uint32_t eid, ActionFlags flags, VkCommandBuffer cmd) override
   {
+    // ignore renderpass boundaries as it's illegal to start and end queries across the boundary
+    if(flags & ActionFlags::PassBoundary)
+      return false;
     return PostDraw(eid, flags, cmd);
   }
   void PostRemisc(uint32_t eid, ActionFlags flags, VkCommandBuffer cmd) override
   {
+    // ignore renderpass boundaries as it's illegal to start and end queries across the boundary
+    if(flags & ActionFlags::PassBoundary)
+      return;
     PostRedraw(eid, flags, cmd);
   }
   void AliasEvent(uint32_t primary, uint32_t alias) override
@@ -649,6 +671,7 @@ struct VulkanKHRCallback : public VulkanActionCallback
   void PreEndCommandBuffer(VkCommandBuffer cmd) override {}
   WrappedVulkan *m_pDriver;
   VulkanReplay *m_pReplay;
+  uint32_t m_QueueFamily;
   VkQueryPool m_QueryPool;
   rdcarray<uint32_t> m_Results;
   // events which are the 'same' from being the same command buffer resubmitted
@@ -664,8 +687,10 @@ rdcarray<CounterResult> VulkanReplay::FetchCountersKHR(const rdcarray<GPUCounter
   for(const GPUCounter &c : counters)
     counterIndices.push_back(FromKHRCounter(c));
 
+  const uint32_t queueFamily = m_pDriver->GetQueueFamilyIndex();
+
   VkQueryPoolPerformanceCreateInfoKHR perfCreateInfo = {
-      VK_STRUCTURE_TYPE_QUERY_POOL_PERFORMANCE_CREATE_INFO_KHR, NULL, 0,
+      VK_STRUCTURE_TYPE_QUERY_POOL_PERFORMANCE_CREATE_INFO_KHR, NULL, queueFamily,
       (uint32_t)counterIndices.size(), &counterIndices[0]};
   uint32_t passCount = 0;
   ObjDisp(m_pDriver->GetInstance())
@@ -689,7 +714,7 @@ rdcarray<CounterResult> VulkanReplay::FetchCountersKHR(const rdcarray<GPUCounter
 
   VkQueryPool queryPool;
   vkr = ObjDisp(dev)->CreateQueryPool(Unwrap(dev), &queryPoolCreateInfo, NULL, &queryPool);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   // Reset query pool
   VkCommandBuffer cmd = m_pDriver->GetNextCmd();
@@ -701,16 +726,16 @@ rdcarray<CounterResult> VulkanReplay::FetchCountersKHR(const rdcarray<GPUCounter
                                         VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 
   vkr = ObjDisp(dev)->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   ObjDisp(dev)->CmdResetQueryPool(Unwrap(cmd), queryPool, 0, maxEID);
 
   vkr = ObjDisp(dev)->EndCommandBuffer(Unwrap(cmd));
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   m_pDriver->SubmitCmds();
 
-  VulkanKHRCallback cb(m_pDriver, this, queryPool);
+  VulkanKHRCallback cb(m_pDriver, this, queryPool, queueFamily);
 
   // replay the events to perform all the queries
   for(uint32_t i = 0; i < passCount; i++)
@@ -725,6 +750,8 @@ rdcarray<CounterResult> VulkanReplay::FetchCountersKHR(const rdcarray<GPUCounter
     m_pDriver->SetSubmitChain(NULL);
   }
 
+  m_pDriver->vkDeviceWaitIdle(dev);
+
   rdcarray<VkPerformanceCounterResultKHR> perfResults;
   perfResults.resize(cb.m_Results.size() * counters.size());
 
@@ -732,7 +759,7 @@ rdcarray<CounterResult> VulkanReplay::FetchCountersKHR(const rdcarray<GPUCounter
       Unwrap(dev), queryPool, 0, (uint32_t)cb.m_Results.size(),
       sizeof(VkPerformanceCounterResultKHR) * perfResults.size(), &perfResults[0],
       sizeof(VkPerformanceCounterResultKHR) * counters.size(), VK_QUERY_RESULT_WAIT_BIT);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
   m_pDriver->SubmitCmds();
   m_pDriver->FlushQ();
 
@@ -1039,7 +1066,7 @@ rdcarray<CounterResult> VulkanReplay::FetchCounters(const rdcarray<GPUCounter> &
   VkQueryPool timeStampPool;
   VkResult vkr =
       ObjDisp(dev)->CreateQueryPool(Unwrap(dev), &timeStampPoolCreateInfo, NULL, &timeStampPool);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   bool occlNeeded = false;
   bool statsNeeded = false;
@@ -1071,21 +1098,21 @@ rdcarray<CounterResult> VulkanReplay::FetchCounters(const rdcarray<GPUCounter> &
   if(availableFeatures.occlusionQueryPrecise && occlNeeded)
   {
     vkr = ObjDisp(dev)->CreateQueryPool(Unwrap(dev), &occlusionPoolCreateInfo, NULL, &occlusionPool);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
   }
 
   VkQueryPool pipeStatsPool = VK_NULL_HANDLE;
   if(availableFeatures.pipelineStatisticsQuery && statsNeeded)
   {
     vkr = ObjDisp(dev)->CreateQueryPool(Unwrap(dev), &pipeStatsPoolCreateInfo, NULL, &pipeStatsPool);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
   }
 
   VkQueryPool meshStatsPool = VK_NULL_HANDLE;
   if(m_pDriver->MeshQueries() && meshNeeded)
   {
     vkr = ObjDisp(dev)->CreateQueryPool(Unwrap(dev), &meshStatsPoolCreateInfo, NULL, &meshStatsPool);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
   }
 
   VkQueryPool compPipeStatsPool = VK_NULL_HANDLE;
@@ -1095,7 +1122,7 @@ rdcarray<CounterResult> VulkanReplay::FetchCounters(const rdcarray<GPUCounter> &
         VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT;
     vkr = ObjDisp(dev)->CreateQueryPool(Unwrap(dev), &pipeStatsPoolCreateInfo, NULL,
                                         &compPipeStatsPool);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
   }
 
   VkCommandBuffer cmd = m_pDriver->GetNextCmd();
@@ -1107,7 +1134,7 @@ rdcarray<CounterResult> VulkanReplay::FetchCounters(const rdcarray<GPUCounter> &
                                         VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 
   vkr = ObjDisp(dev)->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   ObjDisp(dev)->CmdResetQueryPool(Unwrap(cmd), timeStampPool, 0, maxEID * 2);
   if(occlusionPool != VK_NULL_HANDLE)
@@ -1120,7 +1147,7 @@ rdcarray<CounterResult> VulkanReplay::FetchCounters(const rdcarray<GPUCounter> &
     ObjDisp(dev)->CmdResetQueryPool(Unwrap(cmd), compPipeStatsPool, 0, maxEID);
 
   vkr = ObjDisp(dev)->EndCommandBuffer(Unwrap(cmd));
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   if(Vulkan_Debug_SingleSubmitFlushing())
     m_pDriver->SubmitCmds();
@@ -1138,7 +1165,7 @@ rdcarray<CounterResult> VulkanReplay::FetchCounters(const rdcarray<GPUCounter> &
       Unwrap(dev), timeStampPool, 0, (uint32_t)timeStampData.size(),
       sizeof(uint64_t) * timeStampData.size(), &timeStampData[0], sizeof(uint64_t),
       VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
   m_pDriver->SubmitCmds();
   m_pDriver->FlushQ();
 
@@ -1153,7 +1180,7 @@ rdcarray<CounterResult> VulkanReplay::FetchCounters(const rdcarray<GPUCounter> &
       vkr = ObjDisp(dev)->GetQueryPoolResults(
           Unwrap(dev), occlusionPool, 0, cb.m_OcclQueries, sizeof(uint64_t) * cb.m_OcclQueries,
           occlusionData.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     ObjDisp(dev)->DestroyQueryPool(Unwrap(dev), occlusionPool, NULL);
   }
@@ -1169,7 +1196,7 @@ rdcarray<CounterResult> VulkanReplay::FetchCounters(const rdcarray<GPUCounter> &
                                               sizeof(uint64_t) * cb.m_GraphicsQueries * numPipeStats,
                                               pipeStatsData.data(), sizeof(uint64_t) * numPipeStats,
                                               VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     ObjDisp(dev)->DestroyQueryPool(Unwrap(dev), pipeStatsPool, NULL);
   }
@@ -1185,7 +1212,7 @@ rdcarray<CounterResult> VulkanReplay::FetchCounters(const rdcarray<GPUCounter> &
                                               sizeof(uint64_t) * cb.m_MeshQueries * numMeshStats,
                                               meshStatsData.data(), sizeof(uint64_t) * numMeshStats,
                                               VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     ObjDisp(dev)->DestroyQueryPool(Unwrap(dev), meshStatsPool, NULL);
   }
@@ -1200,7 +1227,7 @@ rdcarray<CounterResult> VulkanReplay::FetchCounters(const rdcarray<GPUCounter> &
                                               sizeof(uint64_t) * cb.m_ComputeQueries,
                                               m_CompPipeStatsData.data(), sizeof(uint64_t),
                                               VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     ObjDisp(dev)->DestroyQueryPool(Unwrap(dev), compPipeStatsPool, NULL);
   }

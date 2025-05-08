@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -178,6 +178,19 @@ void cmdBindDescriptorSets(VkCommandBuffer cmd, VkPipelineBindPoint pipelineBind
 void cmdPushDescriptorSets(VkCommandBuffer cmd, VkPipelineBindPoint pipelineBindPoint,
                            VkPipelineLayout layout, uint32_t set,
                            std::vector<VkWriteDescriptorSet> writes);
+
+template <typename T>
+void cmdPushConstants(VkCommandBuffer cmd, VkPipelineLayout layout, VkShaderStageFlags stages,
+                      const T &val)
+{
+  vkCmdPushConstants(cmd, layout, stages, 0, sizeof(T), &val);
+}
+
+template <typename T>
+void cmdPushConstants(VkCommandBuffer cmd, VkPipelineLayout layout, const T &val)
+{
+  cmdPushConstants(cmd, layout, VK_SHADER_STAGE_ALL, val);
+}
 
 struct ApplicationInfo : public VkApplicationInfo
 {
@@ -471,6 +484,19 @@ struct BufferMemoryBarrier : public VkBufferMemoryBarrier
     this->buffer = buffer;
     this->offset = offset;
     this->size = size;
+  }
+};
+
+#undef MemoryBarrier
+
+struct MemoryBarrier : public VkMemoryBarrier
+{
+  MemoryBarrier(VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask)
+  {
+    sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    pNext = NULL;
+    this->srcAccessMask = srcAccessMask;
+    this->dstAccessMask = dstAccessMask;
   }
 };
 
@@ -920,6 +946,19 @@ struct DescriptorImageInfo : public VkDescriptorImageInfo
     this->imageView = imageView;
     this->imageLayout = imageLayout;
   }
+};
+
+struct WriteDescriptorSetInlineUniformBlockEXT : public VkWriteDescriptorSetInlineUniformBlockEXT
+{
+  WriteDescriptorSetInlineUniformBlockEXT(void *data, uint32_t size)
+  {
+    sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK_EXT;
+    pNext = NULL;
+    this->pData = data;
+    this->dataSize = size;
+  }
+
+  operator const VkWriteDescriptorSetInlineUniformBlockEXT *() const { return this; }
 };
 
 struct WriteDescriptorSet : public VkWriteDescriptorSet

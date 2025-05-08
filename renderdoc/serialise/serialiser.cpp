@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -351,7 +351,10 @@ uint32_t Serialiser<SerialiserMode::Writing>::BeginChunk(uint32_t chunkID, uint6
 {
   // cannot start a chunk inside a chunk
   RDCASSERTMSG("Beginning a chunk inside another chunk", m_ChunkMetadata.chunkID == 0,
-               m_ChunkMetadata.chunkID);
+               m_ChunkMetadata.chunkID, chunkID);
+
+  // don't carry over any previous sideband data
+  m_SidebandKV.clear();
 
   {
     // chunk index needs to be valid

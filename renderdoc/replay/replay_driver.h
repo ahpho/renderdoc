@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -213,6 +213,7 @@ public:
   virtual void ReplaceResource(ResourceId from, ResourceId to) = 0;
   virtual void RemoveReplacement(ResourceId id) = 0;
   virtual void FreeTargetResource(ResourceId id) = 0;
+  virtual void ClearReplayCache() = 0;
 
   virtual rdcarray<GPUCounter> EnumerateCounters() = 0;
   virtual CounterDescription DescribeCounter(GPUCounter counterID) = 0;
@@ -231,6 +232,9 @@ public:
                                        const DebugPixelInputs &inputs) = 0;
   virtual ShaderDebugTrace *DebugThread(uint32_t eventId, const rdcfixedarray<uint32_t, 3> &groupid,
                                         const rdcfixedarray<uint32_t, 3> &threadid) = 0;
+  virtual ShaderDebugTrace *DebugMeshThread(uint32_t eventId,
+                                            const rdcfixedarray<uint32_t, 3> &groupid,
+                                            const rdcfixedarray<uint32_t, 3> &threadid) = 0;
   virtual rdcarray<ShaderDebugState> ContinueDebug(ShaderDebugger *debugger) = 0;
   virtual void FreeDebugger(ShaderDebugger *debugger) = 0;
 
@@ -263,7 +267,6 @@ public:
   virtual uint64_t MakeOutputWindow(WindowingData window, bool depth) = 0;
   virtual void DestroyOutputWindow(uint64_t id) = 0;
   virtual bool CheckResizeOutputWindow(uint64_t id) = 0;
-  virtual void SetOutputWindowDimensions(uint64_t id, int32_t w, int32_t h) = 0;
   virtual void GetOutputWindowDimensions(uint64_t id, int32_t &w, int32_t &h) = 0;
   virtual void GetOutputWindowData(uint64_t id, bytebuf &retData) = 0;
   virtual void ClearOutputWindowColor(uint64_t id, FloatVector col) = 0;

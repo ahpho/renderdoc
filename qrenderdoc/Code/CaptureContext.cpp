@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -2003,6 +2003,13 @@ void CaptureContext::LoadEdits(const QString &data)
       m_ShaderEditors.push_back(edit);
     }
   }
+}
+
+void CaptureContext::ClearReplayCache()
+{
+  m_CustomNameCachedID++;
+
+  Replay().AsyncInvoke([](IReplayController *r) { r->ClearReplayCache(); });
 }
 
 bool CaptureContext::OpenRGPProfile(const rdcstr &filename)

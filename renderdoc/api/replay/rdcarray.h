@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -453,7 +453,7 @@ public:
       for(size_t i = 0; i < count; i++)
       {
         // if this was one used previously, destruct it
-        if(i < oldSize)
+        if(offs + i < oldSize)
           ItemDestroyHelper<T>::destroyRange(elems + offs + i, 1);
 
         // then copy construct the new value
@@ -900,6 +900,11 @@ public:
   size_t size() const { return N; }
   size_t byteSize() const { return N * sizeof(T); }
   int32_t count() const { return (int32_t)N; }
+  void clear()
+  {
+    for(size_t i = 0; i < N; i++)
+      elems[i] = T();
+  }
   // find the first occurrence of an element
   int32_t indexOf(const T &el, size_t first = 0, size_t last = ~0U) const
   {

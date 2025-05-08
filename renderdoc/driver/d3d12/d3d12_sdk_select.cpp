@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2021-2024 Baldur Karlsson
+ * Copyright (c) 2021-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -481,13 +481,16 @@ D3D12DevConfiguration *D3D12_PrepareReplaySDKVersion(bool untrustedCapture, UINT
 
         rdcstr sdklayers_filename = get_dirname(filename) + "/d3d12sdklayers.dll";
 
-        f = FileIO::fopen(sdklayers_filename.c_str(), FileIO::WriteBinary);
-
-        // if we can write to this file, we have exclusive use of it so let's write it and use it
-        if(f)
+        if(!d3d12sdklayers_file.empty())
         {
-          FileIO::fwrite(d3d12sdklayers_file.data(), 1, d3d12sdklayers_file.size(), f);
-          FileIO::fclose(f);
+          f = FileIO::fopen(sdklayers_filename.c_str(), FileIO::WriteBinary);
+
+          // if we can write to this file, we have exclusive use of it so let's write it and use it
+          if(f)
+          {
+            FileIO::fwrite(d3d12sdklayers_file.data(), 1, d3d12sdklayers_file.size(), f);
+            FileIO::fclose(f);
+          }
         }
 
 // d3d12sdklayers.dll is not always signed
@@ -607,6 +610,12 @@ D3D12DevConfiguration *D3D12_PrepareReplaySDKVersion(bool untrustedCapture, UINT
           ret->sdkconfig = config1;
           ret->debug = debug;
           ret->devconfig = devConfig;
+
+          hr = devfactory->GetConfigurationInterface(
+              CLSID_D3D12DeviceRemovedExtendedData,
+              __uuidof(ID3D12DeviceRemovedExtendedDataSettings), (void **)&ret->dred);
+          if(FAILED(hr))
+            SAFE_RELEASE(ret->dred);
 
           RDCLOG("Accessing D3D12 dll via SDK configuration API");
 

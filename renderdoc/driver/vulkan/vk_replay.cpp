@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -127,7 +127,7 @@ rdcarray<GPUDevice> VulkanReplay::GetAvailableGPUs()
   VkPhysicalDevice *devices = new VkPhysicalDevice[count];
 
   vkr = ObjDisp(instance)->EnumeratePhysicalDevices(Unwrap(instance), &count, devices);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   for(uint32_t p = 0; p < count; p++)
   {
@@ -762,7 +762,7 @@ void VulkanReplay::RenderCheckerboard(FloatVector dark, FloatVector light)
                                         VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 
   VkResult vkr = vt->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   uint32_t uboOffs = 0;
 
@@ -861,7 +861,7 @@ void VulkanReplay::RenderCheckerboard(FloatVector dark, FloatVector light)
   vt->CmdEndRenderPass(Unwrap(cmd));
 
   vkr = vt->EndCommandBuffer(Unwrap(cmd));
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   if(Vulkan_Debug_SingleSubmitFlushing())
     m_pDriver->SubmitCmds();
@@ -891,7 +891,7 @@ void VulkanReplay::RenderHighlightBox(float w, float h, float scale)
                                         VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 
   VkResult vkr = vt->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   {
     VkRenderPassBeginInfo rpbegin = {
@@ -968,7 +968,7 @@ void VulkanReplay::RenderHighlightBox(float w, float h, float scale)
   }
 
   vkr = vt->EndCommandBuffer(Unwrap(cmd));
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   if(Vulkan_Debug_SingleSubmitFlushing())
     m_pDriver->SubmitCmds();
@@ -1331,6 +1331,7 @@ void VulkanReplay::SavePipelineState(uint32_t eventId)
     // Input Assembly
     ret.inputAssembly.indexBuffer.resourceId = rm->GetOriginalID(state.ibuffer.buf);
     ret.inputAssembly.indexBuffer.byteOffset = state.ibuffer.offs;
+    ret.inputAssembly.indexBuffer.byteSize = state.ibuffer.size;
     ret.inputAssembly.indexBuffer.byteStride = state.ibuffer.bytewidth;
     ret.inputAssembly.primitiveRestartEnable = state.primRestartEnable != VK_FALSE;
     ret.inputAssembly.topology =
@@ -1583,20 +1584,20 @@ void VulkanReplay::SavePipelineState(uint32_t eventId)
 
     ret.rasterizer.lineRasterMode = LineRaster::Default;
 
-    // "VK_LINE_RASTERIZATION_MODE_DEFAULT_HKR is equivalent to
-    // VK_LINE_RASTERIZATION_MODE_RECTANGULAR_KHR if VkPhysicalDeviceLimits::strictLines is VK_TRUE"
+    // "VK_LINE_RASTERIZATION_MODE_DEFAULT is equivalent to
+    // VK_LINE_RASTERIZATION_MODE_RECTANGULAR if VkPhysicalDeviceLimits::strictLines is VK_TRUE"
     if(m_pDriver->GetDeviceProps().limits.strictLines)
       ret.rasterizer.lineRasterMode = LineRaster::Rectangular;
 
     switch(state.lineRasterMode)
     {
-      case VK_LINE_RASTERIZATION_MODE_RECTANGULAR_KHR:
+      case VK_LINE_RASTERIZATION_MODE_RECTANGULAR:
         ret.rasterizer.lineRasterMode = LineRaster::Rectangular;
         break;
-      case VK_LINE_RASTERIZATION_MODE_BRESENHAM_KHR:
+      case VK_LINE_RASTERIZATION_MODE_BRESENHAM:
         ret.rasterizer.lineRasterMode = LineRaster::Bresenham;
         break;
-      case VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH_KHR:
+      case VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH:
         ret.rasterizer.lineRasterMode = LineRaster::RectangularSmooth;
         break;
       default: break;
@@ -1786,7 +1787,7 @@ void VulkanReplay::SavePipelineState(uint32_t eventId)
     rpState.resourceId = ResourceId();
     rpState.subpass = 0;
     rpState.fragmentDensityOffsets.clear();
-    rpState.tileOnlyMSAASampleCount = 0;
+    rpState.tileOnlyMSAASampleCount = dyn.tileOnlyMSAASampleCount;
 
     fbState.resourceId = ResourceId();
     // dynamic rendering does not provide a framebuffer dimension, it's implicit from the image
@@ -1942,6 +1943,17 @@ void VulkanReplay::SavePipelineState(uint32_t eventId)
       if(dyn.viewMask & (1 << v))
         rpState.multiviews.push_back(v);
     }
+
+    ret.currentPass.renderpass.colorAttachmentLocations = dyn.localRead.colorAttachmentLocations;
+    ret.currentPass.renderpass.colorAttachmentInputIndices =
+        dyn.localRead.colorAttachmentInputIndices;
+    ret.currentPass.renderpass.isDepthInputAttachmentIndexImplicit =
+        dyn.localRead.isDepthInputAttachmentIndexImplicit;
+    ret.currentPass.renderpass.isStencilInputAttachmentIndexImplicit =
+        dyn.localRead.isStencilInputAttachmentIndexImplicit;
+    ret.currentPass.renderpass.depthInputAttachmentIndex = dyn.localRead.depthInputAttachmentIndex;
+    ret.currentPass.renderpass.stencilInputAttachmentIndex =
+        dyn.localRead.stencilInputAttachmentIndex;
   }
   else if(state.GetRenderPass() != ResourceId())
   {
@@ -2142,7 +2154,7 @@ void VulkanReplay::SavePipelineState(uint32_t eventId)
         &state.compute.descSets,
     };
 
-    const VKDynamicShaderFeedback &usage = m_BindlessFeedback.Usage[eventId];
+    const VKDynamicShaderFeedback &usage = m_BindlessFeedback[eventId];
 
     ret.shaderMessages = usage.messages;
 
@@ -2165,7 +2177,7 @@ void VulkanReplay::SavePipelineState(uint32_t eventId)
 
         destSet.descriptorSetResourceId = rm->GetOriginalID(sourceSet);
         destSet.pushDescriptor = (c.m_DescSetLayout[layoutId].flags &
-                                  VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR);
+                                  VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT);
 
         destSet.layoutResourceId = rm->GetOriginalID(layoutId);
       }
@@ -2510,6 +2522,8 @@ rdcarray<Descriptor> VulkanReplay::GetDescriptors(ResourceId descriptorStore,
     const DescriptorSetSlot *desc = set.data.binds.empty() ? NULL : set.data.binds[0];
     const DescriptorSetSlot *end = desc + set.data.totalDescriptorCount();
 
+    RDCASSERT(r.offset >= set.data.inlineBytes.size());
+
     desc += (r.offset - set.data.inlineBytes.size());
 
     for(uint32_t i = 0; i < r.count; i++)
@@ -2585,7 +2599,9 @@ rdcarray<SamplerDescriptor> VulkanReplay::GetSamplerDescriptors(ResourceId descr
     const DescriptorSetSlot *desc = set.data.binds.empty() ? NULL : set.data.binds[0];
     const DescriptorSetSlot *end = desc + set.data.totalDescriptorCount();
 
-    desc += r.offset;
+    RDCASSERT(r.offset >= set.data.inlineBytes.size());
+
+    desc += (r.offset - set.data.inlineBytes.size());
 
     for(uint32_t i = 0; i < r.count; i++)
     {
@@ -2665,7 +2681,7 @@ rdcarray<DescriptorAccess> VulkanReplay::GetDescriptorAccess(uint32_t eventId)
       access = DescriptorAccess();
   }
 
-  const VKDynamicShaderFeedback &usage = m_BindlessFeedback.Usage[eventId];
+  const VKDynamicShaderFeedback &usage = m_BindlessFeedback[eventId];
 
   if(usage.valid)
     ret.append(usage.access);
@@ -2739,6 +2755,8 @@ rdcarray<DescriptorLogicalLocation> VulkanReplay::GetDescriptorLocations(
     const DescSetLayout::Binding *bind = descLayout.bindings.data();
     const DescSetLayout::Binding *firstBind = bind;
     const DescSetLayout::Binding *lastBind = bind + descLayout.bindings.size();
+
+    RDCASSERT(descriptorOffset >= descLayout.inlineByteSize);
 
     for(uint32_t i = 0; i < r.count; i++, dst++, descriptorOffset++)
     {
@@ -2985,7 +3003,7 @@ void VulkanReplay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const S
                                             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 
       vkr = vt->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-      CheckVkResult(vkr);
+      CHECK_VKR(m_pDriver, vkr);
 
       DoPipelineBarrier(cmd, 1, &pickimBarrier);
       pickimBarrier.oldLayout = pickimBarrier.newLayout;
@@ -2997,7 +3015,7 @@ void VulkanReplay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const S
       };
       vt->CmdCopyImageToBuffer(Unwrap(cmd), Unwrap(m_PixelPick.Image),
                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                               Unwrap(m_PixelPick.ReadbackBuffer.buf), 1, &region);
+                               m_PixelPick.ReadbackBuffer.UnwrappedBuffer(), 1, &region);
 
       // update image layout back to color attachment
       pickimBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -3012,28 +3030,28 @@ void VulkanReplay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const S
     m_pDriver->FlushQ();
 
     float *pData = NULL;
-    vkr = vt->MapMemory(Unwrap(dev), Unwrap(m_PixelPick.ReadbackBuffer.mem), 0, VK_WHOLE_SIZE, 0,
-                        (void **)&pData);
-    CheckVkResult(vkr);
+    vkr = vt->MapMemory(Unwrap(dev), m_PixelPick.ReadbackBuffer.UnwrappedMemory(), 0, VK_WHOLE_SIZE,
+                        0, (void **)&pData);
+    CHECK_VKR(m_pDriver, vkr);
     if(vkr != VK_SUCCESS)
       return;
     if(!pData)
     {
       RDCERR("Manually reporting failed memory map");
-      CheckVkResult(VK_ERROR_MEMORY_MAP_FAILED);
+      CHECK_VKR(m_pDriver, VK_ERROR_MEMORY_MAP_FAILED);
       return;
     }
 
     VkMappedMemoryRange range = {
         VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
         NULL,
-        Unwrap(m_PixelPick.ReadbackBuffer.mem),
+        m_PixelPick.ReadbackBuffer.UnwrappedMemory(),
         0,
         VK_WHOLE_SIZE,
     };
 
     vkr = vt->InvalidateMappedMemoryRanges(Unwrap(dev), 1, &range);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     RDCASSERT(pData != NULL);
 
@@ -3057,7 +3075,7 @@ void VulkanReplay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const S
       }
     }
 
-    vt->UnmapMemory(Unwrap(dev), Unwrap(m_PixelPick.ReadbackBuffer.mem));
+    vt->UnmapMemory(Unwrap(dev), m_PixelPick.ReadbackBuffer.UnwrappedMemory());
   }
 
   m_DebugWidth = oldW;
@@ -3354,9 +3372,9 @@ bool VulkanReplay::GetMinMax(ResourceId texid, const Subresource &sub, CompType 
       VK_ACCESS_SHADER_READ_BIT,
       VK_QUEUE_FAMILY_IGNORED,
       VK_QUEUE_FAMILY_IGNORED,
-      Unwrap(m_Histogram.m_MinMaxTileResult.buf),
+      m_Histogram.m_MinMaxTileResult.UnwrappedBuffer(),
       0,
-      m_Histogram.m_MinMaxTileResult.totalsize,
+      m_Histogram.m_MinMaxTileResult.TotalSize(),
   };
 
   // ensure shader writes complete before coalescing the tiles
@@ -3373,25 +3391,25 @@ bool VulkanReplay::GetMinMax(ResourceId texid, const Subresource &sub, CompType 
   // ensure shader writes complete before copying back to readback buffer
   tilebarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
   tilebarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-  tilebarrier.buffer = Unwrap(m_Histogram.m_MinMaxResult.buf);
-  tilebarrier.size = m_Histogram.m_MinMaxResult.totalsize;
+  tilebarrier.buffer = m_Histogram.m_MinMaxResult.UnwrappedBuffer();
+  tilebarrier.size = m_Histogram.m_MinMaxResult.TotalSize();
 
   DoPipelineBarrier(cmd, 1, &tilebarrier);
 
   VkBufferCopy bufcopy = {
       0,
       0,
-      m_Histogram.m_MinMaxResult.totalsize,
+      m_Histogram.m_MinMaxResult.TotalSize(),
   };
 
-  vt->CmdCopyBuffer(Unwrap(cmd), Unwrap(m_Histogram.m_MinMaxResult.buf),
-                    Unwrap(m_Histogram.m_MinMaxReadback.buf), 1, &bufcopy);
+  vt->CmdCopyBuffer(Unwrap(cmd), m_Histogram.m_MinMaxResult.UnwrappedBuffer(),
+                    m_Histogram.m_MinMaxReadback.UnwrappedBuffer(), 1, &bufcopy);
 
   // wait for copy to complete before mapping
   tilebarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
   tilebarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-  tilebarrier.buffer = Unwrap(m_Histogram.m_MinMaxReadback.buf);
-  tilebarrier.size = m_Histogram.m_MinMaxResult.totalsize;
+  tilebarrier.buffer = m_Histogram.m_MinMaxReadback.UnwrappedBuffer();
+  tilebarrier.size = m_Histogram.m_MinMaxResult.TotalSize();
 
   DoPipelineBarrier(cmd, 1, &tilebarrier);
 
@@ -3418,11 +3436,6 @@ bool VulkanReplay::GetMinMax(ResourceId texid, const Subresource &sub, CompType 
   m_Histogram.m_MinMaxReadback.Unmap();
 
   return true;
-}
-
-void VulkanReplay::CheckVkResult(VkResult vkr)
-{
-  return m_pDriver->CheckVkResult(vkr);
 }
 
 bool VulkanReplay::GetHistogram(ResourceId texid, const Subresource &sub, CompType typeCast,
@@ -3657,8 +3670,8 @@ bool VulkanReplay::GetHistogram(ResourceId texid, const Subresource &sub, CompTy
   int blocksY =
       (int)ceil(iminfo.extent.height / float(HGRAM_PIXELS_PER_TILE * HGRAM_TILES_PER_BLOCK));
 
-  vt->CmdFillBuffer(Unwrap(cmd), Unwrap(m_Histogram.m_HistogramBuf.buf), 0,
-                    m_Histogram.m_HistogramBuf.totalsize, 0);
+  vt->CmdFillBuffer(Unwrap(cmd), m_Histogram.m_HistogramBuf.UnwrappedBuffer(), 0,
+                    m_Histogram.m_HistogramBuf.TotalSize(), 0);
 
   vt->CmdBindPipeline(Unwrap(cmd), VK_PIPELINE_BIND_POINT_COMPUTE,
                       Unwrap(m_Histogram.m_HistogramPipe[textype][intTypeIndex]));
@@ -3689,9 +3702,9 @@ bool VulkanReplay::GetHistogram(ResourceId texid, const Subresource &sub, CompTy
       VK_ACCESS_TRANSFER_READ_BIT,
       VK_QUEUE_FAMILY_IGNORED,
       VK_QUEUE_FAMILY_IGNORED,
-      Unwrap(m_Histogram.m_HistogramBuf.buf),
+      m_Histogram.m_HistogramBuf.UnwrappedBuffer(),
       0,
-      m_Histogram.m_HistogramBuf.totalsize,
+      m_Histogram.m_HistogramBuf.TotalSize(),
   };
 
   // ensure shader writes complete before copying to readback buf
@@ -3700,17 +3713,17 @@ bool VulkanReplay::GetHistogram(ResourceId texid, const Subresource &sub, CompTy
   VkBufferCopy bufcopy = {
       0,
       0,
-      m_Histogram.m_HistogramBuf.totalsize,
+      m_Histogram.m_HistogramBuf.TotalSize(),
   };
 
-  vt->CmdCopyBuffer(Unwrap(cmd), Unwrap(m_Histogram.m_HistogramBuf.buf),
-                    Unwrap(m_Histogram.m_HistogramReadback.buf), 1, &bufcopy);
+  vt->CmdCopyBuffer(Unwrap(cmd), m_Histogram.m_HistogramBuf.UnwrappedBuffer(),
+                    m_Histogram.m_HistogramReadback.UnwrappedBuffer(), 1, &bufcopy);
 
   // wait for copy to complete before mapping
   tilebarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
   tilebarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-  tilebarrier.buffer = Unwrap(m_Histogram.m_HistogramReadback.buf);
-  tilebarrier.size = m_Histogram.m_HistogramReadback.totalsize;
+  tilebarrier.buffer = m_Histogram.m_HistogramReadback.UnwrappedBuffer();
+  tilebarrier.size = m_Histogram.m_HistogramReadback.TotalSize();
 
   DoPipelineBarrier(cmd, 1, &tilebarrier);
 
@@ -3847,7 +3860,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
                                         VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 
   VkResult vkr = vt->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   size_t dataSize = 0;
   VkBuffer readbackBuf = VK_NULL_HANDLE;
@@ -3948,13 +3961,13 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
     };
 
     vkr = vt->AllocateMemory(Unwrap(dev), &allocInfo, NULL, &tmpMemory);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     if(vkr != VK_SUCCESS)
       return;
 
     vkr = vt->BindImageMemory(Unwrap(dev), tmpImage, tmpMemory, 0);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     tmpImageState.InlineTransition(
         cmd, m_pDriver->m_QueueFamilyIdx, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0,
@@ -4072,7 +4085,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
       };
 
       vkr = vt->CreateImageView(Unwrap(dev), &viewInfo, NULL, &tmpView[i]);
-      CheckVkResult(vkr);
+      CHECK_VKR(m_pDriver, vkr);
 
       NameUnwrappedVulkanObject(tmpView[i], "GetTextureData tmpView[i]");
 
@@ -4089,7 +4102,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
       };
 
       vkr = vt->CreateFramebuffer(Unwrap(dev), &fbinfo, NULL, &tmpFB[i]);
-      CheckVkResult(vkr);
+      CHECK_VKR(m_pDriver, vkr);
 
       VkClearValue clearval = {};
       VkRenderPassBeginInfo rpbegin = {
@@ -4116,16 +4129,16 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
 
         attDesc.format = viewInfo.format;
         vkr = vt->CreateRenderPass(Unwrap(dev), &rpinfo, NULL, &tmpRPStencil);
-        CheckVkResult(vkr);
+        CHECK_VKR(m_pDriver, vkr);
         fbinfo.renderPass = tmpRPStencil;
         rpbegin.renderPass = tmpRPStencil;
 
         vkr = vt->CreateImageView(Unwrap(dev), &viewInfo, NULL, &tmpView[i + numFBs]);
-        CheckVkResult(vkr);
+        CHECK_VKR(m_pDriver, vkr);
         NameUnwrappedVulkanObject(tmpView[i + numFBs], "GetTextureData tmpView[i]");
         fbinfo.pAttachments = &tmpView[i + numFBs];
         vkr = vt->CreateFramebuffer(Unwrap(dev), &fbinfo, NULL, &tmpFB[i + numFBs]);
-        CheckVkResult(vkr);
+        CHECK_VKR(m_pDriver, vkr);
         rpbegin.framebuffer = tmpFB[i + numFBs];
 
         int stencilFlags = renderFlags;
@@ -4161,7 +4174,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
       return;
 
     vkr = vt->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     tmpImageState.InlineTransition(cmd, m_pDriver->m_QueueFamilyIdx,
                                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -4176,6 +4189,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
     // no longer depth, if it was
     isDepth = false;
     isStencil = false;
+    isPlanar = false;
   }
   else if(wasms && resolve)
   {
@@ -4205,13 +4219,13 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
     };
 
     vkr = vt->AllocateMemory(Unwrap(dev), &allocInfo, NULL, &tmpMemory);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     if(vkr != VK_SUCCESS)
       return;
 
     vkr = vt->BindImageMemory(Unwrap(dev), tmpImage, tmpMemory, 0);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     RDCASSERT(!isDepth && !isStencil);
 
@@ -4247,7 +4261,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
     {
       // ensure this resolve happens before handing back the source image to the original queue
       vkr = vt->EndCommandBuffer(Unwrap(cmd));
-      CheckVkResult(vkr);
+      CHECK_VKR(m_pDriver, vkr);
 
       m_pDriver->SubmitCmds();
       m_pDriver->FlushQ();
@@ -4261,7 +4275,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
         return;
 
       vkr = vt->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-      CheckVkResult(vkr);
+      CHECK_VKR(m_pDriver, vkr);
     }
     srcImageState = &tmpImageState;
 
@@ -4288,7 +4302,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
     };
 
     vkr = vt->CreateBuffer(Unwrap(dev), &bufInfo, NULL, &readbackBuf);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     VkMemoryRequirements mrq = {0};
 
@@ -4301,13 +4315,13 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
         m_pDriver->GetReadbackMemoryIndex(mrq.memoryTypeBits),
     };
     vkr = vt->AllocateMemory(Unwrap(dev), &allocInfo, NULL, &readbackMem);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     if(vkr != VK_SUCCESS)
       return;
 
     vkr = vt->BindBufferMemory(Unwrap(dev), readbackBuf, readbackMem, 0);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     // copy/expand multisampled live texture to readback buffer
     ImageBarrierSequence setupBarriers, cleanupBarriers;
@@ -4327,7 +4341,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
     {
       // ensure this resolve happens before handing back the source image to the original queue
       vkr = vt->EndCommandBuffer(Unwrap(cmd));
-      CheckVkResult(vkr);
+      CHECK_VKR(m_pDriver, vkr);
 
       m_pDriver->SubmitCmds();
       m_pDriver->FlushQ();
@@ -4341,7 +4355,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
         return;
 
       vkr = vt->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-      CheckVkResult(vkr);
+      CHECK_VKR(m_pDriver, vkr);
     }
 
     // readback buffer has already been populated, no need to call CmdCopyImageToBuffer
@@ -4446,7 +4460,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
     };
 
     vkr = vt->CreateBuffer(Unwrap(dev), &bufInfo, NULL, &readbackBuf);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     VkMemoryRequirements mrq = {0};
 
@@ -4459,13 +4473,13 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
         m_pDriver->GetReadbackMemoryIndex(mrq.memoryTypeBits),
     };
     vkr = vt->AllocateMemory(Unwrap(dev), &allocInfo, NULL, &readbackMem);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     if(vkr != VK_SUCCESS)
       return;
 
     vkr = vt->BindBufferMemory(Unwrap(dev), readbackBuf, readbackMem, 0);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     if(imInfo.type == VK_IMAGE_TYPE_3D && params.remap != RemapTexture::NoRemap)
     {
@@ -4499,7 +4513,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
       {
         // ensure this resolve happens before handing back the source image to the original queue
         vkr = vt->EndCommandBuffer(Unwrap(cmd));
-        CheckVkResult(vkr);
+        CHECK_VKR(m_pDriver, vkr);
 
         m_pDriver->SubmitCmds();
         m_pDriver->FlushQ();
@@ -4513,7 +4527,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
           return;
 
         vkr = vt->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-        CheckVkResult(vkr);
+        CHECK_VKR(m_pDriver, vkr);
       }
     }
   }
@@ -4541,13 +4555,13 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
   // map the buffer and copy to return buffer
   byte *pData = NULL;
   vkr = vt->MapMemory(Unwrap(dev), readbackMem, 0, VK_WHOLE_SIZE, 0, (void **)&pData);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
   if(vkr != VK_SUCCESS)
     return;
   if(!pData)
   {
     RDCERR("Manually reporting failed memory map");
-    CheckVkResult(VK_ERROR_MEMORY_MAP_FAILED);
+    CHECK_VKR(m_pDriver, VK_ERROR_MEMORY_MAP_FAILED);
     return;
   }
 
@@ -4556,7 +4570,7 @@ void VulkanReplay::GetTextureData(ResourceId tex, const Subresource &sub,
   };
 
   vkr = vt->InvalidateMappedMemoryRanges(Unwrap(dev), 1, &range);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   RDCASSERT(pData != NULL);
 
@@ -4881,7 +4895,7 @@ void VulkanReplay::BuildTargetShader(ShaderEncoding sourceEncoding, const bytebu
 
   VkShaderModule module;
   VkResult vkr = m_pDriver->vkCreateShaderModule(m_pDriver->GetDev(), &modinfo, NULL, &module);
-  CheckVkResult(vkr);
+  CHECK_VKR(m_pDriver, vkr);
 
   id = GetResID(module);
 }
@@ -4900,6 +4914,12 @@ void VulkanReplay::FreeTargetResource(ResourceId id)
   }
 
   m_pDriver->ReleaseResource(GetResourceManager()->GetCurrentResource(id));
+}
+
+void VulkanReplay::ClearReplayCache()
+{
+  ClearPostVSCache();
+  ClearFeedbackCache();
 }
 
 void VulkanReplay::ReplaceResource(ResourceId from, ResourceId to)
@@ -5044,14 +5064,16 @@ void VulkanReplay::RefreshDerivedReplacements()
         // if we have pipeline executable properties, capture the data
         if(m_pDriver->GetExtensions(NULL).ext_KHR_pipeline_executable_properties)
         {
-          pipeCreateInfo.flags |= (VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR |
-                                   VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR);
+          uint64_t flags = GetPipelineCreateFlags(&pipeCreateInfo);
+          flags |= (VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR |
+                    VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR);
+          SetPipelineCreateFlags(&pipeCreateInfo, flags);
         }
 
         // create the new graphics pipeline
         VkResult vkr = m_pDriver->vkCreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &pipeCreateInfo,
                                                             NULL, &pipe);
-        CheckVkResult(vkr);
+        CHECK_VKR(m_pDriver, vkr);
       }
       else
       {
@@ -5092,14 +5114,16 @@ void VulkanReplay::RefreshDerivedReplacements()
         // if we have pipeline executable properties, capture the data
         if(m_pDriver->GetExtensions(NULL).ext_KHR_pipeline_executable_properties)
         {
-          pipeCreateInfo.flags |= (VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR |
-                                   VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR);
+          uint64_t flags = GetPipelineCreateFlags(&pipeCreateInfo);
+          flags |= (VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR |
+                    VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR);
+          SetPipelineCreateFlags(&pipeCreateInfo, flags);
         }
 
         // create the new compute pipeline
         VkResult vkr = m_pDriver->vkCreateComputePipelines(dev, VK_NULL_HANDLE, 1, &pipeCreateInfo,
                                                            NULL, &pipe);
-        CheckVkResult(vkr);
+        CHECK_VKR(m_pDriver, vkr);
       }
 
       // remove the replacements
@@ -5162,7 +5186,7 @@ void VulkanReplay::ModifyReplacementIfShaderEXT(ResourceId from, ResourceId &to)
     VkShaderEXT shad = VK_NULL_HANDLE;
     VkResult vkr =
         m_pDriver->vkCreateShadersEXT(m_pDriver->GetDev(), 1, &shadCreateInfo, NULL, &shad);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
 
     // overwrite the replacement resource ID
     m_ModuleIDToShaderObject[to] = shad;
@@ -5238,6 +5262,10 @@ RDResult Vulkan_CreateReplayDevice(RDCFile *rdc, const ReplayOptions &opts, IRep
   Process::RegisterEnvironmentModification(
       EnvironmentModification(EnvMod::Set, EnvSep::NoSep, "DISABLE_GAMEPP_LAYER", "1"));
 
+  // buggy wegame cross overlay
+  Process::RegisterEnvironmentModification(EnvironmentModification(
+      EnvMod::Set, EnvSep::NoSep, "DISABLE_VK_LAYER_TENCENT_wegame_cross_overlay_1", "1"));
+
   // mesa device select layer crashes when it calls GPDP2 inside vkCreateInstance, which fails on
   // the current loader.
   Process::RegisterEnvironmentModification(
@@ -5248,6 +5276,12 @@ RDResult Vulkan_CreateReplayDevice(RDCFile *rdc, const ReplayOptions &opts, IRep
 
   Process::RegisterEnvironmentModification(
       EnvironmentModification(EnvMod::Set, EnvSep::NoSep, "VK_LAYER_bandicam_helper_DEBUG_1", "1"));
+
+  Process::RegisterEnvironmentModification(
+      EnvironmentModification(EnvMod::Set, EnvSep::NoSep, "DISABLE_VK_LAYER_reshade_1", "1"));
+
+  Process::RegisterEnvironmentModification(
+      EnvironmentModification(EnvMod::Set, EnvSep::NoSep, "DISABLE_VK_LAYER_GPUOpen_GRS", "1"));
 
   // fpsmon not only has a buggy layer but it also picks an absurdly generic disable environment
   // variable :(. Hopefully no other program picks this, or if it does then it's probably not a

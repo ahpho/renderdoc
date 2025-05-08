@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -142,6 +142,15 @@ static QMutex decrefQueueMutex;
 static QList<PyObject *> decrefQueue;
 extern "C" void ProcessDecRefQueue();
 
+// helper overload to give us the semantics we want - return NULL without an exception if the attr doesn't exist
+PyObject *PyObject_SafeGetAttrString(PyObject *obj, const char *string)
+{
+  if(PyObject_HasAttrString(obj, string) == 0)
+    return NULL;
+
+  return PyObject_GetAttrString(obj, string);
+}
+
 void FetchException(QString &typeStr, QString &valueStr, int &finalLine, QList<QString> &frames)
 {
   PyObject *exObj = NULL, *valueObj = NULL, *tracebackObj = NULL;
@@ -170,7 +179,7 @@ void FetchException(QString &typeStr, QString &valueStr, int &finalLine, QList<Q
 
     if(tracebackModule)
     {
-      PyObject *func = PyObject_GetAttrString(tracebackModule, "format_tb");
+      PyObject *func = PyObject_SafeGetAttrString(tracebackModule, "format_tb");
 
       if(func && PyCallable_Check(func))
       {
@@ -198,6 +207,10 @@ void FetchException(QString &typeStr, QString &valueStr, int &finalLine, QList<Q
         }
 
         Py_DecRef(args);
+      }
+      else
+      {
+        qCritical() << "Couldn't get format_tb from traceback module";
       }
     }
   }
@@ -338,7 +351,10 @@ void PythonContext::GlobalInit()
 // if we need to append to sys.path to locate PySide2, do that now
 #if defined(PYSIDE2_SYS_PATH)
   {
-    PyObject *syspath = PyObject_GetAttrString(sysobj, "path");
+    PyObject *syspath = PyObject_SafeGetAttrString(sysobj, "path");
+
+    if(!syspath)
+      qCritical() << "couldn't get sys.path";
 
 #ifndef STRINGIZE
 #define STRINGIZE2(a) #a
@@ -364,7 +380,10 @@ void PythonContext::GlobalInit()
 
     if(QDir(testpath).exists(lit("run_tests.py")))
     {
-      PyObject *syspath = PyObject_GetAttrString(sysobj, "path");
+      PyObject *syspath = PyObject_SafeGetAttrString(sysobj, "path");
+
+      if(!syspath)
+        qCritical() << "couldn't get sys.path";
 
       PyObject *str = PyUnicode_FromString(testpath.toUtf8().data());
 
@@ -447,7 +466,7 @@ PythonContext::PythonContext(QObject *parent) : QObject(parent)
 
   if(rlcompleter)
   {
-    PyObject *Completer = PyObject_GetAttrString(rlcompleter, "Completer");
+    PyObject *Completer = PyObject_SafeGetAttrString(rlcompleter, "Completer");
 
     if(Completer)
     {
@@ -612,7 +631,10 @@ QString PythonContext::LoadExtension(ICaptureContext &ctx, const rdcstr &extensi
 
   PyObject *sysobj = PyDict_GetItemString(main_dict, "sys");
 
-  PyObject *syspath = PyObject_GetAttrString(sysobj, "path");
+  PyObject *syspath = PyObject_SafeGetAttrString(sysobj, "path");
+
+  if(!syspath)
+    qCritical() << "couldn't get sys.path";
 
   // add extensions directories in
   for(QString p : PythonContext::GetApplicationExtensionsPaths())
@@ -631,7 +653,15 @@ QString PythonContext::LoadExtension(ICaptureContext &ctx, const rdcstr &extensi
 
   PyObject *ext = NULL;
 
-  current_global_handle = PyObject_GetAttrString(sysobj, "stdout");
+  current_global_handle = PyObject_SafeGetAttrString(sysobj, "stdout");
+
+  if(!syspath)
+    qCritical() << "couldn't get sys.stdout";
+
+  QString typeStr;
+  QString valueStr;
+  int finalLine = -1;
+  QList<QString> frames;
 
   if(extensions[extension] == NULL)
   {
@@ -643,60 +673,73 @@ QString PythonContext::LoadExtension(ICaptureContext &ctx, const rdcstr &extensi
     qInfo() << "Reloading " << QString(extension);
 
     // call unregister() if it exists
-    PyObject *unregister_func = PyObject_GetAttrString(extensions[extension], "unregister");
+    PyObject *unregister_func = PyObject_SafeGetAttrString(extensions[extension], "unregister");
+
+    bool reloadSuccess = true;
 
     if(unregister_func)
     {
       PyObject *retval = PyObject_CallFunction(unregister_func, "");
 
+      if(retval == NULL)
+      {
+        FetchException(typeStr, valueStr, finalLine, frames);
+        reloadSuccess = false;
+      }
+
       // discard the return value, regardless of error we don't abort the reload
       Py_XDECREF(retval);
     }
 
-    // if the extension is a package, we need to manually reload any loaded submodules
-    PyObject *sysmodules = PyObject_GetAttrString(sysobj, "modules");
-
-    PyObject *keys = PyDict_Keys(sysmodules);
-
-    QString search = extension + lit(".");
-
-    bool reloadSuccess = true;
-
-    if(keys)
+    if(reloadSuccess)
     {
-      Py_ssize_t len = PyList_Size(keys);
-      for(Py_ssize_t i = 0; i < len; i++)
+      // if the extension is a package, we need to manually reload any loaded submodules
+      PyObject *sysmodules = PyObject_SafeGetAttrString(sysobj, "modules");
+
+      if(!syspath)
+        qCritical() << "couldn't get sys.modules";
+
+      PyObject *keys = PyDict_Keys(sysmodules);
+
+      QString search = extension + lit(".");
+
+      if(keys)
       {
-        PyObject *key = PyList_GetItem(keys, i);
-        PyObject *value = PyDict_GetItem(sysmodules, key);
-
-        QString keystr = ToQStr(key);
-
-        if(keystr.contains(search))
+        Py_ssize_t len = PyList_Size(keys);
+        for(Py_ssize_t i = 0; i < len; i++)
         {
-          qInfo() << "Reloading submodule " << keystr;
-          PyObject *mod = PyImport_ReloadModule(value);
+          PyObject *key = PyList_GetItem(keys, i);
+          PyObject *value = PyDict_GetItem(sysmodules, key);
 
-          if(mod == NULL)
+          QString keystr = ToQStr(key);
+
+          if(keystr.contains(search))
           {
-            qCritical() << "Failed to reload " << keystr;
-            ret += tr("Failed to reload submodule '%1'\n").arg(keystr);
-            reloadSuccess = false;
-            break;
+            qInfo() << "Reloading submodule " << keystr;
+
+            PyObject *mod = PyImport_ReloadModule(value);
+
+            if(mod == NULL)
+            {
+              qCritical() << "Failed to reload " << keystr;
+              ret += tr("Failed to reload submodule '%1'\n").arg(keystr);
+              reloadSuccess = false;
+              break;
+            }
+
+            // we don't need the reference, we just wanted to reload it
+            Py_DECREF(mod);
+
+            value = PyDict_GetItem(sysmodules, key);
+
+            if(value != mod)
+              qCritical() << "sys.modules[" << keystr << "]"
+                          << " after reload doesn't match reloaded object";
           }
-
-          // we don't need the reference, we just wanted to reload it
-          Py_DECREF(mod);
-
-          value = PyDict_GetItem(sysmodules, key);
-
-          if(value != mod)
-            qCritical() << "sys.modules[" << keystr << "]"
-                        << " after reload doesn't match reloaded object";
         }
-      }
 
-      Py_DECREF(keys);
+        Py_DECREF(keys);
+      }
     }
 
     if(reloadSuccess)
@@ -713,15 +756,10 @@ QString PythonContext::LoadExtension(ICaptureContext &ctx, const rdcstr &extensi
     PyModule_AddObject(ext, "_renderdoc_internal", current_global_handle);
   }
 
-  QString typeStr;
-  QString valueStr;
-  int finalLine = -1;
-  QList<QString> frames;
-
   if(ext)
   {
     // if import succeeded, call register()
-    PyObject *register_func = PyObject_GetAttrString(ext, "register");
+    PyObject *register_func = PyObject_SafeGetAttrString(ext, "register");
 
     if(register_func)
     {
@@ -764,6 +802,8 @@ QString PythonContext::LoadExtension(ICaptureContext &ctx, const rdcstr &extensi
     }
     else
     {
+      qCritical() << "register() function not found in extension";
+      ret += tr("register() function not found in extension\n");
       ext = NULL;
     }
   }
@@ -774,27 +814,31 @@ QString PythonContext::LoadExtension(ICaptureContext &ctx, const rdcstr &extensi
 
   if(!ext)
   {
-    FetchException(typeStr, valueStr, finalLine, frames);
-
-    ret += lit("\n");
+    if(typeStr.isEmpty())
+      FetchException(typeStr, valueStr, finalLine, frames);
 
     ret = ret.trimmed();
 
-    qCritical("Error importing extension module. %s: %s", typeStr.toUtf8().data(),
-              valueStr.toUtf8().data());
-    ret += tr("Error importing extension module. %1: %2\n\n").arg(typeStr).arg(valueStr);
+    ret += lit("\n");
 
-    if(!frames.isEmpty())
+    if(!valueStr.isEmpty())
     {
-      qCritical() << "Traceback (most recent call last):";
-      ret += tr("Traceback (most recent call last):\n");
-      for(const QString &f : frames)
+      qCritical("Error importing extension module. %s: %s", typeStr.toUtf8().data(),
+                valueStr.toUtf8().data());
+      ret += tr("Error importing extension module. %1: %2\n\n").arg(typeStr).arg(valueStr);
+
+      if(!frames.isEmpty())
       {
-        QStringList lines = f.split(QLatin1Char('\n'));
-        for(const QString &line : lines)
+        qCritical() << "Traceback (most recent call last):";
+        ret += tr("Traceback (most recent call last):\n");
+        for(const QString &f : frames)
         {
-          qCritical("  %s", line.toUtf8().data());
-          ret += line + lit("\n");
+          QStringList lines = f.split(QLatin1Char('\n'));
+          for(const QString &line : lines)
+          {
+            qCritical("  %s", line.toUtf8().data());
+            ret += line + lit("\n");
+          }
         }
       }
     }
@@ -1060,7 +1104,10 @@ QStringList PythonContext::completionOptions(QString base)
 
   PyGILState_STATE gil = PyGILState_Ensure();
 
-  PyObject *completeFunction = PyObject_GetAttrString(m_Completer, "complete");
+  PyObject *completeFunction = PyObject_SafeGetAttrString(m_Completer, "complete");
+
+  if(!completeFunction)
+    return ret;
 
   int idx = 0;
   PyObject *opt = NULL;
@@ -1397,7 +1444,7 @@ extern "C" PyObject *GetCurrentGlobalHandle()
   PyObject *sys = PyImport_ImportModule("sys");
   if(sys)
   {
-    PyObject *ret = PyObject_GetAttrString(sys, "stdout");
+    PyObject *ret = PyObject_SafeGetAttrString(sys, "stdout");
     Py_XDECREF(sys);
     return ret;
   }

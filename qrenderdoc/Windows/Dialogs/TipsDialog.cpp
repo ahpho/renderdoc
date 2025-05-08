@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -242,9 +242,9 @@ void TipsDialog::initialize()
   // Tip 24
   m_tips.push_back(
       Tip(tr("Attaching to a running instance"),
-          tr("If you have launched a program via RenderDoc or your program integrates RenderDoc, "
-             "the UI can connect to it once it is running via File -> Attach to Running Instance, "
-             "and everything works as if you had launched it.\n\nYou can even do this across a "
+          tr("Once you have launched your program from RenderDoc, even if you close the UI you can "
+             "re-connect to it once it is running via File -> Attach to Running Instance, and "
+             "everything works as if you had launched it.\n\nYou can even do this across a "
              "network, by adding a remote IP or hostname. You will connect over the network and "
              "can remotely trigger captures - any files will be copied back across the network, to "
              "be saved and replayed locally as normal.\n")));

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -650,6 +650,8 @@ struct CustomPersistentStorage
 
 DOCUMENT(R"(A persistant config file that is automatically loaded and saved, which contains any
 settings and information that needs to be preserved from one run to the next.
+
+The config is retrieved by calling :meth:`CaptureContext.Config`.
 
 For more information about some of these settings that are user-facing see
 :ref:`the documentation for the settings window <settings-window>`.

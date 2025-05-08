@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -333,7 +333,7 @@ private:
   void PrepareTextureInitialContents(ResourceId liveid, ResourceId origid, GLResource res);
 
   void Create_InitialState(ResourceId id, GLResource live, bool hasData);
-  void Apply_InitialState(GLResource live, const GLInitialContents &initial);
+  void Apply_InitialState(GLResource live, GLInitialContents &initial);
 
   void MarkFBOAttachmentsReferenced(ResourceId id, GLResourceRecord *record, FrameRefType ref,
                                     bool markDirty);

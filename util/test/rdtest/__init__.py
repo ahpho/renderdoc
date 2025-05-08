@@ -9,3 +9,6 @@ from .shared.Draw_Zoo import *
 from .shared.Overlay_Test import *
 from .shared.Buffer_Truncation import *
 from .shared.Discard_Zoo import *
+from .shared.Subgroup_Zoo import *
+from .shared.Workgroup_Zoo import *
+from .shared.Groupshared import *

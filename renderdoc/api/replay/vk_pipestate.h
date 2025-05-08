@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -126,7 +126,7 @@ When not using pipeline libraries, this will be identical to :data:`pipelinePreR
 )");
   ResourceId pipelineFragmentLayoutResourceId;
   DOCUMENT("The flags used to create the pipeline object.");
-  uint32_t flags = 0;
+  uint64_t flags = 0;
 
   DOCUMENT(R"(The bound descriptor sets.
 
@@ -148,6 +148,9 @@ struct IndexBuffer
 
   DOCUMENT("The byte offset from the start of the buffer to the beginning of the index data.");
   uint64_t byteOffset = 0;
+
+  DOCUMENT("The byte size from the start offset to the end of the index data.");
+  uint64_t byteSize = 0;
 
   DOCUMENT(R"(The number of bytes for each index in the index buffer. Typically 2 or 4 bytes but
 it can be 0 if no index buffer is bound.
@@ -748,7 +751,13 @@ struct DepthStencil
   float maxDepthBounds = 0.0f;
 };
 
-DOCUMENT("Describes the setup of a renderpass and subpasses.");
+DOCUMENT(R"(Describes the setup of a renderpass and subpasses.
+
+.. data:: AttachmentUnused
+
+  Alias for VK_ATTACHMENT_UNUSED, for use by the UI to know when a value in colorAttachmentLocations
+  or colorAttachmentInputIndices is mapped to VK_ATTACHMENT_UNUSED.
+)");
 struct RenderPass
 {
   DOCUMENT("");
@@ -859,6 +868,32 @@ samples used to render this subpass.
 If the subpass is not internally multisampled, tileOnlyMSAASampleCount is set to 0.
 )");
   uint32_t tileOnlyMSAASampleCount = 0;
+
+  DOCUMENT(R"(The color index->location mapping set up by dynamic rendering local read.
+
+:type: List[int]
+)");
+  rdcarray<uint32_t> colorAttachmentLocations;
+
+  DOCUMENT(R"(The color index->input index mapping set up by dynamic rendering local read.
+
+:type: List[int]
+)");
+  rdcarray<uint32_t> colorAttachmentInputIndices;
+
+  DOCUMENT("Whether or not depth input attachment index is implicit (dynamic rendering).");
+  bool isDepthInputAttachmentIndexImplicit = true;
+
+  DOCUMENT("Whether or not stencil  input attachment index is implicit (dynamic rendering).");
+  bool isStencilInputAttachmentIndexImplicit = true;
+
+  DOCUMENT("Depth input attachment index if explicit (dynamic rendering).");
+  uint32_t depthInputAttachmentIndex = UINT32_MAX;
+
+  DOCUMENT("Stencil input attachment index if explicit (dynamic rendering).");
+  uint32_t stencilInputAttachmentIndex = UINT32_MAX;
+
+  static const uint32_t AttachmentUnused = ~0U;
 };
 
 DOCUMENT("Describes a framebuffer object and its attachments.");

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -39,6 +39,10 @@
 
 Threading::CriticalSection detailStringLock;
 rdcarray<const rdcstr *> detailStrings;
+
+#if ENABLED(ENABLE_UNIT_TESTS)
+bool RDResult::testErrorExpected = false;
+#endif
 
 RDResult::operator ResultDetails() const
 {

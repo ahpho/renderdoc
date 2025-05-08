@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2024 Baldur Karlsson
+ * Copyright (c) 2024-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -407,11 +407,16 @@ bool DXBCContainer::GetPipelineValidation(DXIL::PSVData &psv) const
     memcpy(&psv, header, headerSize);
     psv.version = PSVData::Version::Version2;
   }
-  else if(headerSize > sizeof(DXIL::PSVData2))
+  else if(headerSize == DXIL::PSVData3::ExpectedSize)
   {
-    RDCWARN("Unexpected PSV header size %u, only reading ver2", headerSize);
     memcpy(&psv, header, sizeof(DXIL::PSVData2));
-    psv.version = PSVData::Version::Version2;
+    psv.version = PSVData::Version::Version3;
+  }
+  else if(headerSize > DXIL::PSVData3::ExpectedSize)
+  {
+    RDCWARN("Unexpected PSV header size %u, only reading ver3", headerSize);
+    memcpy(&psv, header, sizeof(DXIL::PSVData2));
+    psv.version = PSVData::Version::Version3;
   }
   else
   {
@@ -608,6 +613,14 @@ bool DXBCContainer::GetPipelineValidation(DXIL::PSVData &psv) const
         bitmask[i].ReadTable(in, psv.outputSigVectors[0]);
       }
     }
+
+    if(psv.version >= PSVData::Version::Version3)
+    {
+      // annoyingly the entry name sits at the end of the header but BEFORE the string buffer...
+      IndexReference *name = (IndexReference *)((byte *)header + sizeof(DXIL::PSVData2));
+
+      psv.entryName = stringbuf.GetString(*name);
+    }
   }
 
   RDCASSERT(in == end);
@@ -628,6 +641,7 @@ void DXBCContainer::SetPipelineValidation(bytebuf &ByteCode, const DXIL::PSVData
     case PSVData::Version::Version0: headerSize = sizeof(PSVData::PSVData0); break;
     case PSVData::Version::Version1: headerSize = sizeof(PSVData::PSVData1); break;
     case PSVData::Version::Version2: headerSize = sizeof(PSVData::PSVData2); break;
+    case PSVData::Version::Version3: headerSize = PSVData::PSVData3::ExpectedSize; break;
   }
 
   // PSV does not deduplicate
@@ -638,7 +652,11 @@ void DXBCContainer::SetPipelineValidation(bytebuf &ByteCode, const DXIL::PSVData
 
   // write header
   writer.Write<uint32_t>(headerSize);
-  writer.Write(&psv, headerSize);
+  writer.Write(&psv, RDCMIN((uint32_t)sizeof(PSVData::PSVData2), headerSize));
+  uint64_t entryNameOffset = writer.GetOffset();
+
+  if(psv.version >= PSVData::Version::Version3)
+    writer.Write<uint32_t>(0);
 
   // write resources
   const uint32_t resourceCount = psv.resources.count();
@@ -680,6 +698,9 @@ void DXBCContainer::SetPipelineValidation(bytebuf &ByteCode, const DXIL::PSVData
       stringbuf.MakeRef(psv.patchConstPrimSig[i].name);
       idxArrays.MakeRef(psv.patchConstPrimSig[i].semIndices, false);
     }
+
+    if(psv.version >= PSVData::Version::Version3)
+      writer.WriteAt(entryNameOffset, stringbuf.MakeRef(psv.entryName));
 
     const uint32_t stringBufSize = AlignUp4(stringbuf.GetBlob().count());
     writer.Write(stringBufSize);
@@ -789,12 +810,17 @@ void DXBCContainer::SetPipelineValidation(bytebuf &ByteCode, const DXIL::PSVData
 
 bool DXBCContainer::GetRuntimeData(DXIL::RDATData &rdat) const
 {
-  using namespace DXIL;
-
   if(m_RDATOffset == 0)
     return false;
 
-  const byte *in = m_ShaderBlob.data() + m_RDATOffset;
+  return GetRuntimeData(m_ShaderBlob.data() + m_RDATOffset, m_RDATSize, rdat);
+}
+
+bool DXBCContainer::GetRuntimeData(const byte *RDATChunk, size_t RDATLength, DXIL::RDATData &rdat)
+{
+  using namespace DXIL;
+
+  const byte *in = RDATChunk;
 
   // RDAT Header
   uint32_t *ver = (uint32_t *)in;

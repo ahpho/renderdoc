@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -38,6 +38,361 @@
 
 #include "catch/catch.hpp"
 
+template <typename inner>
+void TestInsert()
+{
+  rdcarray<inner> vec;
+  vec.insert(0, {});
+  REQUIRE(vec.size() == 0);
+  vec.insert(0, vec);
+  REQUIRE(vec.size() == 0);
+  vec.insert(0, NULL, 0);
+  REQUIRE(vec.size() == 0);
+  vec.insert(0, 5);
+  REQUIRE(vec.size() == 1);
+  CHECK(vec[0] == 5);
+
+  vec.insert(0, {6, 3, 13});
+  REQUIRE(vec.size() == 4);
+  CHECK(vec[0] == 6);
+  CHECK(vec[1] == 3);
+  CHECK(vec[2] == 13);
+  CHECK(vec[3] == 5);
+
+  vec.insert(0, 9);
+
+  REQUIRE(vec.size() == 5);
+  CHECK(vec[0] == 9);
+  CHECK(vec[1] == 6);
+  CHECK(vec[2] == 3);
+  CHECK(vec[3] == 13);
+  CHECK(vec[4] == 5);
+
+  vec.insert(3, 8);
+
+  REQUIRE(vec.size() == 6);
+  CHECK(vec[0] == 9);
+  CHECK(vec[1] == 6);
+  CHECK(vec[2] == 3);
+  CHECK(vec[3] == 8);
+  CHECK(vec[4] == 13);
+  CHECK(vec[5] == 5);
+
+  vec.insert(6, 4);
+
+  REQUIRE(vec.size() == 7);
+  CHECK(vec[0] == 9);
+  CHECK(vec[1] == 6);
+  CHECK(vec[2] == 3);
+  CHECK(vec[3] == 8);
+  CHECK(vec[4] == 13);
+  CHECK(vec[5] == 5);
+  CHECK(vec[6] == 4);
+
+  vec.insert(3, {20, 21});
+
+  REQUIRE(vec.size() == 9);
+  CHECK(vec[0] == 9);
+  CHECK(vec[1] == 6);
+  CHECK(vec[2] == 3);
+  CHECK(vec[3] == 20);
+  CHECK(vec[4] == 21);
+  CHECK(vec[5] == 8);
+  CHECK(vec[6] == 13);
+  CHECK(vec[7] == 5);
+  CHECK(vec[8] == 4);
+
+  // insert a large amount of data to ensure this doesn't read off start/end of vector
+  rdcarray<inner> largedata;
+  largedata.resize(100000);
+
+  vec.insert(4, largedata);
+
+  REQUIRE(vec.size() == 9 + largedata.size());
+  CHECK(vec[0] == 9);
+  CHECK(vec[1] == 6);
+  CHECK(vec[2] == 3);
+  CHECK(vec[3] == 20);
+  CHECK(vec[4 + largedata.size()] == 21);
+  CHECK(vec[5 + largedata.size()] == 8);
+  CHECK(vec[6 + largedata.size()] == 13);
+  CHECK(vec[7 + largedata.size()] == 5);
+  CHECK(vec[8 + largedata.size()] == 4);
+
+  vec.clear();
+
+  REQUIRE(vec.size() == 0);
+
+  vec.insert(0, {6, 8, 10, 14, 16});
+
+  REQUIRE(vec.size() == 5);
+  CHECK(vec[0] == 6);
+  CHECK(vec[1] == 8);
+  CHECK(vec[2] == 10);
+  CHECK(vec[3] == 14);
+  CHECK(vec[4] == 16);
+
+  vec.insert(4, {20, 9, 9, 14, 7, 13, 10, 1, 1, 45});
+
+  REQUIRE(vec.size() == 15);
+  CHECK(vec[0] == 6);
+  CHECK(vec[1] == 8);
+  CHECK(vec[2] == 10);
+  CHECK(vec[3] == 14);
+  CHECK(vec[4] == 20);
+  CHECK(vec[5] == 9);
+  CHECK(vec[6] == 9);
+  CHECK(vec[7] == 14);
+  CHECK(vec[8] == 7);
+  CHECK(vec[9] == 13);
+  CHECK(vec[10] == 10);
+  CHECK(vec[11] == 1);
+  CHECK(vec[12] == 1);
+  CHECK(vec[13] == 45);
+  CHECK(vec[14] == 16);
+}
+
+template <typename inner>
+static void TestErase()
+{
+  rdcarray<inner> vec = {6, 3, 13, 5};
+
+  vec.erase(2);
+
+  REQUIRE(vec.size() == 3);
+  REQUIRE(vec.capacity() >= 4);
+  CHECK(vec[0] == 6);
+  CHECK(vec[1] == 3);
+  CHECK(vec[2] == 5);
+
+  // do some empty/invalid erases
+  vec.erase(2, 0);
+
+  REQUIRE(vec.size() == 3);
+  REQUIRE(vec.capacity() >= 4);
+  CHECK(vec[0] == 6);
+  CHECK(vec[1] == 3);
+  CHECK(vec[2] == 5);
+
+  vec.erase(200, 5);
+
+  REQUIRE(vec.size() == 3);
+  REQUIRE(vec.capacity() >= 4);
+  CHECK(vec[0] == 6);
+  CHECK(vec[1] == 3);
+  CHECK(vec[2] == 5);
+
+  vec.insert(2, {0, 1});
+
+  REQUIRE(vec.size() == 5);
+  CHECK(vec[0] == 6);
+  CHECK(vec[1] == 3);
+  CHECK(vec[2] == 0);
+  CHECK(vec[3] == 1);
+  CHECK(vec[4] == 5);
+
+  vec.erase(0);
+
+  REQUIRE(vec.size() == 4);
+  CHECK(vec[0] == 3);
+  CHECK(vec[1] == 0);
+  CHECK(vec[2] == 1);
+  CHECK(vec[3] == 5);
+
+  vec.erase(vec.size() - 1);
+
+  REQUIRE(vec.size() == 3);
+  CHECK(vec[0] == 3);
+  CHECK(vec[1] == 0);
+  CHECK(vec[2] == 1);
+
+  vec.erase(0, 3);
+
+  REQUIRE(vec.size() == 0);
+
+  vec = {5, 6, 3, 9, 1, 0};
+
+  vec.erase(2, 3);
+  REQUIRE(vec.size() == 3);
+  CHECK(vec[0] == 5);
+  CHECK(vec[1] == 6);
+  CHECK(vec[2] == 0);
+
+  vec = {5, 6, 3, 9, 1, 0};
+
+  vec.erase(3, 3);
+  REQUIRE(vec.size() == 3);
+  CHECK(vec[0] == 5);
+  CHECK(vec[1] == 6);
+  CHECK(vec[2] == 3);
+
+  vec = {5, 6, 3, 9, 1, 0};
+
+  vec.erase(3, 100);
+  REQUIRE(vec.size() == 3);
+  CHECK(vec[0] == 5);
+  CHECK(vec[1] == 6);
+  CHECK(vec[2] == 3);
+}
+
+template <typename inner>
+static void TestRemove()
+{
+  rdcarray<inner> vec = {6, 3, 9, 6, 6, 3, 5, 15, 5};
+
+  vec.removeOne(3);
+
+  REQUIRE(vec.size() == 8);
+  CHECK(vec[0] == 6);
+  CHECK(vec[1] == 9);
+  CHECK(vec[2] == 6);
+  CHECK(vec[3] == 6);
+  CHECK(vec[4] == 3);
+  CHECK(vec[5] == 5);
+  CHECK(vec[6] == 15);
+  CHECK(vec[7] == 5);
+
+  vec.removeOne(3);
+
+  REQUIRE(vec.size() == 7);
+  CHECK(vec[0] == 6);
+  CHECK(vec[1] == 9);
+  CHECK(vec[2] == 6);
+  CHECK(vec[3] == 6);
+  CHECK(vec[4] == 5);
+  CHECK(vec[5] == 15);
+  CHECK(vec[6] == 5);
+
+  vec.removeOne(3);
+
+  REQUIRE(vec.size() == 7);
+  CHECK(vec[0] == 6);
+  CHECK(vec[1] == 9);
+  CHECK(vec[2] == 6);
+  CHECK(vec[3] == 6);
+  CHECK(vec[4] == 5);
+  CHECK(vec[5] == 15);
+  CHECK(vec[6] == 5);
+
+  vec.removeOneIf([](const int &el) { return (el % 3) == 0; });
+
+  REQUIRE(vec.size() == 6);
+  CHECK(vec[0] == 9);
+  CHECK(vec[1] == 6);
+  CHECK(vec[2] == 6);
+  CHECK(vec[3] == 5);
+  CHECK(vec[4] == 15);
+  CHECK(vec[5] == 5);
+
+  vec.removeIf([](const int &el) { return (el % 3) == 0; });
+
+  REQUIRE(vec.size() == 2);
+  CHECK(vec[0] == 5);
+  CHECK(vec[1] == 5);
+}
+
+template <typename inner>
+static void TestBasic()
+{
+  rdcarray<inner> test;
+  const rdcarray<inner> &constTest = test;
+
+  CHECK(test.size() == 0);
+  CHECK(test.capacity() == 0);
+  CHECK(test.empty());
+  CHECK(test.isEmpty());
+  CHECK(test.begin() == test.end());
+
+  CHECK(constTest.size() == 0);
+  CHECK(constTest.capacity() == 0);
+  CHECK(constTest.empty());
+  CHECK(constTest.isEmpty());
+  CHECK(constTest.begin() == constTest.end());
+
+  test.clear();
+
+  CHECK(test.size() == 0);
+  CHECK(test.capacity() == 0);
+  CHECK(test.empty());
+  CHECK(test.isEmpty());
+  CHECK(test.begin() == test.end());
+
+  test.push_back(5);
+
+  CHECK(test.size() == 1);
+  CHECK(test.capacity() >= 1);
+  CHECK_FALSE(test.empty());
+  CHECK_FALSE(test.isEmpty());
+  CHECK(test.begin() != test.end());
+  CHECK(test.begin() + 1 == test.end());
+
+  test.push_back(10);
+
+  CHECK(test.front() == 5);
+  CHECK(test.back() == 10);
+  CHECK(test.size() == 2);
+  CHECK(test.capacity() >= 2);
+  CHECK_FALSE(test.empty());
+  CHECK_FALSE(test.isEmpty());
+  CHECK(test.begin() + 2 == test.end());
+
+  CHECK(constTest.front() == 5);
+  CHECK(constTest.back() == 10);
+  CHECK(constTest.size() == 2);
+  CHECK(constTest.capacity() >= 2);
+  CHECK_FALSE(constTest.empty());
+  CHECK_FALSE(constTest.isEmpty());
+  CHECK(constTest.begin() + 2 == constTest.end());
+
+  int sum = 0;
+  for(int x : test)
+    sum += x;
+
+  CHECK(sum == 15);
+
+  test.clear();
+
+  CHECK(test.size() == 0);
+  CHECK(test.capacity() >= 2);
+  CHECK(test.empty());
+  CHECK(test.isEmpty());
+  CHECK(test.begin() == test.end());
+
+  test = {4, 1, 77, 6, 0, 8, 20, 934};
+
+  CHECK(test.size() == 8);
+  CHECK(test.capacity() >= 8);
+  CHECK_FALSE(test.empty());
+  CHECK_FALSE(test.isEmpty());
+  CHECK(test.begin() + 8 == test.end());
+
+  sum = 0;
+  for(int x : test)
+    sum += x;
+
+  CHECK(sum == 1050);
+
+  CHECK(test[2] == 77);
+
+  test[2] = 10;
+
+  CHECK(test[2] == 10);
+
+  test.reserve(100);
+
+  CHECK(test.size() == 8);
+  CHECK(test.capacity() >= 100);
+  CHECK_FALSE(test.empty());
+  CHECK_FALSE(test.isEmpty());
+  CHECK(test.begin() + 8 == test.end());
+
+  int x = test.takeAt(2);
+
+  CHECK(test.size() == 7);
+  CHECK(x == 10);
+  CHECK(test[2] == 6);
+}
+
 static int32_t constructor = 0;
 static int32_t moveConstructor = 0;
 static int32_t valueConstructor = 0;
@@ -49,11 +404,27 @@ static int32_t moveAssignment = 0;
 
 struct NonTrivial
 {
+  NonTrivial() {}
   NonTrivial(int v) : val(v) {}
+  ~NonTrivial()
+  {
+    // check for double deletion or out of bounds deletion
+    for(size_t i = 0; i < ARRAY_COUNT(validMarker); i++)
+    {
+      CHECK(validMarker[i] == 1234567);
+      validMarker[i] = 7654321;
+    }
+  }
   int val = 6;
+
+  operator int() const { return val; }
+  bool operator==(const int o) const { return val == o; }
 
   bool operator==(const NonTrivial &o) const { return val == o.val; }
   bool operator<(const NonTrivial &o) const { return val > o.val; }
+
+private:
+  int validMarker[4] = {1234567, 1234567, 1234567, 1234567};
 };
 
 template <>
@@ -120,105 +491,146 @@ TEST_CASE("Test array type", "[basictypes]")
   destructor = 0;
   movedDestructor = 0;
 
-  SECTION("Basic test")
+  SECTION("Basic test - int")
+  {
+    TestBasic<int>();
+  }
+
+  SECTION("Basic test - NonTrivial")
+  {
+    TestBasic<NonTrivial>();
+  }
+
+  SECTION("insert - int")
+  {
+    TestInsert<int>();
+  }
+
+  SECTION("insert - NonTrivial")
+  {
+    TestInsert<NonTrivial>();
+  }
+
+  SECTION("erase - int")
+  {
+    TestErase<int>();
+  }
+
+  SECTION("erase - NonTrivial")
+  {
+    TestErase<NonTrivial>();
+  }
+
+  SECTION("removeOne / removeOneIf / removeIf- int")
+  {
+    TestRemove<int>();
+  }
+
+  SECTION("removeOne / removeOneIf / removeIf- NonTrivial")
+  {
+    TestRemove<NonTrivial>();
+  }
+
+  SECTION("Test constructing/assigning from other types")
   {
     rdcarray<int> test;
-    const rdcarray<int> &constTest = test;
 
-    CHECK(test.size() == 0);
-    CHECK(test.capacity() == 0);
+    SECTION("std::initializer_list")
+    {
+      test = {2, 3, 4, 5};
+
+      REQUIRE(test.size() == 4);
+      CHECK(test[0] == 2);
+      CHECK(test[1] == 3);
+      CHECK(test[2] == 4);
+      CHECK(test[3] == 5);
+
+      rdcarray<int> cc({2, 3, 4, 5});
+
+      REQUIRE(cc.size() == 4);
+      CHECK(cc[0] == 2);
+      CHECK(cc[1] == 3);
+      CHECK(cc[2] == 4);
+      CHECK(cc[3] == 5);
+
+      rdcarray<int> ass;
+
+      ass.assign({2, 3, 4, 5});
+
+      REQUIRE(ass.size() == 4);
+      CHECK(ass[0] == 2);
+      CHECK(ass[1] == 3);
+      CHECK(ass[2] == 4);
+      CHECK(ass[3] == 5);
+    };
+
+    SECTION("other array")
+    {
+      rdcarray<int> vec = {2, 3, 4, 5};
+
+      test = vec;
+
+      REQUIRE(test.size() == 4);
+      CHECK(test[0] == 2);
+      CHECK(test[1] == 3);
+      CHECK(test[2] == 4);
+      CHECK(test[3] == 5);
+
+      rdcarray<int> cc(vec);
+
+      REQUIRE(cc.size() == 4);
+      CHECK(cc[0] == 2);
+      CHECK(cc[1] == 3);
+      CHECK(cc[2] == 4);
+      CHECK(cc[3] == 5);
+
+      rdcarray<int> ass;
+
+      ass.assign(vec);
+
+      REQUIRE(ass.size() == 4);
+      CHECK(ass[0] == 2);
+      CHECK(ass[1] == 3);
+      CHECK(ass[2] == 4);
+      CHECK(ass[3] == 5);
+    };
+  }
+
+  SECTION("resize_for_index")
+  {
+    rdcarray<int> test;
+
     CHECK(test.empty());
-    CHECK(test.isEmpty());
-    CHECK(test.begin() == test.end());
 
-    CHECK(constTest.size() == 0);
-    CHECK(constTest.capacity() == 0);
-    CHECK(constTest.empty());
-    CHECK(constTest.isEmpty());
-    CHECK(constTest.begin() == constTest.end());
-
-    test.clear();
-
-    CHECK(test.size() == 0);
-    CHECK(test.capacity() == 0);
-    CHECK(test.empty());
-    CHECK(test.isEmpty());
-    CHECK(test.begin() == test.end());
-
-    test.push_back(5);
+    test.resize_for_index(0);
 
     CHECK(test.size() == 1);
     CHECK(test.capacity() >= 1);
-    CHECK_FALSE(test.empty());
-    CHECK_FALSE(test.isEmpty());
-    CHECK(test.begin() != test.end());
-    CHECK(test.begin() + 1 == test.end());
 
-    test.push_back(10);
+    test.resize_for_index(5);
 
-    CHECK(test.front() == 5);
-    CHECK(test.back() == 10);
-    CHECK(test.size() == 2);
-    CHECK(test.capacity() >= 2);
-    CHECK_FALSE(test.empty());
-    CHECK_FALSE(test.isEmpty());
-    CHECK(test.begin() + 2 == test.end());
+    CHECK(test.size() == 6);
+    CHECK(test.capacity() >= 6);
 
-    CHECK(constTest.front() == 5);
-    CHECK(constTest.back() == 10);
-    CHECK(constTest.size() == 2);
-    CHECK(constTest.capacity() >= 2);
-    CHECK_FALSE(constTest.empty());
-    CHECK_FALSE(constTest.isEmpty());
-    CHECK(constTest.begin() + 2 == constTest.end());
+    test.resize_for_index(5);
 
-    int sum = 0;
-    for(int x : test)
-      sum += x;
+    CHECK(test.size() == 6);
+    CHECK(test.capacity() >= 6);
 
-    CHECK(sum == 15);
+    test.resize_for_index(3);
 
-    test.clear();
+    CHECK(test.size() == 6);
+    CHECK(test.capacity() >= 6);
 
-    CHECK(test.size() == 0);
-    CHECK(test.capacity() >= 2);
-    CHECK(test.empty());
-    CHECK(test.isEmpty());
-    CHECK(test.begin() == test.end());
+    test.resize_for_index(0);
 
-    test = {4, 1, 77, 6, 0, 8, 20, 934};
+    CHECK(test.size() == 6);
+    CHECK(test.capacity() >= 6);
 
-    CHECK(test.size() == 8);
-    CHECK(test.capacity() >= 8);
-    CHECK_FALSE(test.empty());
-    CHECK_FALSE(test.isEmpty());
-    CHECK(test.begin() + 8 == test.end());
+    test.resize_for_index(9);
 
-    sum = 0;
-    for(int x : test)
-      sum += x;
-
-    CHECK(sum == 1050);
-
-    CHECK(test[2] == 77);
-
-    test[2] = 10;
-
-    CHECK(test[2] == 10);
-
-    test.reserve(100);
-
-    CHECK(test.size() == 8);
-    CHECK(test.capacity() >= 100);
-    CHECK_FALSE(test.empty());
-    CHECK_FALSE(test.isEmpty());
-    CHECK(test.begin() + 8 == test.end());
-
-    int x = test.takeAt(2);
-
-    CHECK(test.size() == 7);
-    CHECK(x == 10);
-    CHECK(test[2] == 6);
+    CHECK(test.size() == 10);
+    CHECK(test.capacity() >= 10);
   }
 
   SECTION("Comparison test with trivial type")
@@ -308,358 +720,6 @@ TEST_CASE("Test array type", "[basictypes]")
     CHECK_FALSE(test < emptyTest);
     CHECK_FALSE(test == test2);
   }
-
-  SECTION("Test constructing/assigning from other types")
-  {
-    rdcarray<int> test;
-
-    SECTION("std::initializer_list")
-    {
-      test = {2, 3, 4, 5};
-
-      REQUIRE(test.size() == 4);
-      CHECK(test[0] == 2);
-      CHECK(test[1] == 3);
-      CHECK(test[2] == 4);
-      CHECK(test[3] == 5);
-
-      rdcarray<int> cc({2, 3, 4, 5});
-
-      REQUIRE(cc.size() == 4);
-      CHECK(cc[0] == 2);
-      CHECK(cc[1] == 3);
-      CHECK(cc[2] == 4);
-      CHECK(cc[3] == 5);
-
-      rdcarray<int> ass;
-
-      ass.assign({2, 3, 4, 5});
-
-      REQUIRE(ass.size() == 4);
-      CHECK(ass[0] == 2);
-      CHECK(ass[1] == 3);
-      CHECK(ass[2] == 4);
-      CHECK(ass[3] == 5);
-    };
-
-    SECTION("other array")
-    {
-      rdcarray<int> vec = {2, 3, 4, 5};
-
-      test = vec;
-
-      REQUIRE(test.size() == 4);
-      CHECK(test[0] == 2);
-      CHECK(test[1] == 3);
-      CHECK(test[2] == 4);
-      CHECK(test[3] == 5);
-
-      rdcarray<int> cc(vec);
-
-      REQUIRE(cc.size() == 4);
-      CHECK(cc[0] == 2);
-      CHECK(cc[1] == 3);
-      CHECK(cc[2] == 4);
-      CHECK(cc[3] == 5);
-
-      rdcarray<int> ass;
-
-      ass.assign(vec);
-
-      REQUIRE(ass.size() == 4);
-      CHECK(ass[0] == 2);
-      CHECK(ass[1] == 3);
-      CHECK(ass[2] == 4);
-      CHECK(ass[3] == 5);
-    };
-  };
-
-  SECTION("insert")
-  {
-    rdcarray<int> vec;
-    vec.insert(0, {});
-    REQUIRE(vec.size() == 0);
-    vec.insert(0, vec);
-    REQUIRE(vec.size() == 0);
-    vec.insert(0, NULL, 0);
-    REQUIRE(vec.size() == 0);
-    vec.insert(0, 5);
-    REQUIRE(vec.size() == 1);
-    CHECK(vec[0] == 5);
-
-    vec.insert(0, {6, 3, 13});
-    REQUIRE(vec.size() == 4);
-    CHECK(vec[0] == 6);
-    CHECK(vec[1] == 3);
-    CHECK(vec[2] == 13);
-    CHECK(vec[3] == 5);
-
-    vec.insert(0, 9);
-
-    REQUIRE(vec.size() == 5);
-    CHECK(vec[0] == 9);
-    CHECK(vec[1] == 6);
-    CHECK(vec[2] == 3);
-    CHECK(vec[3] == 13);
-    CHECK(vec[4] == 5);
-
-    vec.insert(3, 8);
-
-    REQUIRE(vec.size() == 6);
-    CHECK(vec[0] == 9);
-    CHECK(vec[1] == 6);
-    CHECK(vec[2] == 3);
-    CHECK(vec[3] == 8);
-    CHECK(vec[4] == 13);
-    CHECK(vec[5] == 5);
-
-    vec.insert(6, 4);
-
-    REQUIRE(vec.size() == 7);
-    CHECK(vec[0] == 9);
-    CHECK(vec[1] == 6);
-    CHECK(vec[2] == 3);
-    CHECK(vec[3] == 8);
-    CHECK(vec[4] == 13);
-    CHECK(vec[5] == 5);
-    CHECK(vec[6] == 4);
-
-    vec.insert(3, {20, 21});
-
-    REQUIRE(vec.size() == 9);
-    CHECK(vec[0] == 9);
-    CHECK(vec[1] == 6);
-    CHECK(vec[2] == 3);
-    CHECK(vec[3] == 20);
-    CHECK(vec[4] == 21);
-    CHECK(vec[5] == 8);
-    CHECK(vec[6] == 13);
-    CHECK(vec[7] == 5);
-    CHECK(vec[8] == 4);
-
-    // insert a large amount of data to ensure this doesn't read off start/end of vector
-    rdcarray<int> largedata;
-    largedata.resize(100000);
-
-    vec.insert(4, largedata);
-
-    REQUIRE(vec.size() == 9 + largedata.size());
-    CHECK(vec[0] == 9);
-    CHECK(vec[1] == 6);
-    CHECK(vec[2] == 3);
-    CHECK(vec[3] == 20);
-    CHECK(vec[4 + largedata.size()] == 21);
-    CHECK(vec[5 + largedata.size()] == 8);
-    CHECK(vec[6 + largedata.size()] == 13);
-    CHECK(vec[7 + largedata.size()] == 5);
-    CHECK(vec[8 + largedata.size()] == 4);
-
-    vec.clear();
-
-    REQUIRE(vec.size() == 0);
-
-    vec.insert(0, {6, 8, 10, 14, 16});
-
-    REQUIRE(vec.size() == 5);
-    CHECK(vec[0] == 6);
-    CHECK(vec[1] == 8);
-    CHECK(vec[2] == 10);
-    CHECK(vec[3] == 14);
-    CHECK(vec[4] == 16);
-
-    vec.insert(4, {20, 9, 9, 14, 7, 13, 10, 1, 1, 45});
-
-    REQUIRE(vec.size() == 15);
-    CHECK(vec[0] == 6);
-    CHECK(vec[1] == 8);
-    CHECK(vec[2] == 10);
-    CHECK(vec[3] == 14);
-    CHECK(vec[4] == 20);
-    CHECK(vec[5] == 9);
-    CHECK(vec[6] == 9);
-    CHECK(vec[7] == 14);
-    CHECK(vec[8] == 7);
-    CHECK(vec[9] == 13);
-    CHECK(vec[10] == 10);
-    CHECK(vec[11] == 1);
-    CHECK(vec[12] == 1);
-    CHECK(vec[13] == 45);
-    CHECK(vec[14] == 16);
-  };
-
-  SECTION("erase")
-  {
-    rdcarray<int> vec = {6, 3, 13, 5};
-
-    vec.erase(2);
-
-    REQUIRE(vec.size() == 3);
-    REQUIRE(vec.capacity() >= 4);
-    CHECK(vec[0] == 6);
-    CHECK(vec[1] == 3);
-    CHECK(vec[2] == 5);
-
-    // do some empty/invalid erases
-    vec.erase(2, 0);
-
-    REQUIRE(vec.size() == 3);
-    REQUIRE(vec.capacity() >= 4);
-    CHECK(vec[0] == 6);
-    CHECK(vec[1] == 3);
-    CHECK(vec[2] == 5);
-
-    vec.erase(200, 5);
-
-    REQUIRE(vec.size() == 3);
-    REQUIRE(vec.capacity() >= 4);
-    CHECK(vec[0] == 6);
-    CHECK(vec[1] == 3);
-    CHECK(vec[2] == 5);
-
-    vec.insert(2, {0, 1});
-
-    REQUIRE(vec.size() == 5);
-    CHECK(vec[0] == 6);
-    CHECK(vec[1] == 3);
-    CHECK(vec[2] == 0);
-    CHECK(vec[3] == 1);
-    CHECK(vec[4] == 5);
-
-    vec.erase(0);
-
-    REQUIRE(vec.size() == 4);
-    CHECK(vec[0] == 3);
-    CHECK(vec[1] == 0);
-    CHECK(vec[2] == 1);
-    CHECK(vec[3] == 5);
-
-    vec.erase(vec.size() - 1);
-
-    REQUIRE(vec.size() == 3);
-    CHECK(vec[0] == 3);
-    CHECK(vec[1] == 0);
-    CHECK(vec[2] == 1);
-
-    vec.erase(0, 3);
-
-    REQUIRE(vec.size() == 0);
-
-    vec = {5, 6, 3, 9, 1, 0};
-
-    vec.erase(2, 3);
-    REQUIRE(vec.size() == 3);
-    CHECK(vec[0] == 5);
-    CHECK(vec[1] == 6);
-    CHECK(vec[2] == 0);
-
-    vec = {5, 6, 3, 9, 1, 0};
-
-    vec.erase(3, 3);
-    REQUIRE(vec.size() == 3);
-    CHECK(vec[0] == 5);
-    CHECK(vec[1] == 6);
-    CHECK(vec[2] == 3);
-
-    vec = {5, 6, 3, 9, 1, 0};
-
-    vec.erase(3, 100);
-    REQUIRE(vec.size() == 3);
-    CHECK(vec[0] == 5);
-    CHECK(vec[1] == 6);
-    CHECK(vec[2] == 3);
-  };
-
-  SECTION("removeOne / removeOneIf / removeIf")
-  {
-    rdcarray<int> vec = {6, 3, 9, 6, 6, 3, 5, 15, 5};
-
-    vec.removeOne(3);
-
-    REQUIRE(vec.size() == 8);
-    CHECK(vec[0] == 6);
-    CHECK(vec[1] == 9);
-    CHECK(vec[2] == 6);
-    CHECK(vec[3] == 6);
-    CHECK(vec[4] == 3);
-    CHECK(vec[5] == 5);
-    CHECK(vec[6] == 15);
-    CHECK(vec[7] == 5);
-
-    vec.removeOne(3);
-
-    REQUIRE(vec.size() == 7);
-    CHECK(vec[0] == 6);
-    CHECK(vec[1] == 9);
-    CHECK(vec[2] == 6);
-    CHECK(vec[3] == 6);
-    CHECK(vec[4] == 5);
-    CHECK(vec[5] == 15);
-    CHECK(vec[6] == 5);
-
-    vec.removeOne(3);
-
-    REQUIRE(vec.size() == 7);
-    CHECK(vec[0] == 6);
-    CHECK(vec[1] == 9);
-    CHECK(vec[2] == 6);
-    CHECK(vec[3] == 6);
-    CHECK(vec[4] == 5);
-    CHECK(vec[5] == 15);
-    CHECK(vec[6] == 5);
-
-    vec.removeOneIf([](const int &el) { return (el % 3) == 0; });
-
-    REQUIRE(vec.size() == 6);
-    CHECK(vec[0] == 9);
-    CHECK(vec[1] == 6);
-    CHECK(vec[2] == 6);
-    CHECK(vec[3] == 5);
-    CHECK(vec[4] == 15);
-    CHECK(vec[5] == 5);
-
-    vec.removeIf([](const int &el) { return (el % 3) == 0; });
-
-    REQUIRE(vec.size() == 2);
-    CHECK(vec[0] == 5);
-    CHECK(vec[1] == 5);
-  };
-
-  SECTION("resize_for_index")
-  {
-    rdcarray<int> test;
-
-    CHECK(test.empty());
-
-    test.resize_for_index(0);
-
-    CHECK(test.size() == 1);
-    CHECK(test.capacity() >= 1);
-
-    test.resize_for_index(5);
-
-    CHECK(test.size() == 6);
-    CHECK(test.capacity() >= 6);
-
-    test.resize_for_index(5);
-
-    CHECK(test.size() == 6);
-    CHECK(test.capacity() >= 6);
-
-    test.resize_for_index(3);
-
-    CHECK(test.size() == 6);
-    CHECK(test.capacity() >= 6);
-
-    test.resize_for_index(0);
-
-    CHECK(test.size() == 6);
-    CHECK(test.capacity() >= 6);
-
-    test.resize_for_index(9);
-
-    CHECK(test.size() == 10);
-    CHECK(test.capacity() >= 10);
-  };
 
   SECTION("Check construction")
   {

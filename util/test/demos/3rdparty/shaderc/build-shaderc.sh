@@ -46,7 +46,7 @@ git pull
 if [[ "$PLATFORM" == "Windows" ]]; then
 
 	if [[ "$CMAKE_GENERATOR" == "" ]]; then
-		CMAKE_GENERATOR="Visual Studio 14 2015"
+		CMAKE_GENERATOR="Visual Studio 17 2022"
 	fi
 
 	# CMake configure if the folders don't exist

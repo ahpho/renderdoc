@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -127,6 +127,73 @@ identifies the particular array index being referred to.
 };
 
 DECLARE_REFLECTION_STRUCT(ShaderBindIndex);
+
+DOCUMENT(R"(References a particular resource accessed via the shader using direct heap access (as opposed to a direct binding).
+
+)");
+struct ShaderDirectAccess
+{
+  DOCUMENT("");
+  ShaderDirectAccess()
+  {
+    category = DescriptorCategory::Unknown;
+    descriptorStore = ResourceId();
+    byteOffset = 0;
+    byteSize = 0;
+  }
+  ShaderDirectAccess(const ShaderDirectAccess &) = default;
+  ShaderDirectAccess &operator=(const ShaderDirectAccess &) = default;
+
+  ShaderDirectAccess(DescriptorCategory category, ResourceId descriptorStore, uint32_t byteOffset,
+                     uint32_t byteSize)
+      : category(category),
+        descriptorStore(descriptorStore),
+        byteOffset(byteOffset),
+        byteSize(byteSize)
+  {
+  }
+  ShaderDirectAccess(const DescriptorAccess &access);
+
+  bool operator<(const ShaderDirectAccess &o) const
+  {
+    if(category != o.category)
+      return category < o.category;
+    if(descriptorStore != o.descriptorStore)
+      return descriptorStore < o.descriptorStore;
+    if(byteOffset != o.byteOffset)
+      return byteOffset < o.byteOffset;
+    return byteSize < o.byteSize;
+  }
+  bool operator==(const ShaderDirectAccess &o) const
+  {
+    return category == o.category && descriptorStore == o.descriptorStore &&
+           byteOffset == o.byteOffset && byteSize == o.byteSize;
+  }
+
+  DOCUMENT(R"(The category of the resource being accessed.
+
+:type: DescriptorCategory
+)");
+  DescriptorCategory category;
+
+  DOCUMENT(R"(The backing storage of the descriptor.
+
+:type: ResourceId
+)");
+  ResourceId descriptorStore;
+  DOCUMENT(R"(The offset in bytes to the descriptor in the descriptor store.
+
+:type: int
+)");
+  uint32_t byteOffset = 0;
+  DOCUMENT(R"(The size in bytes of the descriptor.
+
+:type: int
+)");
+  uint32_t byteSize = 0;
+};
+
+DECLARE_REFLECTION_STRUCT(ShaderDirectAccess);
 
 #if !defined(SWIG)
 // similarly these need to be pre-declared for use in rdhalf
@@ -417,6 +484,8 @@ an arrayed binding.
     value.u32v[0] = (uint32_t)idx.category;
     value.u32v[1] = idx.index;
     value.u32v[2] = idx.arrayElement;
+    // This marks the variable as ShaderBindIndex and not ShaderDirectAccess
+    value.u32v[3] = 0;
   }
 
   DOCUMENT(R"(Utility function for getting a shader binding referenced by this variable.
@@ -432,6 +501,47 @@ an arrayed binding.
   {
     return ShaderBindIndex((DescriptorCategory)value.u32v[0], value.u32v[1], value.u32v[2]);
   }
+  DOCUMENT(R"(Utility function for setting a resource which is accessed directly from a shader without using bindings.
+
+The :class:`ShaderDirectAccess` uniquely refers to a resource descriptor.
+
+:param ShaderDirectAccess access: The resource descriptor being referenced.
+)");
+  inline void SetDirectAccess(const ShaderDirectAccess &access)
+  {
+    value.u32v[0] = (uint32_t)access.category;
+    value.u32v[1] = access.byteOffset;
+    value.u32v[2] = access.byteSize;
+    // This marks the variable as ShaderDirectAccess and not ShaderBindIndex
+    value.u32v[3] = 1;
+    static_assert(sizeof(access.descriptorStore) == sizeof(value.u64v[2]),
+                  "ResourceId can't be packed");
+    memcpy(&value.u64v[2], &access.descriptorStore, sizeof(access.descriptorStore));
+  }
+
+  DOCUMENT(R"(Utility function for getting the resource which is accessed directly from a shader without using bindings.
+
+.. note::
+
+  The return value is undefined if this variable is not a resource referenced directly by a shader.
+
+:return: A :class:`ShaderDirectAccess` containing the resource reference.
+:rtype: ShaderDirectAccess
+)");
+  inline ShaderDirectAccess GetDirectAccess() const
+  {
+    ResourceId descriptorStore;
+    memcpy(&descriptorStore, &value.u64v[2], sizeof(descriptorStore));
+    return ShaderDirectAccess((DescriptorCategory)value.u64v[0], descriptorStore, value.u32v[1],
+                              value.u32v[2]);
+  }
+
+  DOCUMENT(R"(Utility function to check if this variable stores a resource reference directly accessed by a shader.
+
+:return: If the variable represents a :class:`ShaderDirectAccess`.
+:rtype: bool
+)");
+  inline bool IsDirectAccess() const { return (value.u32v[3] == 1); }
 };
 
 DECLARE_REFLECTION_STRUCT(ShaderVariable);

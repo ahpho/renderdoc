@@ -59,7 +59,7 @@ Since constants can contain structs of other constants, we want to define a recu
                 valstr += indent + '  '
 
                 for c in range(0, v.columns):
-                    valstr += '%.3f ' % v.value.fv[r*v.columns + c]
+                    valstr += '%.3f ' % v.value.f32v[r*v.columns + c]
 
                 if r < v.rows-1:
                     valstr += "\n"

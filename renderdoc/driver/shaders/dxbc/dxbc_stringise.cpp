@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2021-2024 Baldur Karlsson
+ * Copyright (c) 2021-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -538,7 +538,7 @@ rdcstr toString(const uint32_t values[], uint32_t numComps)
 
     if(floatOutput)
     {
-      str += ToStr(vf[0]);
+      str += StringFormat::Fmt("%0.6f", vf[0]);
     }
     else
     {

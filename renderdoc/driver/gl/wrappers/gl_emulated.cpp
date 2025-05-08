@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1187,7 +1187,7 @@ void APIENTRY _glCopyImageSubData(GLuint srcName, GLenum srcTarget, GLint srcLev
     GLenum attach = eGL_COLOR_ATTACHMENT0;
 
     bool layered = false;
-    bool compressed = false;
+    bool cpuTransfer = false;
 
     if(srcTarget == eGL_TEXTURE_CUBE_MAP || srcTarget == eGL_TEXTURE_CUBE_MAP_ARRAY ||
        srcTarget == eGL_TEXTURE_1D_ARRAY || srcTarget == eGL_TEXTURE_2D_ARRAY ||
@@ -1206,10 +1206,11 @@ void APIENTRY _glCopyImageSubData(GLuint srcName, GLenum srcTarget, GLint srcLev
       GLenum fmt = eGL_NONE;
       GL.glGetTexLevelParameteriv(levelQueryType, 0, eGL_TEXTURE_INTERNAL_FORMAT, (GLint *)&fmt);
 
-      if(IsCompressedFormat(fmt))
+      // non-color-renderable formats have to go through this path even though they are not compressed
+      if(IsCompressedFormat(fmt) || fmt == eGL_RGB9_E5)
       {
         // have to do this via CPU readback, there's no alternative for GPU copies
-        compressed = true;
+        cpuTransfer = true;
 
         GLenum targets[] = {
             eGL_TEXTURE_CUBE_MAP_POSITIVE_X, eGL_TEXTURE_CUBE_MAP_NEGATIVE_X,
@@ -1225,7 +1226,10 @@ void APIENTRY _glCopyImageSubData(GLuint srcName, GLenum srcTarget, GLint srcLev
           count = 1;
         }
 
-        size_t size = GetCompressedByteSize(srcWidth, srcHeight, srcDepth, fmt);
+        size_t size =
+            IsCompressedFormat(fmt)
+                ? GetCompressedByteSize(srcWidth, srcHeight, srcDepth, fmt)
+                : GetByteSize(srcWidth, srcHeight, srcDepth, GetBaseFormat(fmt), GetDataType(fmt));
 
         if(srcTarget == eGL_TEXTURE_CUBE_MAP)
           size /= 6;
@@ -1235,6 +1239,29 @@ void APIENTRY _glCopyImageSubData(GLuint srcName, GLenum srcTarget, GLint srcLev
         for(int trg = 0; trg < count; trg++)
         {
           // read to CPU
+          if(!IsCompressedFormat(fmt))
+          {
+            GL.glGetTextureImageEXT(srcName, targets[trg], srcLevel, GetBaseFormat(fmt),
+                                    GetDataType(fmt), buf);
+
+            // write to GPU
+            if(srcTarget == eGL_TEXTURE_1D)
+              GL.glTextureSubImage1DEXT(dstName, targets[trg], dstLevel, 0, srcWidth,
+                                        GetBaseFormat(fmt), GetDataType(fmt), buf);
+            else if(srcTarget == eGL_TEXTURE_1D_ARRAY)
+              GL.glTextureSubImage2DEXT(dstName, targets[trg], dstLevel, 0, 0, srcWidth, srcDepth,
+                                        GetBaseFormat(fmt), GetDataType(fmt), buf);
+            else if(srcTarget == eGL_TEXTURE_3D || srcTarget == eGL_TEXTURE_2D_ARRAY ||
+                    srcTarget == eGL_TEXTURE_CUBE_MAP_ARRAY)
+              GL.glTextureSubImage3DEXT(dstName, targets[trg], dstLevel, 0, 0, 0, srcWidth, srcHeight,
+                                        srcDepth, GetBaseFormat(fmt), GetDataType(fmt), buf);
+            else
+              GL.glTextureSubImage2DEXT(dstName, targets[trg], dstLevel, 0, 0, srcWidth, srcHeight,
+                                        GetBaseFormat(fmt), GetDataType(fmt), buf);
+
+            continue;
+          }
+
           if(IsGLES)
           {
             RDCERR("Can't emulate glCopyImageSubData without glGetCompressedTexImage on GLES");
@@ -1246,10 +1273,14 @@ void APIENTRY _glCopyImageSubData(GLuint srcName, GLenum srcTarget, GLint srcLev
           }
 
           // write to GPU
-          if(srcTarget == eGL_TEXTURE_1D || srcTarget == eGL_TEXTURE_1D_ARRAY)
+          if(srcTarget == eGL_TEXTURE_1D)
             GL.glCompressedTextureSubImage1DEXT(dstName, targets[trg], dstLevel, 0, srcWidth, fmt,
                                                 (GLsizei)size, buf);
-          else if(srcTarget == eGL_TEXTURE_3D)
+          else if(srcTarget == eGL_TEXTURE_1D_ARRAY)
+            GL.glCompressedTextureSubImage2DEXT(dstName, targets[trg], dstLevel, 0, 0, srcWidth,
+                                                srcDepth, fmt, (GLsizei)size, buf);
+          else if(srcTarget == eGL_TEXTURE_3D || srcTarget == eGL_TEXTURE_2D_ARRAY ||
+                  srcTarget == eGL_TEXTURE_CUBE_MAP_ARRAY)
             GL.glCompressedTextureSubImage3DEXT(dstName, targets[trg], dstLevel, 0, 0, 0, srcWidth,
                                                 srcHeight, srcDepth, fmt, (GLsizei)size, buf);
           else
@@ -1301,7 +1332,7 @@ void APIENTRY _glCopyImageSubData(GLuint srcName, GLenum srcTarget, GLint srcLev
       }
     }
 
-    if(compressed)
+    if(cpuTransfer)
     {
       // nothing to do!
     }

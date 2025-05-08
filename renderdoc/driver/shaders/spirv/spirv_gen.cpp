@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -162,7 +162,7 @@ rdcstr DoStringise(const rdcspv::FunctionControl &el)
     STRINGISE_BITFIELD_CLASS_BIT(DontInline);
     STRINGISE_BITFIELD_CLASS_BIT(Pure);
     STRINGISE_BITFIELD_CLASS_BIT(Const);
-    STRINGISE_BITFIELD_CLASS_BIT(OptNoneINTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(OptNoneEXT);
   }
   END_BITFIELD_STRINGISE();
 }
@@ -288,6 +288,7 @@ rdcstr DoStringise(const rdcspv::SourceLanguage &el)
     STRINGISE_ENUM_CLASS(WGSL);
     STRINGISE_ENUM_CLASS(Slang);
     STRINGISE_ENUM_CLASS(Zig);
+    STRINGISE_ENUM_CLASS(Rust);
   }
   END_ENUM_STRINGISE();
 }
@@ -398,6 +399,7 @@ rdcstr DoStringise(const rdcspv::ExecutionMode &el)
     STRINGISE_ENUM_CLASS(EarlyAndLateFragmentTestsAMD);
     STRINGISE_ENUM_CLASS(StencilRefReplacingEXT);
     STRINGISE_ENUM_CLASS(CoalescingAMDX);
+    STRINGISE_ENUM_CLASS(IsApiEntryAMDX);
     STRINGISE_ENUM_CLASS(MaxNodeRecursionAMDX);
     STRINGISE_ENUM_CLASS(StaticNumWorkgroupsAMDX);
     STRINGISE_ENUM_CLASS(ShaderIndexAMDX);
@@ -410,10 +412,11 @@ rdcstr DoStringise(const rdcspv::ExecutionMode &el)
     STRINGISE_ENUM_CLASS(StencilRefLessBackAMD);
     STRINGISE_ENUM_CLASS(QuadDerivativesKHR);
     STRINGISE_ENUM_CLASS(RequireFullQuadsKHR);
+    STRINGISE_ENUM_CLASS(SharesInputWithAMDX);
     STRINGISE_ENUM_CLASS(OutputLinesEXT);
     STRINGISE_ENUM_CLASS(OutputPrimitivesEXT);
-    STRINGISE_ENUM_CLASS(DerivativeGroupQuadsNV);
-    STRINGISE_ENUM_CLASS(DerivativeGroupLinearNV);
+    STRINGISE_ENUM_CLASS(DerivativeGroupQuadsKHR);
+    STRINGISE_ENUM_CLASS(DerivativeGroupLinearKHR);
     STRINGISE_ENUM_CLASS(OutputTrianglesEXT);
     STRINGISE_ENUM_CLASS(PixelInterlockOrderedEXT);
     STRINGISE_ENUM_CLASS(PixelInterlockUnorderedEXT);
@@ -463,7 +466,6 @@ rdcstr DoStringise(const rdcspv::StorageClass &el)
     STRINGISE_ENUM_CLASS(StorageBuffer);
     STRINGISE_ENUM_CLASS(TileImageEXT);
     STRINGISE_ENUM_CLASS(NodePayloadAMDX);
-    STRINGISE_ENUM_CLASS(NodeOutputPayloadAMDX);
     STRINGISE_ENUM_CLASS(CallableDataKHR);
     STRINGISE_ENUM_CLASS(IncomingCallableDataKHR);
     STRINGISE_ENUM_CLASS(RayPayloadKHR);
@@ -626,6 +628,7 @@ rdcstr DoStringise(const rdcspv::ImageChannelDataType &el)
     STRINGISE_ENUM_CLASS(UnormInt101010_2);
     STRINGISE_ENUM_CLASS(UnsignedIntRaw10EXT);
     STRINGISE_ENUM_CLASS(UnsignedIntRaw12EXT);
+    STRINGISE_ENUM_CLASS(UnormInt2_101010EXT);
   }
   END_ENUM_STRINGISE();
 }
@@ -812,6 +815,10 @@ rdcstr DoStringise(const rdcspv::Decoration &el)
     STRINGISE_ENUM_CLASS(NodeMaxPayloadsAMDX);
     STRINGISE_ENUM_CLASS(TrackFinishWritingAMDX);
     STRINGISE_ENUM_CLASS(PayloadNodeNameAMDX);
+    STRINGISE_ENUM_CLASS(PayloadNodeBaseIndexAMDX);
+    STRINGISE_ENUM_CLASS(PayloadNodeSparseArrayAMDX);
+    STRINGISE_ENUM_CLASS(PayloadNodeArraySizeAMDX);
+    STRINGISE_ENUM_CLASS(PayloadDispatchIndirectAMDX);
     STRINGISE_ENUM_CLASS(OverrideCoverageNV);
     STRINGISE_ENUM_CLASS(PassthroughNV);
     STRINGISE_ENUM_CLASS(ViewportRelativeNV);
@@ -967,7 +974,7 @@ rdcstr DoStringise(const rdcspv::BuiltIn &el)
     STRINGISE_ENUM_CLASS(BaryCoordSmoothSampleAMD);
     STRINGISE_ENUM_CLASS(BaryCoordPullModelAMD);
     STRINGISE_ENUM_CLASS(FragStencilRefEXT);
-    STRINGISE_ENUM_CLASS(CoalescedInputCountAMDX);
+    STRINGISE_ENUM_CLASS(RemainingRecursionLevelsAMDX);
     STRINGISE_ENUM_CLASS(ShaderIndexAMDX);
     STRINGISE_ENUM_CLASS(ViewportMaskNV);
     STRINGISE_ENUM_CLASS(SecondaryPositionNV);
@@ -1010,12 +1017,19 @@ rdcstr DoStringise(const rdcspv::BuiltIn &el)
     STRINGISE_ENUM_CLASS(HitMicroTriangleVertexBarycentricsNV);
     STRINGISE_ENUM_CLASS(IncomingRayFlagsKHR);
     STRINGISE_ENUM_CLASS(RayGeometryIndexKHR);
+    STRINGISE_ENUM_CLASS(HitIsSphereNV);
+    STRINGISE_ENUM_CLASS(HitIsLSSNV);
+    STRINGISE_ENUM_CLASS(HitSpherePositionNV);
     STRINGISE_ENUM_CLASS(WarpsPerSMNV);
     STRINGISE_ENUM_CLASS(SMCountNV);
     STRINGISE_ENUM_CLASS(WarpIDNV);
     STRINGISE_ENUM_CLASS(SMIDNV);
+    STRINGISE_ENUM_CLASS(HitLSSPositionsNV);
     STRINGISE_ENUM_CLASS(HitKindFrontFacingMicroTriangleNV);
     STRINGISE_ENUM_CLASS(HitKindBackFacingMicroTriangleNV);
+    STRINGISE_ENUM_CLASS(HitSphereRadiusNV);
+    STRINGISE_ENUM_CLASS(HitLSSRadiiNV);
+    STRINGISE_ENUM_CLASS(ClusterIDNV);
     STRINGISE_ENUM_CLASS(CullMaskKHR);
   }
   END_ENUM_STRINGISE();
@@ -1172,6 +1186,7 @@ rdcstr DoStringise(const rdcspv::Capability &el)
     STRINGISE_ENUM_CLASS(RoundingModeRTZ);
     STRINGISE_ENUM_CLASS(RayQueryProvisionalKHR);
     STRINGISE_ENUM_CLASS(RayQueryKHR);
+    STRINGISE_ENUM_CLASS(UntypedPointersKHR);
     STRINGISE_ENUM_CLASS(RayTraversalPrimitiveCullingKHR);
     STRINGISE_ENUM_CLASS(RayTracingKHR);
     STRINGISE_ENUM_CLASS(TextureSampleWeightedQCOM);
@@ -1197,7 +1212,7 @@ rdcstr DoStringise(const rdcspv::Capability &el)
     STRINGISE_ENUM_CLASS(ImageFootprintNV);
     STRINGISE_ENUM_CLASS(MeshShadingEXT);
     STRINGISE_ENUM_CLASS(FragmentBarycentricKHR);
-    STRINGISE_ENUM_CLASS(ComputeDerivativeGroupQuadsNV);
+    STRINGISE_ENUM_CLASS(ComputeDerivativeGroupQuadsKHR);
     STRINGISE_ENUM_CLASS(FragmentDensityEXT);
     STRINGISE_ENUM_CLASS(GroupNonUniformPartitionedNV);
     STRINGISE_ENUM_CLASS(ShaderNonUniform);
@@ -1217,7 +1232,7 @@ rdcstr DoStringise(const rdcspv::Capability &el)
     STRINGISE_ENUM_CLASS(VulkanMemoryModel);
     STRINGISE_ENUM_CLASS(VulkanMemoryModelDeviceScope);
     STRINGISE_ENUM_CLASS(PhysicalStorageBufferAddresses);
-    STRINGISE_ENUM_CLASS(ComputeDerivativeGroupLinearNV);
+    STRINGISE_ENUM_CLASS(ComputeDerivativeGroupLinearKHR);
     STRINGISE_ENUM_CLASS(RayTracingProvisionalKHR);
     STRINGISE_ENUM_CLASS(FragmentShaderSampleInterlockEXT);
     STRINGISE_ENUM_CLASS(FragmentShaderShadingRateInterlockEXT);
@@ -1229,9 +1244,20 @@ rdcstr DoStringise(const rdcspv::Capability &el)
     STRINGISE_ENUM_CLASS(ShaderInvocationReorderNV);
     STRINGISE_ENUM_CLASS(BindlessTextureNV);
     STRINGISE_ENUM_CLASS(RayQueryPositionFetchKHR);
+    STRINGISE_ENUM_CLASS(CooperativeVectorNV);
     STRINGISE_ENUM_CLASS(AtomicFloat16VectorNV);
     STRINGISE_ENUM_CLASS(RayTracingDisplacementMicromapNV);
     STRINGISE_ENUM_CLASS(RawAccessChainsNV);
+    STRINGISE_ENUM_CLASS(RayTracingSpheresGeometryNV);
+    STRINGISE_ENUM_CLASS(RayTracingLinearSweptSpheresGeometryNV);
+    STRINGISE_ENUM_CLASS(CooperativeMatrixReductionsNV);
+    STRINGISE_ENUM_CLASS(CooperativeMatrixConversionsNV);
+    STRINGISE_ENUM_CLASS(CooperativeMatrixPerElementOperationsNV);
+    STRINGISE_ENUM_CLASS(CooperativeMatrixTensorAddressingNV);
+    STRINGISE_ENUM_CLASS(CooperativeMatrixBlockLoadsNV);
+    STRINGISE_ENUM_CLASS(CooperativeVectorTrainingNV);
+    STRINGISE_ENUM_CLASS(RayTracingClusterAccelerationStructureNV);
+    STRINGISE_ENUM_CLASS(TensorAddressingNV);
     STRINGISE_ENUM_CLASS(SubgroupShuffleINTEL);
     STRINGISE_ENUM_CLASS(SubgroupBufferBlockIOINTEL);
     STRINGISE_ENUM_CLASS(SubgroupImageBlockIOINTEL);
@@ -1287,11 +1313,12 @@ rdcstr DoStringise(const rdcspv::Capability &el)
     STRINGISE_ENUM_CLASS(AtomicFloat32AddEXT);
     STRINGISE_ENUM_CLASS(AtomicFloat64AddEXT);
     STRINGISE_ENUM_CLASS(LongCompositesINTEL);
-    STRINGISE_ENUM_CLASS(OptNoneINTEL);
+    STRINGISE_ENUM_CLASS(OptNoneEXT);
     STRINGISE_ENUM_CLASS(AtomicFloat16AddEXT);
     STRINGISE_ENUM_CLASS(DebugInfoModuleINTEL);
     STRINGISE_ENUM_CLASS(BFloat16ConversionINTEL);
     STRINGISE_ENUM_CLASS(SplitBarrierINTEL);
+    STRINGISE_ENUM_CLASS(ArithmeticFenceEXT);
     STRINGISE_ENUM_CLASS(FPGAClusterAttributesV2INTEL);
     STRINGISE_ENUM_CLASS(FPGAKernelAttributesv2INTEL);
     STRINGISE_ENUM_CLASS(FPMaxErrorINTEL);
@@ -1299,6 +1326,11 @@ rdcstr DoStringise(const rdcspv::Capability &el)
     STRINGISE_ENUM_CLASS(FPGAArgumentInterfacesINTEL);
     STRINGISE_ENUM_CLASS(GlobalVariableHostAccessINTEL);
     STRINGISE_ENUM_CLASS(GlobalVariableFPGADecorationsINTEL);
+    STRINGISE_ENUM_CLASS(SubgroupBufferPrefetchINTEL);
+    STRINGISE_ENUM_CLASS(Subgroup2DBlockIOINTEL);
+    STRINGISE_ENUM_CLASS(Subgroup2DBlockTransformINTEL);
+    STRINGISE_ENUM_CLASS(Subgroup2DBlockTransposeINTEL);
+    STRINGISE_ENUM_CLASS(SubgroupMatrixMultiplyAccumulateINTEL);
     STRINGISE_ENUM_CLASS(GroupUniformArithmeticKHR);
     STRINGISE_ENUM_CLASS(MaskedGatherScatterINTEL);
     STRINGISE_ENUM_CLASS(CacheControlsINTEL);
@@ -1393,6 +1425,45 @@ rdcstr DoStringise(const rdcspv::CooperativeMatrixUse &el)
 }
 
 template <>
+rdcstr DoStringise(const rdcspv::CooperativeMatrixReduce &el)
+{
+  BEGIN_BITFIELD_STRINGISE(rdcspv::CooperativeMatrixReduce);
+  {
+    STRINGISE_BITFIELD_CLASS_BIT(Row);
+    STRINGISE_BITFIELD_CLASS_BIT(Column);
+    STRINGISE_BITFIELD_CLASS_BIT(_2x2);
+  }
+  END_BITFIELD_STRINGISE();
+}
+
+template <>
+rdcstr DoStringise(const rdcspv::TensorClampMode &el)
+{
+  BEGIN_ENUM_STRINGISE(rdcspv::TensorClampMode);
+  {
+    STRINGISE_ENUM_CLASS(Undefined);
+    STRINGISE_ENUM_CLASS(Constant);
+    STRINGISE_ENUM_CLASS(ClampToEdge);
+    STRINGISE_ENUM_CLASS(Repeat);
+    STRINGISE_ENUM_CLASS(RepeatMirrored);
+  }
+  END_ENUM_STRINGISE();
+}
+
+template <>
+rdcstr DoStringise(const rdcspv::TensorAddressingOperands &el)
+{
+  BEGIN_BITFIELD_STRINGISE(rdcspv::TensorAddressingOperands);
+  {
+    STRINGISE_BITFIELD_CLASS_VALUE(None);
+
+    STRINGISE_BITFIELD_CLASS_BIT(TensorView);
+    STRINGISE_BITFIELD_CLASS_BIT(DecodeFunc);
+  }
+  END_BITFIELD_STRINGISE();
+}
+
+template <>
 rdcstr DoStringise(const rdcspv::InitializationModeQualifier &el)
 {
   BEGIN_ENUM_STRINGISE(rdcspv::InitializationModeQualifier);
@@ -1436,6 +1507,71 @@ rdcstr DoStringise(const rdcspv::NamedMaximumNumberOfRegisters &el)
   BEGIN_ENUM_STRINGISE(rdcspv::NamedMaximumNumberOfRegisters);
   {
     STRINGISE_ENUM_CLASS(AutoINTEL);
+  }
+  END_ENUM_STRINGISE();
+}
+
+template <>
+rdcstr DoStringise(const rdcspv::MatrixMultiplyAccumulateOperands &el)
+{
+  BEGIN_BITFIELD_STRINGISE(rdcspv::MatrixMultiplyAccumulateOperands);
+  {
+    STRINGISE_BITFIELD_CLASS_VALUE(None);
+
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixASignedComponentsINTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixBSignedComponentsINTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixCBFloat16INTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixResultBFloat16INTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixAPackedInt8INTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixBPackedInt8INTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixAPackedInt4INTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixBPackedInt4INTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixATF32INTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixBTF32INTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixAPackedFloat16INTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixBPackedFloat16INTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixAPackedBFloat16INTEL);
+    STRINGISE_BITFIELD_CLASS_BIT(MatrixBPackedBFloat16INTEL);
+  }
+  END_BITFIELD_STRINGISE();
+}
+
+template <>
+rdcstr DoStringise(const rdcspv::FPEncoding &el) { return "?"; }
+
+template <>
+rdcstr DoStringise(const rdcspv::CooperativeVectorMatrixLayout &el)
+{
+  BEGIN_ENUM_STRINGISE(rdcspv::CooperativeVectorMatrixLayout);
+  {
+    STRINGISE_ENUM_CLASS(RowMajorNV);
+    STRINGISE_ENUM_CLASS(ColumnMajorNV);
+    STRINGISE_ENUM_CLASS(InferencingOptimalNV);
+    STRINGISE_ENUM_CLASS(TrainingOptimalNV);
+  }
+  END_ENUM_STRINGISE();
+}
+
+template <>
+rdcstr DoStringise(const rdcspv::ComponentType &el)
+{
+  BEGIN_ENUM_STRINGISE(rdcspv::ComponentType);
+  {
+    STRINGISE_ENUM_CLASS(Float16NV);
+    STRINGISE_ENUM_CLASS(Float32NV);
+    STRINGISE_ENUM_CLASS(Float64NV);
+    STRINGISE_ENUM_CLASS(SignedInt8NV);
+    STRINGISE_ENUM_CLASS(SignedInt16NV);
+    STRINGISE_ENUM_CLASS(SignedInt32NV);
+    STRINGISE_ENUM_CLASS(SignedInt64NV);
+    STRINGISE_ENUM_CLASS(UnsignedInt8NV);
+    STRINGISE_ENUM_CLASS(UnsignedInt16NV);
+    STRINGISE_ENUM_CLASS(UnsignedInt32NV);
+    STRINGISE_ENUM_CLASS(UnsignedInt64NV);
+    STRINGISE_ENUM_CLASS(SignedInt8PackedNV);
+    STRINGISE_ENUM_CLASS(UnsignedInt8PackedNV);
+    STRINGISE_ENUM_CLASS(FloatE4M3NV);
+    STRINGISE_ENUM_CLASS(FloatE5M2NV);
   }
   END_ENUM_STRINGISE();
 }
@@ -1793,8 +1929,16 @@ rdcstr DoStringise(const rdcspv::Op &el)
     STRINGISE_ENUM_CLASS(DepthAttachmentReadEXT);
     STRINGISE_ENUM_CLASS(StencilAttachmentReadEXT);
     STRINGISE_ENUM_CLASS(TerminateInvocation);
+    STRINGISE_ENUM_CLASS(TypeUntypedPointerKHR);
+    STRINGISE_ENUM_CLASS(UntypedVariableKHR);
+    STRINGISE_ENUM_CLASS(UntypedAccessChainKHR);
+    STRINGISE_ENUM_CLASS(UntypedInBoundsAccessChainKHR);
     STRINGISE_ENUM_CLASS(SubgroupBallotKHR);
     STRINGISE_ENUM_CLASS(SubgroupFirstInvocationKHR);
+    STRINGISE_ENUM_CLASS(UntypedPtrAccessChainKHR);
+    STRINGISE_ENUM_CLASS(UntypedInBoundsPtrAccessChainKHR);
+    STRINGISE_ENUM_CLASS(UntypedArrayLengthKHR);
+    STRINGISE_ENUM_CLASS(UntypedPrefetchKHR);
     STRINGISE_ENUM_CLASS(SubgroupAllKHR);
     STRINGISE_ENUM_CLASS(SubgroupAnyKHR);
     STRINGISE_ENUM_CLASS(SubgroupAllEqualKHR);
@@ -1846,9 +1990,14 @@ rdcstr DoStringise(const rdcspv::Op &el)
     STRINGISE_ENUM_CLASS(FragmentMaskFetchAMD);
     STRINGISE_ENUM_CLASS(FragmentFetchAMD);
     STRINGISE_ENUM_CLASS(ReadClockKHR);
-    STRINGISE_ENUM_CLASS(FinalizeNodePayloadsAMDX);
+    STRINGISE_ENUM_CLASS(AllocateNodePayloadsAMDX);
+    STRINGISE_ENUM_CLASS(EnqueueNodePayloadsAMDX);
+    STRINGISE_ENUM_CLASS(TypeNodePayloadArrayAMDX);
     STRINGISE_ENUM_CLASS(FinishWritingNodePayloadAMDX);
-    STRINGISE_ENUM_CLASS(InitializeNodePayloadsAMDX);
+    STRINGISE_ENUM_CLASS(NodePayloadArrayLengthAMDX);
+    STRINGISE_ENUM_CLASS(IsNodePayloadValidAMDX);
+    STRINGISE_ENUM_CLASS(ConstantStringAMDX);
+    STRINGISE_ENUM_CLASS(SpecConstantStringAMDX);
     STRINGISE_ENUM_CLASS(GroupNonUniformQuadAllKHR);
     STRINGISE_ENUM_CLASS(GroupNonUniformQuadAnyKHR);
     STRINGISE_ENUM_CLASS(HitObjectRecordHitMotionNV);
@@ -1885,12 +2034,20 @@ rdcstr DoStringise(const rdcspv::Op &el)
     STRINGISE_ENUM_CLASS(ReorderThreadWithHintNV);
     STRINGISE_ENUM_CLASS(TypeHitObjectNV);
     STRINGISE_ENUM_CLASS(ImageSampleFootprintNV);
+    STRINGISE_ENUM_CLASS(TypeCooperativeVectorNV);
+    STRINGISE_ENUM_CLASS(CooperativeVectorMatrixMulNV);
+    STRINGISE_ENUM_CLASS(CooperativeVectorOuterProductAccumulateNV);
+    STRINGISE_ENUM_CLASS(CooperativeVectorReduceSumAccumulateNV);
+    STRINGISE_ENUM_CLASS(CooperativeVectorMatrixMulAddNV);
+    STRINGISE_ENUM_CLASS(CooperativeMatrixConvertNV);
     STRINGISE_ENUM_CLASS(EmitMeshTasksEXT);
     STRINGISE_ENUM_CLASS(SetMeshOutputsEXT);
     STRINGISE_ENUM_CLASS(GroupNonUniformPartitionNV);
     STRINGISE_ENUM_CLASS(WritePackedPrimitiveIndices4x8NV);
     STRINGISE_ENUM_CLASS(FetchMicroTriangleVertexPositionNV);
     STRINGISE_ENUM_CLASS(FetchMicroTriangleVertexBarycentricNV);
+    STRINGISE_ENUM_CLASS(CooperativeVectorLoadNV);
+    STRINGISE_ENUM_CLASS(CooperativeVectorStoreNV);
     STRINGISE_ENUM_CLASS(ReportIntersectionKHR);
     STRINGISE_ENUM_CLASS(IgnoreIntersectionNV);
     STRINGISE_ENUM_CLASS(TerminateRayNV);
@@ -1900,6 +2057,8 @@ rdcstr DoStringise(const rdcspv::Op &el)
     STRINGISE_ENUM_CLASS(RayQueryGetIntersectionTriangleVertexPositionsKHR);
     STRINGISE_ENUM_CLASS(TypeAccelerationStructureKHR);
     STRINGISE_ENUM_CLASS(ExecuteCallableNV);
+    STRINGISE_ENUM_CLASS(RayQueryGetClusterIdNV);
+    STRINGISE_ENUM_CLASS(HitObjectGetClusterIdNV);
     STRINGISE_ENUM_CLASS(TypeCooperativeMatrixNV);
     STRINGISE_ENUM_CLASS(CooperativeMatrixLoadNV);
     STRINGISE_ENUM_CLASS(CooperativeMatrixStoreNV);
@@ -1907,8 +2066,25 @@ rdcstr DoStringise(const rdcspv::Op &el)
     STRINGISE_ENUM_CLASS(CooperativeMatrixLengthNV);
     STRINGISE_ENUM_CLASS(BeginInvocationInterlockEXT);
     STRINGISE_ENUM_CLASS(EndInvocationInterlockEXT);
+    STRINGISE_ENUM_CLASS(CooperativeMatrixReduceNV);
+    STRINGISE_ENUM_CLASS(CooperativeMatrixLoadTensorNV);
+    STRINGISE_ENUM_CLASS(CooperativeMatrixStoreTensorNV);
+    STRINGISE_ENUM_CLASS(CooperativeMatrixPerElementOpNV);
+    STRINGISE_ENUM_CLASS(TypeTensorLayoutNV);
+    STRINGISE_ENUM_CLASS(TypeTensorViewNV);
+    STRINGISE_ENUM_CLASS(CreateTensorLayoutNV);
+    STRINGISE_ENUM_CLASS(TensorLayoutSetDimensionNV);
+    STRINGISE_ENUM_CLASS(TensorLayoutSetStrideNV);
+    STRINGISE_ENUM_CLASS(TensorLayoutSliceNV);
+    STRINGISE_ENUM_CLASS(TensorLayoutSetClampValueNV);
+    STRINGISE_ENUM_CLASS(CreateTensorViewNV);
+    STRINGISE_ENUM_CLASS(TensorViewSetDimensionNV);
+    STRINGISE_ENUM_CLASS(TensorViewSetStrideNV);
     STRINGISE_ENUM_CLASS(DemoteToHelperInvocation);
     STRINGISE_ENUM_CLASS(IsHelperInvocationEXT);
+    STRINGISE_ENUM_CLASS(TensorViewSetClipNV);
+    STRINGISE_ENUM_CLASS(TensorLayoutSetBlockSizeNV);
+    STRINGISE_ENUM_CLASS(CooperativeMatrixTransposeNV);
     STRINGISE_ENUM_CLASS(ConvertUToImageNV);
     STRINGISE_ENUM_CLASS(ConvertUToSamplerNV);
     STRINGISE_ENUM_CLASS(ConvertImageToUNV);
@@ -1917,6 +2093,19 @@ rdcstr DoStringise(const rdcspv::Op &el)
     STRINGISE_ENUM_CLASS(ConvertSampledImageToUNV);
     STRINGISE_ENUM_CLASS(SamplerImageAddressingModeNV);
     STRINGISE_ENUM_CLASS(RawAccessChainNV);
+    STRINGISE_ENUM_CLASS(RayQueryGetIntersectionSpherePositionNV);
+    STRINGISE_ENUM_CLASS(RayQueryGetIntersectionSphereRadiusNV);
+    STRINGISE_ENUM_CLASS(RayQueryGetIntersectionLSSPositionsNV);
+    STRINGISE_ENUM_CLASS(RayQueryGetIntersectionLSSRadiiNV);
+    STRINGISE_ENUM_CLASS(RayQueryGetIntersectionLSSHitValueNV);
+    STRINGISE_ENUM_CLASS(HitObjectGetSpherePositionNV);
+    STRINGISE_ENUM_CLASS(HitObjectGetSphereRadiusNV);
+    STRINGISE_ENUM_CLASS(HitObjectGetLSSPositionsNV);
+    STRINGISE_ENUM_CLASS(HitObjectGetLSSRadiiNV);
+    STRINGISE_ENUM_CLASS(HitObjectIsSphereHitNV);
+    STRINGISE_ENUM_CLASS(HitObjectIsLSSHitNV);
+    STRINGISE_ENUM_CLASS(RayQueryIsSphereHitNV);
+    STRINGISE_ENUM_CLASS(RayQueryIsLSSHitNV);
     STRINGISE_ENUM_CLASS(SubgroupShuffleINTEL);
     STRINGISE_ENUM_CLASS(SubgroupShuffleDownINTEL);
     STRINGISE_ENUM_CLASS(SubgroupShuffleUpINTEL);
@@ -1978,6 +2167,14 @@ rdcstr DoStringise(const rdcspv::Op &el)
     STRINGISE_ENUM_CLASS(ConvertBF16ToFINTEL);
     STRINGISE_ENUM_CLASS(ControlBarrierArriveINTEL);
     STRINGISE_ENUM_CLASS(ControlBarrierWaitINTEL);
+    STRINGISE_ENUM_CLASS(ArithmeticFenceEXT);
+    STRINGISE_ENUM_CLASS(SubgroupBlockPrefetchINTEL);
+    STRINGISE_ENUM_CLASS(Subgroup2DBlockLoadINTEL);
+    STRINGISE_ENUM_CLASS(Subgroup2DBlockLoadTransformINTEL);
+    STRINGISE_ENUM_CLASS(Subgroup2DBlockLoadTransposeINTEL);
+    STRINGISE_ENUM_CLASS(Subgroup2DBlockPrefetchINTEL);
+    STRINGISE_ENUM_CLASS(Subgroup2DBlockStoreINTEL);
+    STRINGISE_ENUM_CLASS(SubgroupMatrixMultiplyAccumulateINTEL);
     STRINGISE_ENUM_CLASS(GroupIMulKHR);
     STRINGISE_ENUM_CLASS(GroupFMulKHR);
     STRINGISE_ENUM_CLASS(GroupBitwiseAndKHR);
@@ -2187,6 +2384,8 @@ rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv:
       ret +=  "(" + ToStr(el.roundingModeRTE) + ")"; break;
     case ExecutionMode::RoundingModeRTZ:
       ret +=  "(" + ToStr(el.roundingModeRTZ) + ")"; break;
+    case ExecutionMode::IsApiEntryAMDX:
+      ret +=  "(" + idName(el.isApiEntryAMDX) + ")"; break;
     case ExecutionMode::MaxNodeRecursionAMDX:
       ret +=  "(" + idName(el.maxNodeRecursionAMDX) + ")"; break;
     case ExecutionMode::StaticNumWorkgroupsAMDX:
@@ -2195,6 +2394,8 @@ rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv:
       ret +=  "(" + idName(el.shaderIndexAMDX) + ")"; break;
     case ExecutionMode::MaxNumWorkgroupsAMDX:
       ret +=  "(" + idName(el.maxNumWorkgroupsAMDX.xsize) + ", "  + idName(el.maxNumWorkgroupsAMDX.ysize) + ", "  + idName(el.maxNumWorkgroupsAMDX.zsize) + ")"; break;
+    case ExecutionMode::SharesInputWithAMDX:
+      ret +=  "(" + idName(el.sharesInputWithAMDX.nodeName) + ", "  + idName(el.sharesInputWithAMDX.shaderIndex) + ")"; break;
     case ExecutionMode::OutputPrimitivesEXT:
       ret +=  "(" + ToStr(el.outputPrimitivesEXT) + ")"; break;
     case ExecutionMode::SharedLocalMemorySizeINTEL:
@@ -2291,6 +2492,12 @@ rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv:
       ret +=  "(" + idName(el.nodeSharesPayloadLimitsWithAMDX) + ")"; break;
     case Decoration::NodeMaxPayloadsAMDX:
       ret +=  "(" + idName(el.nodeMaxPayloadsAMDX) + ")"; break;
+    case Decoration::PayloadNodeNameAMDX:
+      ret +=  "(" + idName(el.payloadNodeNameAMDX) + ")"; break;
+    case Decoration::PayloadNodeBaseIndexAMDX:
+      ret +=  "(" + idName(el.payloadNodeBaseIndexAMDX) + ")"; break;
+    case Decoration::PayloadNodeArraySizeAMDX:
+      ret +=  "(" + idName(el.payloadNodeArraySizeAMDX) + ")"; break;
     case Decoration::SecondaryViewportRelativeNV:
       ret +=  "(" + ToStr(el.secondaryViewportRelativeNV) + ")"; break;
     case Decoration::SIMTCallINTEL:
@@ -2372,6 +2579,25 @@ rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv:
     default:
       break;
   }
+
+  return ret;
+}
+
+template<>
+rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::TensorAddressingOperandsAndParamDatas &el)
+{
+  rdcstr ret;
+  
+  if(el.flags & TensorAddressingOperands::None)
+    ret += "None" ", ";
+  if(el.flags & TensorAddressingOperands::TensorView)
+    ret += "TensorView" "(" + idName(el.tensorView) + ")" ", ";
+  if(el.flags & TensorAddressingOperands::DecodeFunc)
+    ret += "DecodeFunc" "(" + idName(el.decodeFunc) + ")" ", ";
+
+  // remove trailing ", "
+  if(ret.size() > 2)
+    ret.erase(ret.size()-2, 2);
 
   return ret;
 }
@@ -4292,6 +4518,29 @@ void OpDecoder::ForEachID(const ConstIter &it, const std::function<void(Id,bool)
       break;
     case rdcspv::Op::TerminateInvocation:
       break;
+    case rdcspv::Op::TypeUntypedPointerKHR:
+      callback(Id::fromWord(it.word(1)), true);
+      break;
+    case rdcspv::Op::UntypedVariableKHR:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      if(4 < size) callback(Id::fromWord(it.word(4)), false);
+      if(5 < size) callback(Id::fromWord(it.word(5)), false);
+      break;
+    case rdcspv::Op::UntypedAccessChainKHR:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      for(size_t i=0; i < size-5; i++) callback(Id::fromWord(it.word(5+i)), false);
+      break;
+    case rdcspv::Op::UntypedInBoundsAccessChainKHR:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      for(size_t i=0; i < size-5; i++) callback(Id::fromWord(it.word(5+i)), false);
+      break;
     case rdcspv::Op::SubgroupBallotKHR:
       callback(Id::fromWord(it.word(1)), false);
       callback(Id::fromWord(it.word(2)), true);
@@ -4301,6 +4550,35 @@ void OpDecoder::ForEachID(const ConstIter &it, const std::function<void(Id,bool)
       callback(Id::fromWord(it.word(1)), false);
       callback(Id::fromWord(it.word(2)), true);
       callback(Id::fromWord(it.word(3)), false);
+      break;
+    case rdcspv::Op::UntypedPtrAccessChainKHR:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      for(size_t i=0; i < size-6; i++) callback(Id::fromWord(it.word(6+i)), false);
+      break;
+    case rdcspv::Op::UntypedInBoundsPtrAccessChainKHR:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      for(size_t i=0; i < size-6; i++) callback(Id::fromWord(it.word(6+i)), false);
+      break;
+    case rdcspv::Op::UntypedArrayLengthKHR:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      break;
+    case rdcspv::Op::UntypedPrefetchKHR:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), false);
+      if(3 < size) callback(Id::fromWord(it.word(3)), false);
+      if(4 < size) callback(Id::fromWord(it.word(4)), false);
+      if(5 < size) callback(Id::fromWord(it.word(5)), false);
       break;
     case rdcspv::Op::SubgroupAllKHR:
       callback(Id::fromWord(it.word(1)), false);
@@ -4614,19 +4892,41 @@ void OpDecoder::ForEachID(const ConstIter &it, const std::function<void(Id,bool)
       callback(Id::fromWord(it.word(2)), true);
       callback(Id::fromWord(it.word(3)), false);
       break;
-    case rdcspv::Op::FinalizeNodePayloadsAMDX:
+    case rdcspv::Op::AllocateNodePayloadsAMDX:
       callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      break;
+    case rdcspv::Op::EnqueueNodePayloadsAMDX:
+      callback(Id::fromWord(it.word(1)), false);
+      break;
+    case rdcspv::Op::TypeNodePayloadArrayAMDX:
+      callback(Id::fromWord(it.word(1)), true);
+      callback(Id::fromWord(it.word(2)), false);
       break;
     case rdcspv::Op::FinishWritingNodePayloadAMDX:
       callback(Id::fromWord(it.word(1)), false);
       callback(Id::fromWord(it.word(2)), true);
       callback(Id::fromWord(it.word(3)), false);
       break;
-    case rdcspv::Op::InitializeNodePayloadsAMDX:
+    case rdcspv::Op::NodePayloadArrayLengthAMDX:
       callback(Id::fromWord(it.word(1)), false);
-      callback(Id::fromWord(it.word(2)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
+    case rdcspv::Op::IsNodePayloadValidAMDX:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
       callback(Id::fromWord(it.word(3)), false);
       callback(Id::fromWord(it.word(4)), false);
+      break;
+    case rdcspv::Op::ConstantStringAMDX:
+      callback(Id::fromWord(it.word(1)), true);
+      break;
+    case rdcspv::Op::SpecConstantStringAMDX:
+      callback(Id::fromWord(it.word(1)), true);
       break;
     case rdcspv::Op::GroupNonUniformQuadAllKHR:
       callback(Id::fromWord(it.word(1)), false);
@@ -4870,6 +5170,61 @@ void OpDecoder::ForEachID(const ConstIter &it, const std::function<void(Id,bool)
       callback(Id::fromWord(it.word(5)), false);
       callback(Id::fromWord(it.word(6)), false);
       break;
+    case rdcspv::Op::TypeCooperativeVectorNV:
+      callback(Id::fromWord(it.word(1)), true);
+      callback(Id::fromWord(it.word(2)), false);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
+    case rdcspv::Op::CooperativeVectorMatrixMulNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      callback(Id::fromWord(it.word(6)), false);
+      callback(Id::fromWord(it.word(7)), false);
+      callback(Id::fromWord(it.word(8)), false);
+      callback(Id::fromWord(it.word(9)), false);
+      callback(Id::fromWord(it.word(10)), false);
+      callback(Id::fromWord(it.word(11)), false);
+      if(12 < size) callback(Id::fromWord(it.word(12)), false);
+      break;
+    case rdcspv::Op::CooperativeVectorOuterProductAccumulateNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), false);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      callback(Id::fromWord(it.word(6)), false);
+      if(7 < size) callback(Id::fromWord(it.word(7)), false);
+      break;
+    case rdcspv::Op::CooperativeVectorReduceSumAccumulateNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), false);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
+    case rdcspv::Op::CooperativeVectorMatrixMulAddNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      callback(Id::fromWord(it.word(6)), false);
+      callback(Id::fromWord(it.word(7)), false);
+      callback(Id::fromWord(it.word(8)), false);
+      callback(Id::fromWord(it.word(9)), false);
+      callback(Id::fromWord(it.word(10)), false);
+      callback(Id::fromWord(it.word(11)), false);
+      callback(Id::fromWord(it.word(12)), false);
+      callback(Id::fromWord(it.word(13)), false);
+      callback(Id::fromWord(it.word(14)), false);
+      if(15 < size) callback(Id::fromWord(it.word(15)), false);
+      break;
+    case rdcspv::Op::CooperativeMatrixConvertNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
     case rdcspv::Op::EmitMeshTasksEXT:
       callback(Id::fromWord(it.word(1)), false);
       callback(Id::fromWord(it.word(2)), false);
@@ -4906,6 +5261,17 @@ void OpDecoder::ForEachID(const ConstIter &it, const std::function<void(Id,bool)
       callback(Id::fromWord(it.word(5)), false);
       callback(Id::fromWord(it.word(6)), false);
       callback(Id::fromWord(it.word(7)), false);
+      break;
+    case rdcspv::Op::CooperativeVectorLoadNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      break;
+    case rdcspv::Op::CooperativeVectorStoreNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), false);
+      callback(Id::fromWord(it.word(3)), false);
       break;
     case rdcspv::Op::ReportIntersectionKHR:
       callback(Id::fromWord(it.word(1)), false);
@@ -4971,6 +5337,17 @@ void OpDecoder::ForEachID(const ConstIter &it, const std::function<void(Id,bool)
       callback(Id::fromWord(it.word(1)), false);
       callback(Id::fromWord(it.word(2)), false);
       break;
+    case rdcspv::Op::RayQueryGetClusterIdNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      break;
+    case rdcspv::Op::HitObjectGetClusterIdNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
     case rdcspv::Op::TypeCooperativeMatrixNV:
       callback(Id::fromWord(it.word(1)), true);
       callback(Id::fromWord(it.word(2)), false);
@@ -5007,11 +5384,111 @@ void OpDecoder::ForEachID(const ConstIter &it, const std::function<void(Id,bool)
       break;
     case rdcspv::Op::EndInvocationInterlockEXT:
       break;
+    case rdcspv::Op::CooperativeMatrixReduceNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      break;
+    case rdcspv::Op::CooperativeMatrixLoadTensorNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      break;
+    case rdcspv::Op::CooperativeMatrixStoreTensorNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), false);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
+    case rdcspv::Op::CooperativeMatrixPerElementOpNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      for(size_t i=0; i < size-5; i++) callback(Id::fromWord(it.word(5+i)), false);
+      break;
+    case rdcspv::Op::TypeTensorLayoutNV:
+      callback(Id::fromWord(it.word(1)), true);
+      callback(Id::fromWord(it.word(2)), false);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
+    case rdcspv::Op::TypeTensorViewNV:
+      callback(Id::fromWord(it.word(1)), true);
+      callback(Id::fromWord(it.word(2)), false);
+      callback(Id::fromWord(it.word(3)), false);
+      for(size_t i=0; i < size-4; i++) callback(Id::fromWord(it.word(4+i)), false);
+      break;
+    case rdcspv::Op::CreateTensorLayoutNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      break;
+    case rdcspv::Op::TensorLayoutSetDimensionNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      for(size_t i=0; i < size-4; i++) callback(Id::fromWord(it.word(4+i)), false);
+      break;
+    case rdcspv::Op::TensorLayoutSetStrideNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      for(size_t i=0; i < size-4; i++) callback(Id::fromWord(it.word(4+i)), false);
+      break;
+    case rdcspv::Op::TensorLayoutSliceNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      for(size_t i=0; i < size-4; i++) callback(Id::fromWord(it.word(4+i)), false);
+      break;
+    case rdcspv::Op::TensorLayoutSetClampValueNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      break;
+    case rdcspv::Op::CreateTensorViewNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      break;
+    case rdcspv::Op::TensorViewSetDimensionNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      for(size_t i=0; i < size-4; i++) callback(Id::fromWord(it.word(4+i)), false);
+      break;
+    case rdcspv::Op::TensorViewSetStrideNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      for(size_t i=0; i < size-4; i++) callback(Id::fromWord(it.word(4+i)), false);
+      break;
     case rdcspv::Op::DemoteToHelperInvocation:
       break;
     case rdcspv::Op::IsHelperInvocationEXT:
       callback(Id::fromWord(it.word(1)), false);
       callback(Id::fromWord(it.word(2)), true);
+      break;
+    case rdcspv::Op::TensorViewSetClipNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      callback(Id::fromWord(it.word(6)), false);
+      callback(Id::fromWord(it.word(7)), false);
+      break;
+    case rdcspv::Op::TensorLayoutSetBlockSizeNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      for(size_t i=0; i < size-4; i++) callback(Id::fromWord(it.word(4+i)), false);
+      break;
+    case rdcspv::Op::CooperativeMatrixTransposeNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
       break;
     case rdcspv::Op::ConvertUToImageNV:
       callback(Id::fromWord(it.word(1)), false);
@@ -5052,6 +5529,78 @@ void OpDecoder::ForEachID(const ConstIter &it, const std::function<void(Id,bool)
       callback(Id::fromWord(it.word(4)), false);
       callback(Id::fromWord(it.word(5)), false);
       callback(Id::fromWord(it.word(6)), false);
+      break;
+    case rdcspv::Op::RayQueryGetIntersectionSpherePositionNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      break;
+    case rdcspv::Op::RayQueryGetIntersectionSphereRadiusNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      break;
+    case rdcspv::Op::RayQueryGetIntersectionLSSPositionsNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      break;
+    case rdcspv::Op::RayQueryGetIntersectionLSSRadiiNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      break;
+    case rdcspv::Op::RayQueryGetIntersectionLSSHitValueNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      break;
+    case rdcspv::Op::HitObjectGetSpherePositionNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
+    case rdcspv::Op::HitObjectGetSphereRadiusNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
+    case rdcspv::Op::HitObjectGetLSSPositionsNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
+    case rdcspv::Op::HitObjectGetLSSRadiiNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
+    case rdcspv::Op::HitObjectIsSphereHitNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
+    case rdcspv::Op::HitObjectIsLSSHitNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
+    case rdcspv::Op::RayQueryIsSphereHitNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      break;
+    case rdcspv::Op::RayQueryIsLSSHitNV:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
       break;
     case rdcspv::Op::SubgroupShuffleINTEL:
       callback(Id::fromWord(it.word(1)), false);
@@ -5389,6 +5938,82 @@ void OpDecoder::ForEachID(const ConstIter &it, const std::function<void(Id,bool)
       callback(Id::fromWord(it.word(2)), false);
       callback(Id::fromWord(it.word(3)), false);
       break;
+    case rdcspv::Op::ArithmeticFenceEXT:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      break;
+    case rdcspv::Op::SubgroupBlockPrefetchINTEL:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), false);
+      break;
+    case rdcspv::Op::Subgroup2DBlockLoadINTEL:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), false);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      callback(Id::fromWord(it.word(6)), false);
+      callback(Id::fromWord(it.word(7)), false);
+      callback(Id::fromWord(it.word(8)), false);
+      callback(Id::fromWord(it.word(9)), false);
+      callback(Id::fromWord(it.word(10)), false);
+      break;
+    case rdcspv::Op::Subgroup2DBlockLoadTransformINTEL:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), false);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      callback(Id::fromWord(it.word(6)), false);
+      callback(Id::fromWord(it.word(7)), false);
+      callback(Id::fromWord(it.word(8)), false);
+      callback(Id::fromWord(it.word(9)), false);
+      callback(Id::fromWord(it.word(10)), false);
+      break;
+    case rdcspv::Op::Subgroup2DBlockLoadTransposeINTEL:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), false);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      callback(Id::fromWord(it.word(6)), false);
+      callback(Id::fromWord(it.word(7)), false);
+      callback(Id::fromWord(it.word(8)), false);
+      callback(Id::fromWord(it.word(9)), false);
+      callback(Id::fromWord(it.word(10)), false);
+      break;
+    case rdcspv::Op::Subgroup2DBlockPrefetchINTEL:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), false);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      callback(Id::fromWord(it.word(6)), false);
+      callback(Id::fromWord(it.word(7)), false);
+      callback(Id::fromWord(it.word(8)), false);
+      callback(Id::fromWord(it.word(9)), false);
+      break;
+    case rdcspv::Op::Subgroup2DBlockStoreINTEL:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), false);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      callback(Id::fromWord(it.word(6)), false);
+      callback(Id::fromWord(it.word(7)), false);
+      callback(Id::fromWord(it.word(8)), false);
+      callback(Id::fromWord(it.word(9)), false);
+      callback(Id::fromWord(it.word(10)), false);
+      break;
+    case rdcspv::Op::SubgroupMatrixMultiplyAccumulateINTEL:
+      callback(Id::fromWord(it.word(1)), false);
+      callback(Id::fromWord(it.word(2)), true);
+      callback(Id::fromWord(it.word(3)), false);
+      callback(Id::fromWord(it.word(4)), false);
+      callback(Id::fromWord(it.word(5)), false);
+      callback(Id::fromWord(it.word(6)), false);
+      break;
     case rdcspv::Op::GroupIMulKHR:
       callback(Id::fromWord(it.word(1)), false);
       callback(Id::fromWord(it.word(2)), true);
@@ -5644,6 +6269,7 @@ rdcstr OpDecoder::Disassemble(const ConstIter &it, const std::function<rdcstr(Id
       ret += idName(decoded.result) + " = ";
       ret += rdcstr("TypeFloat("_lit)
            + ParamToStr(idName, decoded.width)
+           + (3 < size ? ", " + ParamToStr(idName, decoded.floatingPointEncoding) : "")
            + ")";
       break;
     }
@@ -9376,6 +10002,52 @@ rdcstr OpDecoder::Disassemble(const ConstIter &it, const std::function<rdcstr(Id
            + ")";
       break;
     }
+    case rdcspv::Op::TypeUntypedPointerKHR:
+    {
+      OpTypeUntypedPointerKHR decoded(it);
+      ret += idName(decoded.result) + " = ";
+      ret += rdcstr("TypeUntypedPointerKHR("_lit)
+           + ParamToStr(idName, decoded.storageClass)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::UntypedVariableKHR:
+    {
+      OpUntypedVariableKHR decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("UntypedVariableKHR("_lit)
+           + ParamToStr(idName, decoded.storageClass)
+           + (4 < size ? ", " + ParamToStr(idName, decoded.dataType) : "")
+           + (5 < size ? ", " + ParamToStr(idName, decoded.initializer) : "")
+           + ")";
+      break;
+    }
+    case rdcspv::Op::UntypedAccessChainKHR:
+    {
+      OpUntypedAccessChainKHR decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("UntypedAccessChainKHR("_lit)
+           + ParamToStr(idName, decoded.baseType)
+           + ", "
+           + ParamToStr(idName, decoded.base)
+           + ", "
+           + ParamsToStr(idName, decoded.indexes)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::UntypedInBoundsAccessChainKHR:
+    {
+      OpUntypedInBoundsAccessChainKHR decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("UntypedInBoundsAccessChainKHR("_lit)
+           + ParamToStr(idName, decoded.baseType)
+           + ", "
+           + ParamToStr(idName, decoded.base)
+           + ", "
+           + ParamsToStr(idName, decoded.indexes)
+           + ")";
+      break;
+    }
     case rdcspv::Op::SubgroupBallotKHR:
     {
       OpSubgroupBallotKHR decoded(it);
@@ -9391,6 +10063,62 @@ rdcstr OpDecoder::Disassemble(const ConstIter &it, const std::function<rdcstr(Id
       ret += declName(decoded.resultType, decoded.result) + " = ";
       ret += rdcstr("SubgroupFirstInvocationKHR("_lit)
            + ParamToStr(idName, decoded.value)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::UntypedPtrAccessChainKHR:
+    {
+      OpUntypedPtrAccessChainKHR decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("UntypedPtrAccessChainKHR("_lit)
+           + ParamToStr(idName, decoded.baseType)
+           + ", "
+           + ParamToStr(idName, decoded.base)
+           + ", "
+           + ParamToStr(idName, decoded.element)
+           + ", "
+           + ParamsToStr(idName, decoded.indexes)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::UntypedInBoundsPtrAccessChainKHR:
+    {
+      OpUntypedInBoundsPtrAccessChainKHR decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("UntypedInBoundsPtrAccessChainKHR("_lit)
+           + ParamToStr(idName, decoded.baseType)
+           + ", "
+           + ParamToStr(idName, decoded.base)
+           + ", "
+           + ParamToStr(idName, decoded.element)
+           + ", "
+           + ParamsToStr(idName, decoded.indexes)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::UntypedArrayLengthKHR:
+    {
+      OpUntypedArrayLengthKHR decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("UntypedArrayLengthKHR("_lit)
+           + ParamToStr(idName, decoded.structure)
+           + ", "
+           + ParamToStr(idName, decoded.pointer)
+           + ", "
+           + ParamToStr(idName, decoded.arraymember)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::UntypedPrefetchKHR:
+    {
+      OpUntypedPrefetchKHR decoded(it);
+      ret += rdcstr("UntypedPrefetchKHR("_lit)
+           + ParamToStr(idName, decoded.pointerType)
+           + ", "
+           + ParamToStr(idName, decoded.numBytes)
+           + (3 < size ? ", " + ParamToStr(idName, decoded.rW) : "")
+           + (4 < size ? ", " + ParamToStr(idName, decoded.locality) : "")
+           + (5 < size ? ", " + ParamToStr(idName, decoded.cacheType) : "")
            + ")";
       break;
     }
@@ -10027,11 +10755,33 @@ rdcstr OpDecoder::Disassemble(const ConstIter &it, const std::function<rdcstr(Id
            + ")";
       break;
     }
-    case rdcspv::Op::FinalizeNodePayloadsAMDX:
+    case rdcspv::Op::AllocateNodePayloadsAMDX:
     {
-      OpFinalizeNodePayloadsAMDX decoded(it);
-      ret += rdcstr("FinalizeNodePayloadsAMDX("_lit)
+      OpAllocateNodePayloadsAMDX decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("AllocateNodePayloadsAMDX("_lit)
+           + ToStr(Scope(constIntVal(decoded.visibility)))
+           + ", "
+           + ParamToStr(idName, decoded.payloadCount)
+           + ", "
+           + ParamToStr(idName, decoded.nodeIndex)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::EnqueueNodePayloadsAMDX:
+    {
+      OpEnqueueNodePayloadsAMDX decoded(it);
+      ret += rdcstr("EnqueueNodePayloadsAMDX("_lit)
            + ParamToStr(idName, decoded.payloadArray)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::TypeNodePayloadArrayAMDX:
+    {
+      OpTypeNodePayloadArrayAMDX decoded(it);
+      ret += idName(decoded.result) + " = ";
+      ret += rdcstr("TypeNodePayloadArrayAMDX("_lit)
+           + ParamToStr(idName, decoded.payloadType)
            + ")";
       break;
     }
@@ -10044,17 +10794,41 @@ rdcstr OpDecoder::Disassemble(const ConstIter &it, const std::function<rdcstr(Id
            + ")";
       break;
     }
-    case rdcspv::Op::InitializeNodePayloadsAMDX:
+    case rdcspv::Op::NodePayloadArrayLengthAMDX:
     {
-      OpInitializeNodePayloadsAMDX decoded(it);
-      ret += rdcstr("InitializeNodePayloadsAMDX("_lit)
+      OpNodePayloadArrayLengthAMDX decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("NodePayloadArrayLengthAMDX("_lit)
            + ParamToStr(idName, decoded.payloadArray)
-           + ", "
-           + ToStr(Scope(constIntVal(decoded.visibility)))
-           + ", "
-           + ParamToStr(idName, decoded.payloadCount)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::IsNodePayloadValidAMDX:
+    {
+      OpIsNodePayloadValidAMDX decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("IsNodePayloadValidAMDX("_lit)
+           + ParamToStr(idName, decoded.payloadType)
            + ", "
            + ParamToStr(idName, decoded.nodeIndex)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::ConstantStringAMDX:
+    {
+      OpConstantStringAMDX decoded(it);
+      ret += idName(decoded.result) + " = ";
+      ret += rdcstr("ConstantStringAMDX("_lit)
+           + ParamToStr(idName, decoded.literalString)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::SpecConstantStringAMDX:
+    {
+      OpSpecConstantStringAMDX decoded(it);
+      ret += idName(decoded.result) + " = ";
+      ret += rdcstr("SpecConstantStringAMDX("_lit)
+           + ParamToStr(idName, decoded.literalString)
            + ")";
       break;
     }
@@ -10547,6 +11321,117 @@ rdcstr OpDecoder::Disassemble(const ConstIter &it, const std::function<rdcstr(Id
            + ")";
       break;
     }
+    case rdcspv::Op::TypeCooperativeVectorNV:
+    {
+      OpTypeCooperativeVectorNV decoded(it);
+      ret += idName(decoded.result) + " = ";
+      ret += rdcstr("TypeCooperativeVectorNV("_lit)
+           + ParamToStr(idName, decoded.componentType)
+           + ", "
+           + ParamToStr(idName, decoded.componentCount)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::CooperativeVectorMatrixMulNV:
+    {
+      OpCooperativeVectorMatrixMulNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("CooperativeVectorMatrixMulNV("_lit)
+           + ParamToStr(idName, decoded.input)
+           + ", "
+           + ParamToStr(idName, decoded.inputInterpretation)
+           + ", "
+           + ParamToStr(idName, decoded.matrix)
+           + ", "
+           + ParamToStr(idName, decoded.matrixOffset)
+           + ", "
+           + ParamToStr(idName, decoded.matrixInterpretation)
+           + ", "
+           + ParamToStr(idName, decoded.m)
+           + ", "
+           + ParamToStr(idName, decoded.k)
+           + ", "
+           + ParamToStr(idName, decoded.memoryLayout)
+           + ", "
+           + ParamToStr(idName, decoded.transpose)
+           + (12 < size ? ", " + ParamToStr(idName, decoded.matrixStride) : "")
+           + (13 < size ? ", " + ParamToStr(idName, decoded.cooperativeMatrixOperands) : "")
+           + ")";
+      break;
+    }
+    case rdcspv::Op::CooperativeVectorOuterProductAccumulateNV:
+    {
+      OpCooperativeVectorOuterProductAccumulateNV decoded(it);
+      ret += rdcstr("CooperativeVectorOuterProductAccumulateNV("_lit)
+           + ParamToStr(idName, decoded.pointer)
+           + ", "
+           + ParamToStr(idName, decoded.offset)
+           + ", "
+           + ParamToStr(idName, decoded.a)
+           + ", "
+           + ParamToStr(idName, decoded.b)
+           + ", "
+           + ParamToStr(idName, decoded.memoryLayout)
+           + ", "
+           + ParamToStr(idName, decoded.matrixInterpretation)
+           + (7 < size ? ", " + ParamToStr(idName, decoded.matrixStride) : "")
+           + ")";
+      break;
+    }
+    case rdcspv::Op::CooperativeVectorReduceSumAccumulateNV:
+    {
+      OpCooperativeVectorReduceSumAccumulateNV decoded(it);
+      ret += rdcstr("CooperativeVectorReduceSumAccumulateNV("_lit)
+           + ParamToStr(idName, decoded.pointer)
+           + ", "
+           + ParamToStr(idName, decoded.offset)
+           + ", "
+           + ParamToStr(idName, decoded.v)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::CooperativeVectorMatrixMulAddNV:
+    {
+      OpCooperativeVectorMatrixMulAddNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("CooperativeVectorMatrixMulAddNV("_lit)
+           + ParamToStr(idName, decoded.input)
+           + ", "
+           + ParamToStr(idName, decoded.inputInterpretation)
+           + ", "
+           + ParamToStr(idName, decoded.matrix)
+           + ", "
+           + ParamToStr(idName, decoded.matrixOffset)
+           + ", "
+           + ParamToStr(idName, decoded.matrixInterpretation)
+           + ", "
+           + ParamToStr(idName, decoded.bias)
+           + ", "
+           + ParamToStr(idName, decoded.biasOffset)
+           + ", "
+           + ParamToStr(idName, decoded.biasInterpretation)
+           + ", "
+           + ParamToStr(idName, decoded.m)
+           + ", "
+           + ParamToStr(idName, decoded.k)
+           + ", "
+           + ParamToStr(idName, decoded.memoryLayout)
+           + ", "
+           + ParamToStr(idName, decoded.transpose)
+           + (15 < size ? ", " + ParamToStr(idName, decoded.matrixStride) : "")
+           + (16 < size ? ", " + ParamToStr(idName, decoded.cooperativeMatrixOperands) : "")
+           + ")";
+      break;
+    }
+    case rdcspv::Op::CooperativeMatrixConvertNV:
+    {
+      OpCooperativeMatrixConvertNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("CooperativeMatrixConvertNV("_lit)
+           + ParamToStr(idName, decoded.matrix)
+           + ")";
+      break;
+    }
     case rdcspv::Op::EmitMeshTasksEXT:
     {
       OpEmitMeshTasksEXT decoded(it);
@@ -10620,6 +11505,31 @@ rdcstr OpDecoder::Disassemble(const ConstIter &it, const std::function<rdcstr(Id
            + ParamToStr(idName, decoded.primitiveIndex)
            + ", "
            + ParamToStr(idName, decoded.barycentric)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::CooperativeVectorLoadNV:
+    {
+      OpCooperativeVectorLoadNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("CooperativeVectorLoadNV("_lit)
+           + ParamToStr(idName, decoded.pointer)
+           + ", "
+           + ParamToStr(idName, decoded.offset)
+           + (5 < size ? ", " + ParamToStr(idName, decoded.memoryAccess) : "")
+           + ")";
+      break;
+    }
+    case rdcspv::Op::CooperativeVectorStoreNV:
+    {
+      OpCooperativeVectorStoreNV decoded(it);
+      ret += rdcstr("CooperativeVectorStoreNV("_lit)
+           + ParamToStr(idName, decoded.pointer)
+           + ", "
+           + ParamToStr(idName, decoded.offset)
+           + ", "
+           + ParamToStr(idName, decoded.object)
+           + (4 < size ? ", " + ParamToStr(idName, decoded.memoryAccess) : "")
            + ")";
       break;
     }
@@ -10765,6 +11675,26 @@ rdcstr OpDecoder::Disassemble(const ConstIter &it, const std::function<rdcstr(Id
            + ")";
       break;
     }
+    case rdcspv::Op::RayQueryGetClusterIdNV:
+    {
+      OpRayQueryGetClusterIdNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("RayQueryGetClusterIdNV("_lit)
+           + ParamToStr(idName, decoded.rayQuery)
+           + ", "
+           + ParamToStr(idName, decoded.intersection)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::HitObjectGetClusterIdNV:
+    {
+      OpHitObjectGetClusterIdNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("HitObjectGetClusterIdNV("_lit)
+           + ParamToStr(idName, decoded.hitObject)
+           + ")";
+      break;
+    }
     case rdcspv::Op::TypeCooperativeMatrixNV:
     {
       OpTypeCooperativeMatrixNV decoded(it);
@@ -10845,6 +11775,171 @@ rdcstr OpDecoder::Disassemble(const ConstIter &it, const std::function<rdcstr(Id
            + ")";
       break;
     }
+    case rdcspv::Op::CooperativeMatrixReduceNV:
+    {
+      OpCooperativeMatrixReduceNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("CooperativeMatrixReduceNV("_lit)
+           + ParamToStr(idName, decoded.matrix)
+           + ", "
+           + ParamToStr(idName, decoded.reduce)
+           + ", "
+           + ParamToStr(idName, decoded.combineFunc)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::CooperativeMatrixLoadTensorNV:
+    {
+      OpCooperativeMatrixLoadTensorNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("CooperativeMatrixLoadTensorNV("_lit)
+           + ParamToStr(idName, decoded.pointer)
+           + ", "
+           + ParamToStr(idName, decoded.object)
+           + ", "
+           + ParamToStr(idName, decoded.tensorLayout)
+           + ", "
+           + ParamToStr(idName, decoded.memoryOperand)
+           + ", "
+           + ParamToStr(idName, decoded.tensorAddressingOperands)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::CooperativeMatrixStoreTensorNV:
+    {
+      OpCooperativeMatrixStoreTensorNV decoded(it);
+      ret += rdcstr("CooperativeMatrixStoreTensorNV("_lit)
+           + ParamToStr(idName, decoded.pointer)
+           + ", "
+           + ParamToStr(idName, decoded.object)
+           + ", "
+           + ParamToStr(idName, decoded.tensorLayout)
+           + ", "
+           + ParamToStr(idName, decoded.memoryOperand)
+           + ", "
+           + ParamToStr(idName, decoded.tensorAddressingOperands)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::CooperativeMatrixPerElementOpNV:
+    {
+      OpCooperativeMatrixPerElementOpNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("CooperativeMatrixPerElementOpNV("_lit)
+           + ParamToStr(idName, decoded.matrix)
+           + ", "
+           + ParamToStr(idName, decoded.func)
+           + ", "
+           + ParamsToStr(idName, decoded.operands)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::TypeTensorLayoutNV:
+    {
+      OpTypeTensorLayoutNV decoded(it);
+      ret += idName(decoded.result) + " = ";
+      ret += rdcstr("TypeTensorLayoutNV("_lit)
+           + ParamToStr(idName, decoded.dim)
+           + ", "
+           + ParamToStr(idName, decoded.clampMode)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::TypeTensorViewNV:
+    {
+      OpTypeTensorViewNV decoded(it);
+      ret += idName(decoded.result) + " = ";
+      ret += rdcstr("TypeTensorViewNV("_lit)
+           + ParamToStr(idName, decoded.dim)
+           + ", "
+           + ParamToStr(idName, decoded.hasDimensions)
+           + ", "
+           + ParamsToStr(idName, decoded.p)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::CreateTensorLayoutNV:
+    {
+      OpCreateTensorLayoutNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("CreateTensorLayoutNV("_lit)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::TensorLayoutSetDimensionNV:
+    {
+      OpTensorLayoutSetDimensionNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("TensorLayoutSetDimensionNV("_lit)
+           + ParamToStr(idName, decoded.tensorLayout)
+           + ", "
+           + ParamsToStr(idName, decoded.dim)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::TensorLayoutSetStrideNV:
+    {
+      OpTensorLayoutSetStrideNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("TensorLayoutSetStrideNV("_lit)
+           + ParamToStr(idName, decoded.tensorLayout)
+           + ", "
+           + ParamsToStr(idName, decoded.stride)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::TensorLayoutSliceNV:
+    {
+      OpTensorLayoutSliceNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("TensorLayoutSliceNV("_lit)
+           + ParamToStr(idName, decoded.tensorLayout)
+           + ", "
+           + ParamsToStr(idName, decoded.operands)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::TensorLayoutSetClampValueNV:
+    {
+      OpTensorLayoutSetClampValueNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("TensorLayoutSetClampValueNV("_lit)
+           + ParamToStr(idName, decoded.tensorLayout)
+           + ", "
+           + ParamToStr(idName, decoded.value)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::CreateTensorViewNV:
+    {
+      OpCreateTensorViewNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("CreateTensorViewNV("_lit)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::TensorViewSetDimensionNV:
+    {
+      OpTensorViewSetDimensionNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("TensorViewSetDimensionNV("_lit)
+           + ParamToStr(idName, decoded.tensorView)
+           + ", "
+           + ParamsToStr(idName, decoded.dim)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::TensorViewSetStrideNV:
+    {
+      OpTensorViewSetStrideNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("TensorViewSetStrideNV("_lit)
+           + ParamToStr(idName, decoded.tensorView)
+           + ", "
+           + ParamsToStr(idName, decoded.stride)
+           + ")";
+      break;
+    }
     case rdcspv::Op::DemoteToHelperInvocation:
     {
       OpDemoteToHelperInvocation decoded(it);
@@ -10857,6 +11952,43 @@ rdcstr OpDecoder::Disassemble(const ConstIter &it, const std::function<rdcstr(Id
       OpIsHelperInvocationEXT decoded(it);
       ret += declName(decoded.resultType, decoded.result) + " = ";
       ret += rdcstr("IsHelperInvocationEXT("_lit)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::TensorViewSetClipNV:
+    {
+      OpTensorViewSetClipNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("TensorViewSetClipNV("_lit)
+           + ParamToStr(idName, decoded.tensorView)
+           + ", "
+           + ParamToStr(idName, decoded.clipRowOffset)
+           + ", "
+           + ParamToStr(idName, decoded.clipRowSpan)
+           + ", "
+           + ParamToStr(idName, decoded.clipColOffset)
+           + ", "
+           + ParamToStr(idName, decoded.clipColSpan)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::TensorLayoutSetBlockSizeNV:
+    {
+      OpTensorLayoutSetBlockSizeNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("TensorLayoutSetBlockSizeNV("_lit)
+           + ParamToStr(idName, decoded.tensorLayout)
+           + ", "
+           + ParamsToStr(idName, decoded.blockSize)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::CooperativeMatrixTransposeNV:
+    {
+      OpCooperativeMatrixTransposeNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("CooperativeMatrixTransposeNV("_lit)
+           + ParamToStr(idName, decoded.matrix)
            + ")";
       break;
     }
@@ -10935,6 +12067,137 @@ rdcstr OpDecoder::Disassemble(const ConstIter &it, const std::function<rdcstr(Id
            + ", "
            + ParamToStr(idName, decoded.byteoffset)
            + (7 < size ? ", " + ParamToStr(idName, decoded.rawAccessChainOperands) : "")
+           + ")";
+      break;
+    }
+    case rdcspv::Op::RayQueryGetIntersectionSpherePositionNV:
+    {
+      OpRayQueryGetIntersectionSpherePositionNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("RayQueryGetIntersectionSpherePositionNV("_lit)
+           + ParamToStr(idName, decoded.rayQuery)
+           + ", "
+           + ParamToStr(idName, decoded.intersection)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::RayQueryGetIntersectionSphereRadiusNV:
+    {
+      OpRayQueryGetIntersectionSphereRadiusNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("RayQueryGetIntersectionSphereRadiusNV("_lit)
+           + ParamToStr(idName, decoded.rayQuery)
+           + ", "
+           + ParamToStr(idName, decoded.intersection)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::RayQueryGetIntersectionLSSPositionsNV:
+    {
+      OpRayQueryGetIntersectionLSSPositionsNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("RayQueryGetIntersectionLSSPositionsNV("_lit)
+           + ParamToStr(idName, decoded.rayQuery)
+           + ", "
+           + ParamToStr(idName, decoded.intersection)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::RayQueryGetIntersectionLSSRadiiNV:
+    {
+      OpRayQueryGetIntersectionLSSRadiiNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("RayQueryGetIntersectionLSSRadiiNV("_lit)
+           + ParamToStr(idName, decoded.rayQuery)
+           + ", "
+           + ParamToStr(idName, decoded.intersection)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::RayQueryGetIntersectionLSSHitValueNV:
+    {
+      OpRayQueryGetIntersectionLSSHitValueNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("RayQueryGetIntersectionLSSHitValueNV("_lit)
+           + ParamToStr(idName, decoded.rayQuery)
+           + ", "
+           + ParamToStr(idName, decoded.intersection)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::HitObjectGetSpherePositionNV:
+    {
+      OpHitObjectGetSpherePositionNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("HitObjectGetSpherePositionNV("_lit)
+           + ParamToStr(idName, decoded.hitObject)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::HitObjectGetSphereRadiusNV:
+    {
+      OpHitObjectGetSphereRadiusNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("HitObjectGetSphereRadiusNV("_lit)
+           + ParamToStr(idName, decoded.hitObject)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::HitObjectGetLSSPositionsNV:
+    {
+      OpHitObjectGetLSSPositionsNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("HitObjectGetLSSPositionsNV("_lit)
+           + ParamToStr(idName, decoded.hitObject)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::HitObjectGetLSSRadiiNV:
+    {
+      OpHitObjectGetLSSRadiiNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("HitObjectGetLSSRadiiNV("_lit)
+           + ParamToStr(idName, decoded.hitObject)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::HitObjectIsSphereHitNV:
+    {
+      OpHitObjectIsSphereHitNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("HitObjectIsSphereHitNV("_lit)
+           + ParamToStr(idName, decoded.hitObject)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::HitObjectIsLSSHitNV:
+    {
+      OpHitObjectIsLSSHitNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("HitObjectIsLSSHitNV("_lit)
+           + ParamToStr(idName, decoded.hitObject)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::RayQueryIsSphereHitNV:
+    {
+      OpRayQueryIsSphereHitNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("RayQueryIsSphereHitNV("_lit)
+           + ParamToStr(idName, decoded.rayQuery)
+           + ", "
+           + ParamToStr(idName, decoded.intersection)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::RayQueryIsLSSHitNV:
+    {
+      OpRayQueryIsLSSHitNV decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("RayQueryIsLSSHitNV("_lit)
+           + ParamToStr(idName, decoded.rayQuery)
+           + ", "
+           + ParamToStr(idName, decoded.intersection)
            + ")";
       break;
     }
@@ -11597,6 +12860,170 @@ rdcstr OpDecoder::Disassemble(const ConstIter &it, const std::function<rdcstr(Id
            + ")";
       break;
     }
+    case rdcspv::Op::ArithmeticFenceEXT:
+    {
+      OpArithmeticFenceEXT decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("ArithmeticFenceEXT("_lit)
+           + ParamToStr(idName, decoded.target)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::SubgroupBlockPrefetchINTEL:
+    {
+      OpSubgroupBlockPrefetchINTEL decoded(it);
+      ret += rdcstr("SubgroupBlockPrefetchINTEL("_lit)
+           + ParamToStr(idName, decoded.ptr)
+           + ", "
+           + ParamToStr(idName, decoded.numBytes)
+           + (3 < size ? ", " + ParamToStr(idName, decoded.memoryAccess) : "")
+           + ")";
+      break;
+    }
+    case rdcspv::Op::Subgroup2DBlockLoadINTEL:
+    {
+      OpSubgroup2DBlockLoadINTEL decoded(it);
+      ret += rdcstr("Subgroup2DBlockLoadINTEL("_lit)
+           + ParamToStr(idName, decoded.elementSize)
+           + ", "
+           + ParamToStr(idName, decoded.blockWidth)
+           + ", "
+           + ParamToStr(idName, decoded.blockHeight)
+           + ", "
+           + ParamToStr(idName, decoded.blockCount)
+           + ", "
+           + ParamToStr(idName, decoded.srcBasePointer)
+           + ", "
+           + ParamToStr(idName, decoded.memoryWidth)
+           + ", "
+           + ParamToStr(idName, decoded.memoryHeight)
+           + ", "
+           + ParamToStr(idName, decoded.memoryPitch)
+           + ", "
+           + ParamToStr(idName, decoded.coordinate)
+           + ", "
+           + ParamToStr(idName, decoded.dstPointer)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::Subgroup2DBlockLoadTransformINTEL:
+    {
+      OpSubgroup2DBlockLoadTransformINTEL decoded(it);
+      ret += rdcstr("Subgroup2DBlockLoadTransformINTEL("_lit)
+           + ParamToStr(idName, decoded.elementSize)
+           + ", "
+           + ParamToStr(idName, decoded.blockWidth)
+           + ", "
+           + ParamToStr(idName, decoded.blockHeight)
+           + ", "
+           + ParamToStr(idName, decoded.blockCount)
+           + ", "
+           + ParamToStr(idName, decoded.srcBasePointer)
+           + ", "
+           + ParamToStr(idName, decoded.memoryWidth)
+           + ", "
+           + ParamToStr(idName, decoded.memoryHeight)
+           + ", "
+           + ParamToStr(idName, decoded.memoryPitch)
+           + ", "
+           + ParamToStr(idName, decoded.coordinate)
+           + ", "
+           + ParamToStr(idName, decoded.dstPointer)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::Subgroup2DBlockLoadTransposeINTEL:
+    {
+      OpSubgroup2DBlockLoadTransposeINTEL decoded(it);
+      ret += rdcstr("Subgroup2DBlockLoadTransposeINTEL("_lit)
+           + ParamToStr(idName, decoded.elementSize)
+           + ", "
+           + ParamToStr(idName, decoded.blockWidth)
+           + ", "
+           + ParamToStr(idName, decoded.blockHeight)
+           + ", "
+           + ParamToStr(idName, decoded.blockCount)
+           + ", "
+           + ParamToStr(idName, decoded.srcBasePointer)
+           + ", "
+           + ParamToStr(idName, decoded.memoryWidth)
+           + ", "
+           + ParamToStr(idName, decoded.memoryHeight)
+           + ", "
+           + ParamToStr(idName, decoded.memoryPitch)
+           + ", "
+           + ParamToStr(idName, decoded.coordinate)
+           + ", "
+           + ParamToStr(idName, decoded.dstPointer)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::Subgroup2DBlockPrefetchINTEL:
+    {
+      OpSubgroup2DBlockPrefetchINTEL decoded(it);
+      ret += rdcstr("Subgroup2DBlockPrefetchINTEL("_lit)
+           + ParamToStr(idName, decoded.elementSize)
+           + ", "
+           + ParamToStr(idName, decoded.blockWidth)
+           + ", "
+           + ParamToStr(idName, decoded.blockHeight)
+           + ", "
+           + ParamToStr(idName, decoded.blockCount)
+           + ", "
+           + ParamToStr(idName, decoded.srcBasePointer)
+           + ", "
+           + ParamToStr(idName, decoded.memoryWidth)
+           + ", "
+           + ParamToStr(idName, decoded.memoryHeight)
+           + ", "
+           + ParamToStr(idName, decoded.memoryPitch)
+           + ", "
+           + ParamToStr(idName, decoded.coordinate)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::Subgroup2DBlockStoreINTEL:
+    {
+      OpSubgroup2DBlockStoreINTEL decoded(it);
+      ret += rdcstr("Subgroup2DBlockStoreINTEL("_lit)
+           + ParamToStr(idName, decoded.elementSize)
+           + ", "
+           + ParamToStr(idName, decoded.blockWidth)
+           + ", "
+           + ParamToStr(idName, decoded.blockHeight)
+           + ", "
+           + ParamToStr(idName, decoded.blockCount)
+           + ", "
+           + ParamToStr(idName, decoded.srcPointer)
+           + ", "
+           + ParamToStr(idName, decoded.dstBasePointer)
+           + ", "
+           + ParamToStr(idName, decoded.memoryWidth)
+           + ", "
+           + ParamToStr(idName, decoded.memoryHeight)
+           + ", "
+           + ParamToStr(idName, decoded.memoryPitch)
+           + ", "
+           + ParamToStr(idName, decoded.coordinate)
+           + ")";
+      break;
+    }
+    case rdcspv::Op::SubgroupMatrixMultiplyAccumulateINTEL:
+    {
+      OpSubgroupMatrixMultiplyAccumulateINTEL decoded(it);
+      ret += declName(decoded.resultType, decoded.result) + " = ";
+      ret += rdcstr("SubgroupMatrixMultiplyAccumulateINTEL("_lit)
+           + ParamToStr(idName, decoded.kDim)
+           + ", "
+           + ParamToStr(idName, decoded.matrixA)
+           + ", "
+           + ParamToStr(idName, decoded.matrixB)
+           + ", "
+           + ParamToStr(idName, decoded.matrixC)
+           + (7 < size ? ", " + ParamToStr(idName, decoded.matrixMultiplyAccumulateOperands) : "")
+           + ")";
+      break;
+    }
     case rdcspv::Op::GroupIMulKHR:
     {
       OpGroupIMulKHR decoded(it);
@@ -12089,8 +13516,16 @@ OpDecoder::OpDecoder(const ConstIter &it)
     case rdcspv::Op::DepthAttachmentReadEXT: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::StencilAttachmentReadEXT: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::TerminateInvocation: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::TypeUntypedPointerKHR: result = Id::fromWord(it.word(1)); resultType = Id(); break;
+    case rdcspv::Op::UntypedVariableKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::UntypedAccessChainKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::UntypedInBoundsAccessChainKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::SubgroupBallotKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::SubgroupFirstInvocationKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::UntypedPtrAccessChainKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::UntypedInBoundsPtrAccessChainKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::UntypedArrayLengthKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::UntypedPrefetchKHR: result = Id(); resultType = Id(); break;
     case rdcspv::Op::SubgroupAllKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::SubgroupAnyKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::SubgroupAllEqualKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
@@ -12142,9 +13577,14 @@ OpDecoder::OpDecoder(const ConstIter &it)
     case rdcspv::Op::FragmentMaskFetchAMD: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::FragmentFetchAMD: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::ReadClockKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
-    case rdcspv::Op::FinalizeNodePayloadsAMDX: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::AllocateNodePayloadsAMDX: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::EnqueueNodePayloadsAMDX: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::TypeNodePayloadArrayAMDX: result = Id::fromWord(it.word(1)); resultType = Id(); break;
     case rdcspv::Op::FinishWritingNodePayloadAMDX: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
-    case rdcspv::Op::InitializeNodePayloadsAMDX: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::NodePayloadArrayLengthAMDX: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::IsNodePayloadValidAMDX: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::ConstantStringAMDX: result = Id::fromWord(it.word(1)); resultType = Id(); break;
+    case rdcspv::Op::SpecConstantStringAMDX: result = Id::fromWord(it.word(1)); resultType = Id(); break;
     case rdcspv::Op::GroupNonUniformQuadAllKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::GroupNonUniformQuadAnyKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::HitObjectRecordHitMotionNV: result = Id(); resultType = Id(); break;
@@ -12181,12 +13621,20 @@ OpDecoder::OpDecoder(const ConstIter &it)
     case rdcspv::Op::ReorderThreadWithHintNV: result = Id(); resultType = Id(); break;
     case rdcspv::Op::TypeHitObjectNV: result = Id::fromWord(it.word(1)); resultType = Id(); break;
     case rdcspv::Op::ImageSampleFootprintNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::TypeCooperativeVectorNV: result = Id::fromWord(it.word(1)); resultType = Id(); break;
+    case rdcspv::Op::CooperativeVectorMatrixMulNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::CooperativeVectorOuterProductAccumulateNV: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::CooperativeVectorReduceSumAccumulateNV: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::CooperativeVectorMatrixMulAddNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::CooperativeMatrixConvertNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::EmitMeshTasksEXT: result = Id(); resultType = Id(); break;
     case rdcspv::Op::SetMeshOutputsEXT: result = Id(); resultType = Id(); break;
     case rdcspv::Op::GroupNonUniformPartitionNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::WritePackedPrimitiveIndices4x8NV: result = Id(); resultType = Id(); break;
     case rdcspv::Op::FetchMicroTriangleVertexPositionNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::FetchMicroTriangleVertexBarycentricNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::CooperativeVectorLoadNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::CooperativeVectorStoreNV: result = Id(); resultType = Id(); break;
     case rdcspv::Op::ReportIntersectionKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::IgnoreIntersectionNV: result = Id(); resultType = Id(); break;
     case rdcspv::Op::TerminateRayNV: result = Id(); resultType = Id(); break;
@@ -12196,6 +13644,8 @@ OpDecoder::OpDecoder(const ConstIter &it)
     case rdcspv::Op::RayQueryGetIntersectionTriangleVertexPositionsKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::TypeAccelerationStructureKHR: result = Id::fromWord(it.word(1)); resultType = Id(); break;
     case rdcspv::Op::ExecuteCallableNV: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::RayQueryGetClusterIdNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::HitObjectGetClusterIdNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::TypeCooperativeMatrixNV: result = Id::fromWord(it.word(1)); resultType = Id(); break;
     case rdcspv::Op::CooperativeMatrixLoadNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::CooperativeMatrixStoreNV: result = Id(); resultType = Id(); break;
@@ -12203,8 +13653,25 @@ OpDecoder::OpDecoder(const ConstIter &it)
     case rdcspv::Op::CooperativeMatrixLengthNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::BeginInvocationInterlockEXT: result = Id(); resultType = Id(); break;
     case rdcspv::Op::EndInvocationInterlockEXT: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::CooperativeMatrixReduceNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::CooperativeMatrixLoadTensorNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::CooperativeMatrixStoreTensorNV: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::CooperativeMatrixPerElementOpNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::TypeTensorLayoutNV: result = Id::fromWord(it.word(1)); resultType = Id(); break;
+    case rdcspv::Op::TypeTensorViewNV: result = Id::fromWord(it.word(1)); resultType = Id(); break;
+    case rdcspv::Op::CreateTensorLayoutNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::TensorLayoutSetDimensionNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::TensorLayoutSetStrideNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::TensorLayoutSliceNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::TensorLayoutSetClampValueNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::CreateTensorViewNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::TensorViewSetDimensionNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::TensorViewSetStrideNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::DemoteToHelperInvocation: result = Id(); resultType = Id(); break;
     case rdcspv::Op::IsHelperInvocationEXT: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::TensorViewSetClipNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::TensorLayoutSetBlockSizeNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::CooperativeMatrixTransposeNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::ConvertUToImageNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::ConvertUToSamplerNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::ConvertImageToUNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
@@ -12213,6 +13680,19 @@ OpDecoder::OpDecoder(const ConstIter &it)
     case rdcspv::Op::ConvertSampledImageToUNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::SamplerImageAddressingModeNV: result = Id(); resultType = Id(); break;
     case rdcspv::Op::RawAccessChainNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::RayQueryGetIntersectionSpherePositionNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::RayQueryGetIntersectionSphereRadiusNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::RayQueryGetIntersectionLSSPositionsNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::RayQueryGetIntersectionLSSRadiiNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::RayQueryGetIntersectionLSSHitValueNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::HitObjectGetSpherePositionNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::HitObjectGetSphereRadiusNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::HitObjectGetLSSPositionsNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::HitObjectGetLSSRadiiNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::HitObjectIsSphereHitNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::HitObjectIsLSSHitNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::RayQueryIsSphereHitNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::RayQueryIsLSSHitNV: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::SubgroupShuffleINTEL: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::SubgroupShuffleDownINTEL: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::SubgroupShuffleUpINTEL: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
@@ -12274,6 +13754,14 @@ OpDecoder::OpDecoder(const ConstIter &it)
     case rdcspv::Op::ConvertBF16ToFINTEL: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::ControlBarrierArriveINTEL: result = Id(); resultType = Id(); break;
     case rdcspv::Op::ControlBarrierWaitINTEL: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::ArithmeticFenceEXT: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
+    case rdcspv::Op::SubgroupBlockPrefetchINTEL: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::Subgroup2DBlockLoadINTEL: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::Subgroup2DBlockLoadTransformINTEL: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::Subgroup2DBlockLoadTransposeINTEL: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::Subgroup2DBlockPrefetchINTEL: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::Subgroup2DBlockStoreINTEL: result = Id(); resultType = Id(); break;
+    case rdcspv::Op::SubgroupMatrixMultiplyAccumulateINTEL: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::GroupIMulKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::GroupFMulKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
     case rdcspv::Op::GroupBitwiseAndKHR: result = Id::fromWord(it.word(2)); resultType = Id::fromWord(it.word(1)); break;
@@ -12442,7 +13930,7 @@ rdcstr DoStringise(const rdcspv::Generator &el)
     STRINGISE_ENUM_CLASS_NAMED(SPIRVToolsAssembler, "SPIR-V Tools Assembler from Khronos - Contact David Neto, dneto@google.com");
     STRINGISE_ENUM_CLASS_NAMED(GlslangReferenceFrontEnd, "Glslang Reference Front End from Khronos - Contact John Kessenich, johnkessenich@google.com");
     STRINGISE_ENUM_CLASS_NAMED(ShadercoverGlslang, "Shaderc over Glslang from Google - Contact David Neto, dneto@google.com");
-    STRINGISE_ENUM_CLASS_NAMED(spiregg, "spiregg from Google - Contact Lei Zhang, antiagainst@google.com");
+    STRINGISE_ENUM_CLASS_NAMED(spiregg, "spiregg from Google - Contact Steven Perron, stevenperron@google.com");
     STRINGISE_ENUM_CLASS_NAMED(rspirv, "rspirv from Google - Contact Lei Zhang, antiagainst@gmail.com");
     STRINGISE_ENUM_CLASS_NAMED(MesaIRSPIRVTranslator, "Mesa-IR/SPIR-V Translator from X-LEGEND - Contact Metora Wang, github:metora/MesaGLSLCompiler");
     STRINGISE_ENUM_CLASS_NAMED(SPIRVToolsLinker, "SPIR-V Tools Linker from Khronos - Contact David Neto, dneto@google.com");
@@ -12450,7 +13938,7 @@ rdcstr DoStringise(const rdcspv::Generator &el)
     STRINGISE_ENUM_CLASS_NAMED(ClayShaderCompiler, "Clay Shader Compiler from Tellusim - Contact info@tellusim.com");
     STRINGISE_ENUM_CLASS_NAMED(WHLSLShaderTranslator, "WHLSL Shader Translator from W3C WebGPU Group - https://github.com/gpuweb/WHLSL");
     STRINGISE_ENUM_CLASS_NAMED(Clspv, "Clspv from Google - Contact David Neto, dneto@google.com");
-    STRINGISE_ENUM_CLASS_NAMED(MLIRSPIRVSerializer, "MLIR SPIR-V Serializer from Google - Contact Lei Zhang, antiagainst@google.com");
+    STRINGISE_ENUM_CLASS_NAMED(MLIRSPIRVSerializer, "MLIR SPIR-V Serializer from LLVM - Contact Jakub Kuderski, jakub.kuderski@amd.com, https://mlir.llvm.org/docs/Dialects/SPIR-V/");
     STRINGISE_ENUM_CLASS_NAMED(TintCompiler, "Tint Compiler from Google - Contact David Neto, dneto@google.com");
     STRINGISE_ENUM_CLASS_NAMED(ANGLEShaderCompiler, "ANGLE Shader Compiler from Google - Contact Shahbaz Youssefi, syoussefi@google.com");
     STRINGISE_ENUM_CLASS_NAMED(MessiahShaderCompiler, "Messiah Shader Compiler from Netease Games - Contact Yuwen Wu, atyuwen@gmail.com");
@@ -12472,6 +13960,8 @@ rdcstr DoStringise(const rdcspv::Generator &el)
     STRINGISE_ENUM_CLASS_NAMED(ZigCompiler, "Zig Compiler from Zig Software Foundation - Contact Robin Voetter, https://github.com/Snektron");
     STRINGISE_ENUM_CLASS_NAMED(spq, "spq from Rendong Liang - Contact Rendong Liang, admin@penguinliong.moe, https://github.com/PENGUINLIONG/spq-rs");
     STRINGISE_ENUM_CLASS_NAMED(LLVMSPIRVBackend, "LLVM SPIR-V Backend from LLVM - Contact Michal Paszkowski, michal.paszkowski@intel.com, https://github.com/llvm/llvm-project/tree/main/llvm/lib/Target/SPIRV");
+    STRINGISE_ENUM_CLASS_NAMED(Kongruent, "Kongruent from Robert Konrad - Contact Robert Konrad, https://github.com/Kode/Kongruent");
+    STRINGISE_ENUM_CLASS_NAMED(NuvkSPIRVEmitterandDLSLcompiler, "Nuvk SPIR-V Emitter and DLSL compiler from Kitsunebi Games - Contact Luna Nielsen, luna@foxgirls.gay, https://github.com/Inochi2D/nuvk");
   }
   END_ENUM_STRINGISE();
 }

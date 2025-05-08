@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -454,6 +454,8 @@ Usage: %s Test_Name [test_options]
 
   if(argc >= 2 && !strcmp(argv[1], "--list-raw"))
   {
+    SetDebugLogEnabled(false);
+
     check_tests(argc, argv);
 
     // output TSV

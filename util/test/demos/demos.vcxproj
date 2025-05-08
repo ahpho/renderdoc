@@ -146,6 +146,7 @@
     <ClCompile Include="d3d11\d3d11_empty_drawcall.cpp" />
     <ClCompile Include="d3d11\d3d11_empty_viewports.cpp" />
     <ClCompile Include="d3d11\d3d11_feature_level_9.cpp" />
+    <ClCompile Include="d3d11\d3d11_groupshared.cpp" />
     <ClCompile Include="d3d11\d3d11_helpers.cpp" />
     <ClCompile Include="d3d11\d3d11_large_buffer.cpp" />
     <ClCompile Include="d3d11\d3d11_leak_check.cpp" />
@@ -193,6 +194,7 @@
     <ClCompile Include="d3d12\d3d12_empty_capture.cpp" />
     <ClCompile Include="d3d12\d3d12_execute_indirect.cpp" />
     <ClCompile Include="d3d12\d3d12_existing_heap.cpp" />
+    <ClCompile Include="d3d12\d3d12_groupshared.cpp" />
     <ClCompile Include="d3d12\d3d12_helpers.cpp" />
     <ClCompile Include="d3d12\d3d12_mesh_shader.cpp" />
     <ClCompile Include="d3d12\d3d12_multi_wait_before_signal.cpp" />
@@ -211,6 +213,8 @@
     <ClCompile Include="d3d12\d3d12_render_pass.cpp" />
     <ClCompile Include="d3d12\d3d12_resource_lifetimes.cpp" />
     <ClCompile Include="d3d12\d3d12_resource_mapping_zoo.cpp" />
+    <ClCompile Include="d3d12\d3d12_rtas_zoo.cpp" />
+    <ClCompile Include="d3d12\d3d12_shader_debugdata_zoo.cpp" />
     <ClCompile Include="d3d12\d3d12_shader_debug_zoo.cpp" />
     <ClCompile Include="d3d12\d3d12_shader_editing.cpp" />
     <ClCompile Include="d3d12\d3d12_shader_isa.cpp" />
@@ -218,6 +222,7 @@
     <ClCompile Include="d3d12\d3d12_sharing.cpp" />
     <ClCompile Include="d3d12\d3d12_simple_dispatch.cpp" />
     <ClCompile Include="d3d12\d3d12_simple_triangle.cpp" />
+    <ClCompile Include="d3d12\d3d12_subgroup_zoo.cpp" />
     <ClCompile Include="d3d12\d3d12_swapchain_zoo.cpp" />
     <ClCompile Include="d3d12\d3d12_template.cpp" />
     <ClCompile Include="d3d12\d3d12_test.cpp" />
@@ -227,6 +232,7 @@
     <ClCompile Include="d3d12\d3d12_vertex_uav.cpp" />
     <ClCompile Include="d3d12\d3d12_video_textures.cpp" />
     <ClCompile Include="d3d12\d3d12_vrs.cpp" />
+    <ClCompile Include="d3d12\d3d12_workgroup_zoo.cpp" />
     <ClCompile Include="d3d12\d3d12_write_subresource.cpp" />
     <ClCompile Include="dx\d3d_helpers.cpp" />
     <ClCompile Include="3rdparty\glad\glad.c" />
@@ -311,12 +317,14 @@
     <ClCompile Include="vk\vk_empty_capture.cpp" />
     <ClCompile Include="vk\vk_extended_dyn_state.cpp" />
     <ClCompile Include="vk\vk_graphics_pipeline.cpp" />
+    <ClCompile Include="vk\vk_groupshared.cpp" />
     <ClCompile Include="vk\vk_khr_buffer_address.cpp" />
     <ClCompile Include="vk\vk_large_buffer.cpp" />
     <ClCompile Include="vk\vk_large_descriptor_sets.cpp" />
     <ClCompile Include="vk\vk_leak_check.cpp" />
     <ClCompile Include="vk\vk_load_store_none.cpp" />
     <ClCompile Include="vk\vk_mem_bench.cpp" />
+    <ClCompile Include="vk\vk_mesh_shader.cpp" />
     <ClCompile Include="vk\vk_mesh_zoo.cpp" />
     <ClCompile Include="vk\vk_multi_entry.cpp" />
     <ClCompile Include="vk\vk_multi_present.cpp" />
@@ -330,6 +338,7 @@
     <ClCompile Include="vk\vk_multi_thread_windows.cpp" />
     <ClCompile Include="vk\vk_postponed.cpp" />
     <ClCompile Include="vk\vk_query_pool.cpp" />
+    <ClCompile Include="vk\vk_ray_query.cpp" />
     <ClCompile Include="vk\vk_read_before_overwrite.cpp" />
     <ClCompile Include="vk\vk_robustness2.cpp" />
     <ClCompile Include="vk\vk_separate_depth_stencil_layouts.cpp" />
@@ -339,6 +348,7 @@
     <ClCompile Include="vk\vk_shader_printf.cpp" />
     <ClCompile Include="vk\vk_spec_constants.cpp" />
     <ClCompile Include="vk\vk_spirv_13_shaders.cpp" />
+    <ClCompile Include="vk\vk_subgroup_zoo.cpp" />
     <ClCompile Include="vk\vk_sync2.cpp" />
     <ClCompile Include="vk\vk_template.cpp" />
     <ClCompile Include="vk\vk_texture_zoo.cpp" />
@@ -365,6 +375,7 @@
     <ClCompile Include="vk\vk_simple_triangle.cpp" />
     <ClCompile Include="vk\vk_test.cpp" />
     <ClCompile Include="3rdparty\volk\volk.c" />
+    <ClCompile Include="vk\vk_workgroup_zoo.cpp" />
     <ClCompile Include="win32\win32_platform.cpp" />
     <ClCompile Include="win32\win32_window.cpp" />
   </ItemGroup>
@@ -448,7 +459,6 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
-  
   <!-- try to find the latest dxcompiler.dll, as the redist folder isn't reliably  -->
   <UsingTask TaskName="GetDXCDLL" TaskFactory="CodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
     <ParameterGroup>

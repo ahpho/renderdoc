@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,15 @@
  ******************************************************************************/
 
 #include "d3d12_test.h"
+
+MIDL_INTERFACE("52528c37-bfd9-4bbb-99ff-fdb7188619ce")
+IRenderDocDescriptorNamer : public IUnknown
+{
+public:
+  virtual HRESULT STDMETHODCALLTYPE SetName(UINT DescriptorIndex, LPCSTR Name) = 0;
+};
+
+COM_SMARTPTR(IRenderDocDescriptorNamer);
 
 RD_TEST(D3D12_Descriptor_Indexing, D3D12GraphicsTest)
 {
@@ -464,9 +473,17 @@ float4 main(v2f IN) : SV_Target0
     MakeSRV(alias1Buf).StructureStride(3 * sizeof(Vec4f)).CreateGPU(150 + 6);
     MakeSRV(alias2Buf).StructureStride(3 * sizeof(Vec4f)).CreateGPU(150 + 12);
 
+    IRenderDocDescriptorNamerPtr namer = m_CBVUAVSRV;
+
     MakeSRV(smiley).CreateGPU(12);
+    if(namer)
+      namer->SetName(12, "smiley");
     MakeSRV(smiley).CreateGPU(19);
+    if(namer)
+      namer->SetName(19, "another_smiley");
     MakeSRV(smiley).CreateGPU(20);
+    if(namer)
+      namer->SetName(20, "more_smileys???");
     MakeSRV(smiley).CreateGPU(21);
     MakeSRV(smiley).CreateGPU(49);
     MakeSRV(smiley).CreateGPU(59);
@@ -474,7 +491,11 @@ float4 main(v2f IN) : SV_Target0
     MakeSRV(smiley).CreateGPU(99);
     MakeSRV(smiley).CreateGPU(103);
     MakeCBV(constBuf).SizeBytes(256).CreateGPU(9);
+    if(namer)
+      namer->SetName(9, "constBuf");
     MakeUAV(outUAV).Format(DXGI_FORMAT_R32_UINT).CreateGPU(10);
+    if(namer)
+      namer->SetName(10, "outUAV");
 
     D3D12_SAMPLER_DESC samplerDesc = {};
     samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -54,7 +54,7 @@ struct RDCThumbnailProvider : public IThumbnailProvider, IInitializeWithStream
   unsigned int m_iRefcount;
   bool m_Inited;
   RDCThumb m_Thumb;
-  read_dds_data m_ddsData;
+  read_tex_data m_ddsData;
 
   RDCThumbnailProvider() : m_iRefcount(1), m_Inited(false) { InterlockedIncrement(&numProviders); }
   virtual ~RDCThumbnailProvider() { InterlockedDecrement(&numProviders); }

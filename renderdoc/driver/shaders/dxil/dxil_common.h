@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -158,6 +158,7 @@ enum class ShaderEntryTag
   Compute = 4,
   Mesh = 9,
   Amplification = 10,
+  WaveSize = 11,
 };
 
 enum class ResField
@@ -208,3 +209,4 @@ enum class SamplerFeedbackType : uint8_t
 
 DECLARE_STRINGISE_TYPE(DXIL::ComponentType);
 DECLARE_STRINGISE_TYPE(DXIL::ResourceClass);
+DECLARE_STRINGISE_TYPE(DXIL::ResourceKind);

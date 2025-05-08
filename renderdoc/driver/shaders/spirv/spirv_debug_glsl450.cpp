@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2024 Baldur Karlsson
+ * Copyright (c) 2020-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,7 @@
 #include "maths/half_convert.h"
 #include "maths/matrix.h"
 #include "os/os_specific.h"
-#include "var_dispatch_helpers.h"
+#include "replay/common/var_dispatch_helpers.h"
 
 // add some overloads we'll use to avoid the mess of math function definitions across compilers and
 // C/C++

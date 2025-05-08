@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -1172,8 +1172,10 @@ struct ResultDetails
   bool operator==(ResultCode resultCode) const { return code == resultCode; }
   bool operator!=(ResultCode resultCode) const { return code != resultCode; }
 #endif
-  DOCUMENT(
-      "The :class:`ResultDetails` resulting from the operation, indicating success or failure.");
+  DOCUMENT(R"(The :class:`ResultCode` resulting from the operation, indicating success or failure.
+
+:type: ResultCode
+)");
   ResultCode code;
 
   DOCUMENT(R"(For error codes, this will contain the stringified error code as well as any optional

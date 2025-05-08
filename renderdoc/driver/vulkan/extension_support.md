@@ -64,6 +64,8 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_EXT_headless_surface`
 * `VK_EXT_host_query_reset`
 * `VK_EXT_image_2d_view_of_3d`
+* `VK_EXT_image_compression_control`
+* `VK_EXT_image_compression_control_swapchain`
 * `VK_EXT_image_robustness`
 * `VK_EXT_image_view_min_lod`
 * `VK_EXT_index_type_uint8`
@@ -128,13 +130,17 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_IMG_format_pvrtc`
 * `VK_KHR_16bit_storage`
 * `VK_KHR_8bit_storage`
+* `VK_KHR_acceleration_structure`
 * `VK_KHR_android_surface`
 * `VK_KHR_bind_memory2`
 * `VK_KHR_buffer_device_address`
 * `VK_KHR_calibrated_timestamps`
+* `VK_KHR_compute_shader_derivatives`
 * `VK_KHR_copy_commands2`
 * `VK_KHR_create_renderpass2`
 * `VK_KHR_dedicated_allocation`
+* `VK_KHR_deferred_host_operations`
+* `VK_KHR_depth_clamp_zero_one`
 * `VK_KHR_depth_stencil_resolve`
 * `VK_KHR_descriptor_update_template`
 * `VK_KHR_device_group_creation`
@@ -143,6 +149,7 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_KHR_display`
 * `VK_KHR_draw_indirect_count`
 * `VK_KHR_driver_properties`
+* `VK_KHR_dynamic_rendering_local_read`
 * `VK_KHR_dynamic_rendering`
 * `VK_KHR_external_fence_capabilities`
 * `VK_KHR_external_fence_fd`
@@ -174,6 +181,7 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_KHR_maintenance2`
 * `VK_KHR_maintenance3`
 * `VK_KHR_maintenance4`
+* `VK_KHR_maintenance5`
 * `VK_KHR_multiview`
 * `VK_KHR_performance_query`
 * `VK_KHR_pipeline_executable_properties`
@@ -181,6 +189,10 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_KHR_present_id`
 * `VK_KHR_present_wait`
 * `VK_KHR_push_descriptor`
+* `VK_KHR_ray_query`
+* `VK_KHR_ray_tracing_maintenance1`
+* `VK_KHR_ray_tracing_pipeline`
+* `VK_KHR_ray_tracing_position_fetch`
 * `VK_KHR_relaxed_block_layout`
 * `VK_KHR_sampler_mirror_clamp_to_edge`
 * `VK_KHR_sampler_ycbcr_conversion`
@@ -188,12 +200,17 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_KHR_shader_atomic_int64`
 * `VK_KHR_shader_clock`
 * `VK_KHR_shader_draw_parameters`
+* `VK_KHR_shader_expect_assume`
 * `VK_KHR_shader_float_controls`
+* `VK_KHR_shader_float_controls2`
 * `VK_KHR_shader_float16_int8`
 * `VK_KHR_shader_integer_dot_product`
+* `VK_KHR_shader_maximal_reconvergence`
 * `VK_KHR_shader_non_semantic_info`
+* `VK_KHR_shader_quad_control`
 * `VK_KHR_shader_relaxed_extended_instruction`
 * `VK_KHR_shader_subgroup_extended_types`
+* `VK_KHR_shader_subgroup_rotate`
 * `VK_KHR_shader_subgroup_uniform_control_flow`
 * `VK_KHR_shader_terminate_invocation`
 * `VK_KHR_shared_presentable_image`
@@ -241,15 +258,11 @@ KHR extensions will definitely be implemented at some point, though KHR extensio
 ## KHR Extensions
 
 * `VK_KHR_cooperative_matrix`
-* `VK_KHR_dynamic_rendering_local_read`
-* `VK_KHR_maintenance5`
 * `VK_KHR_maintenance6`
+* `VK_KHR_maintenance7`
+* `VK_KHR_maintenance8`
 * `VK_KHR_map_memory2`
-* `VK_KHR_shader_expect_assume`
-* `VK_KHR_shader_float_controls2`
-* `VK_KHR_shader_maximal_reconvergence`
-* `VK_KHR_shader_quad_control`
-* `VK_KHR_shader_subgroup_rotate`
+* `VK_KHR_pipeline_binary`
 
 ## KHR Portability
 
@@ -258,31 +271,21 @@ The portability subset is only relevant on mac, which is not a supported platfor
 * `VK_KHR_portability_subset`
 * `VK_KHR_portability_enumeration`
 
-## KHR Ray tracing extensions
-
-Ray tracing extensions are now standard and will likely be supported at some point in the future, but they are an immense amount of work to properly support with meaningful tooling - i.e. more than simple raw capture/replay. Because of this and because they are still quite a niche feature they are not a priority to support and will not be until there is enough resources to properly support them, either from myself or an external contributor.
-
-* `VK_KHR_acceleration_structure`
-* `VK_KHR_ray_tracing_pipeline`
-* `VK_KHR_ray_tracing_position_fetch`
-* `VK_KHR_ray_tracing_maintenance1`
-* `VK_KHR_ray_query`
-* `VK_KHR_deferred_host_operations`
-
 ## EXT Extensions
 
 * `VK_EXT_blend_operation_advanced`
 * `VK_EXT_depth_bias_control`
+* `VK_EXT_depth_clamp_control`
 * `VK_EXT_descriptor_buffer`
 * `VK_EXT_device_address_binding_report`
 * `VK_EXT_device_fault`
+* `VK_EXT_device_generated_commands`
 * `VK_EXT_device_memory_report`
 * `VK_EXT_dynamic_rendering_unused_attachments`
 * `VK_EXT_external_memory_acquire_unmodified`
 * `VK_EXT_external_memory_host`
+* `VK_EXT_external_memory_metal`
 * `VK_EXT_host_image_copy`
-* `VK_EXT_image_compression_control_swapchain`
-* `VK_EXT_image_compression_control`
 * `VK_EXT_image_drm_format_modifier`
 * `VK_EXT_image_sliced_view_of_3d`
 * `VK_EXT_layer_settings`
@@ -294,13 +297,14 @@ Ray tracing extensions are now standard and will likely be supported at some poi
 * `VK_EXT_opacity_micromap`
 * `VK_EXT_physical_device_drm`
 * `VK_EXT_pipeline_library_group_handles`
-* `VK_EXT_pipeline_properties`
 * `VK_EXT_pipeline_protected_access`
 * `VK_EXT_pipeline_robustness`
+* `VK_EXT_present_mode_fifo_latest_ready`
 * `VK_EXT_shader_module_identifier`
 * `VK_EXT_shader_replicated_composites`
 * `VK_EXT_shader_tile_image`
 * `VK_EXT_subpass_merge_feedback`
+* `VK_EXT_vertex_attribute_robustness`
 
 ## Platform/IHV Extensions
 
@@ -310,6 +314,7 @@ Ray tracing extensions are now standard and will likely be supported at some poi
 
 ### ARM
 
+* `VK_ARM_pipeline_opacity_micromap`
 * `VK_ARM_rasterization_order_attachment_access`
 * `VK_ARM_render_pass_striped`
 * `VK_ARM_scheduling_controls`
@@ -318,6 +323,7 @@ Ray tracing extensions are now standard and will likely be supported at some poi
 
 ### AMD
 
+* `VK_AMD_anti_lag`
 * `VK_AMD_pipeline_compiler_control`
 * `VK_AMD_rasterization_order`
 * `VK_AMD_shader_info`
@@ -335,6 +341,7 @@ Ray tracing extensions are now standard and will likely be supported at some poi
 * `VK_HUAWEI_cluster_culling_shader`
 * `VK_HUAWEI_subpass_shading`
 * `VK_HUAWEI_invocation_mask`
+* `VK_HUAWEI_hdr_vivid`
 
 ### Imagination
 
@@ -356,7 +363,11 @@ Ray tracing extensions are now standard and will likely be supported at some poi
 ### NV
 
 * `VK_NV_clip_space_w_scaling`
+* `VK_NV_cluster_acceleration_structure`
+* `VK_NV_command_buffer_inheritance`
 * `VK_NV_cooperative_matrix`
+* `VK_NV_cooperative_matrix2`
+* `VK_NV_cooperative_vector`
 * `VK_NV_copy_memory_indirect`
 * `VK_NV_corner_sampled_image`
 * `VK_NV_coverage_reduction_mode`
@@ -368,6 +379,7 @@ Ray tracing extensions are now standard and will likely be supported at some poi
 * `VK_NV_device_generated_commands_compute`
 * `VK_NV_device_generated_commands`
 * `VK_NV_displacement_micromap`
+* `VK_NV_display_stereo`
 * `VK_NV_extended_sparse_address_space`
 * `VK_NV_external_memory_rdma`
 * `VK_NV_fill_rectangle`
@@ -381,10 +393,13 @@ Ray tracing extensions are now standard and will likely be supported at some poi
 * `VK_NV_memory_decompression`
 * `VK_NV_mesh_shader`
 * `VK_NV_optical_flow`
+* `VK_NV_partitioned_acceleration_structure`
 * `VK_NV_per_stage_descriptor_set`
 * `VK_NV_present_barrier`
+* `VK_NV_present_metering`
 * `VK_NV_raw_access_chains`
 * `VK_NV_ray_tracing_invocation_reorder`
+* `VK_NV_ray_tracing_linear_swept_spheres`
 * `VK_NV_ray_tracing_motion_blur`
 * `VK_NV_ray_tracing_validation`
 * `VK_NV_representative_fragment_test`
@@ -430,19 +445,19 @@ These only make sense to implement if the platform as a whole is supported.
 
 These are expected to never be implemented in their current form.
 
-### Complex IHV extensions
-
-* `VK_NV_ray_tracing`
-
 ### Vulkan Video extensions
 
 * `VK_KHR_video_decode_av1`
 * `VK_KHR_video_decode_h264`
 * `VK_KHR_video_decode_h265`
 * `VK_KHR_video_decode_queue`
+* `VK_KHR_video_encode_av1`
 * `VK_KHR_video_encode_h264`
 * `VK_KHR_video_encode_h265`
+* `VK_KHR_video_encode_quantization_map`
+* `VK_KHR_video_encode_queue`
 * `VK_KHR_video_maintenance1`
+* `VK_KHR_video_maintenance2`
 * `VK_KHR_video_queue`
 
 ### System/Other tool extensions
@@ -450,19 +465,20 @@ These are expected to never be implemented in their current form.
 * `VK_EXT_frame_boundary`
 * `VK_LUNARG_direct_driver_loading`
 
-### Deprecated / experimental / IHV
+### Deprecated / experimental / IHV / non-Vulkan
 
 * `VK_AMD_draw_indirect_count`
 * `VK_AMDX_shader_enqueue`
 * `VK_GGP_frame_token`
 * `VK_GGP_stream_descriptor_surface`
-* `VK_KHR_video_encode_queue`
+* `VK_EXT_pipeline_properties`
 * `VK_EXT_video_encode_h264`
 * `VK_EXT_video_encode_h265`
 * `VK_EXT_video_decode_h264`
 * `VK_EXT_video_decode_h265`
 * `VK_MVK_ios_surface`
 * `VK_NV_glsl_shader`
+* `VK_NV_ray_tracing`
 * `VK_NVX_binary_import`
 * `VK_NVX_multiview_per_view_attributes`
 * `VK_NVX_image_view_handle`

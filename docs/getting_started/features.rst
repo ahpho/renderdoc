@@ -81,13 +81,14 @@ D3D12
 
 * Support for D3D12 up to D3D12.9, Windows 10 and above, and D3D12On7 on Windows 7.
 * Debug marker uses the SetMarker/BeginEvent/EndEvent functions on the command list or queue.
-* Vertex, Pixel and Compute shader debugging for DXBC/fxc shaders.
+* Vertex, Pixel and Compute shader debugging.
 
 Vulkan
 ------
 
 * Support for Vulkan 1.3 on Windows, Linux, and Android.
 * Event markers and object naming both come from ``VK_EXT_debug_utils`` or deprecated ``VK_EXT_debug_marker``.
+* Vertex, Pixel, Mesh, and Compute shader debugging.
 
 Captures have a very limited amount of portability between machines. Many hardware-specific feature uses are baked into captures, and portability depends on how similar the capture and replay hardware are, whether these feature uses can map the same in both cases. Captures are however completely portable between different OSes with sufficiently comparable hardware.
 

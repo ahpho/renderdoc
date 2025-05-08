@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -360,6 +360,91 @@ void DoSerialise(SerialiserType &ser, D3D12BufferLocation &el)
     else
       ser.ClearObj(el.Location);
   }
+}
+
+template <class SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D12ASLocation &el, bool useSideband)
+{
+  D3D12ResourceManager *rm = (D3D12ResourceManager *)ser.GetUserData();
+
+  ResourceId buffer;
+  UINT64 offs = 0;
+  ResourceId asId;
+  bool isZero = el.Location == 0;
+
+  if(ser.IsWriting() || ser.IsStructurising())
+  {
+    WrappedID3D12Resource::GetResIDFromAddrAllowOutOfBounds(el.Location, buffer, offs);
+
+    // for ASs which haven't yet been created where we're serialising them, we allow the user to
+    // pass in the upcoming ResourceId via sideband data.
+    if(useSideband)
+    {
+      asId = ser.GetSidebandData<ResourceId>(D3D12DestASLocation::SidebandGUID);
+    }
+    else
+    {
+      // otherwise query from the resource for the current AS there, if one exists
+      WrappedID3D12Resource *res = rm ? rm->GetCurrentAs<WrappedID3D12Resource>(buffer) : NULL;
+      if(res)
+      {
+        D3D12AccelerationStructure *as = NULL;
+        if(res->GetAccStructIfExist(offs, &as))
+          asId = as->GetResourceID();
+      }
+    }
+  }
+  if(ser.IsStructurising() && rm)
+  {
+    buffer = rm->GetOriginalID(buffer);
+    asId = rm->GetOriginalID(asId);
+  }
+
+  // we get a little dynamic with this. If we successfully got an AS (or it was a zero location)
+  // then we only display the AS's ID since no offset is needed. If for some reason the AS didn't
+  // come through, we display it as a buffer location with buffer+offset
+
+  ser.Serialise("isZero"_lit, isZero).Hidden();
+  ser.Serialise("AccStruct"_lit, asId);
+
+  if(asId != ResourceId() || isZero)
+    ser.Important();
+  else
+    ser.Hidden();
+
+  ser.Serialise("Buffer"_lit, buffer);
+
+  if(asId != ResourceId() || isZero)
+    ser.Hidden();
+  else
+    ser.Important();
+
+  ser.Serialise("Offset"_lit, offs).OffsetOrSize();
+
+  if(asId != ResourceId() || isZero)
+    ser.Hidden();
+
+  if(ser.IsReading() && !ser.IsStructurising())
+  {
+    if(rm && asId != ResourceId() && rm->HasLiveResource(asId))
+      el.Location = rm->GetLiveAs<D3D12AccelerationStructure>(asId)->GetVirtualAddress();
+    else if(rm && buffer != ResourceId() && rm->HasLiveResource(buffer))
+      el.Location = rm->GetLiveAs<ID3D12Resource>(buffer)->GetGPUVirtualAddress() + offs;
+    else
+      ser.ClearObj(el.Location);
+  }
+}
+
+template <class SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D12DestASLocation &el)
+{
+  return DoSerialise(ser, el, true);
+}
+
+template <class SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D12SrcASLocation &el)
+{
+  return DoSerialise(ser, el, false);
 }
 
 template <class SerialiserType>
@@ -1075,7 +1160,13 @@ void DoSerialise(SerialiserType &ser, D3D12_TEXCUBE_ARRAY_SRV &el)
 template <class SerialiserType>
 void DoSerialise(SerialiserType &ser, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_SRV &el)
 {
-  SERIALISE_MEMBER_TYPED(D3D12BufferLocation, Location);
+  // because descriptor writes are on the CPU timeline and AS existence is effectively on the GPU
+  // timeline, this may come before the first build is submitted or even recorded. In that case the
+  // AS could be serialised as a buffer+offset instead of by its ID, or it could be serialised as
+  // the "wrong" AS ID - e.g. the previous version of an AS when this descriptor won't be used until
+  // after a rebuild. We assume in the case where we get the wrong AS ID that it will be a strict
+  // alias and aliasing it handled by any re-allocation of AS backing memory that happens
+  SERIALISE_MEMBER_TYPED(D3D12SrcASLocation, Location);
 }
 
 template <class SerialiserType>
@@ -1880,10 +1971,10 @@ void Deserialise(const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC &el)
 template <class SerialiserType>
 void DoSerialise(SerialiserType &ser, D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC &el)
 {
-  SERIALISE_MEMBER_TYPED(D3D12BufferLocation, DestAccelerationStructureData).Important();
+  SERIALISE_MEMBER_TYPED(D3D12DestASLocation, DestAccelerationStructureData).Important();
   SERIALISE_MEMBER(Inputs);
 
-  SERIALISE_MEMBER_TYPED(D3D12BufferLocation, SourceAccelerationStructureData);
+  SERIALISE_MEMBER_TYPED(D3D12SrcASLocation, SourceAccelerationStructureData);
   if(el.SourceAccelerationStructureData)
     ser.Important();
 

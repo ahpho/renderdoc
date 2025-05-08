@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -65,19 +65,19 @@ RWBuffer<int> copyout_int : register(u4);
   {
     if(copy_depth)
     {
-      float val = copyin_depth_ms.sample[src_coord.z][uint3(src_coord.xy, src_coord.w)];
+      float val = copyin_depth_ms.Load(uint3(src_coord.xy, src_coord.w), src_coord.z);
       copyout_depth[dst_slot] = val;
     }
     else if(copy_stencil)
     {
-      uint val = copyin_stencil_ms.sample[src_coord.z][uint3(src_coord.xy, src_coord.w)].g;
+      uint val = copyin_stencil_ms.Load(uint3(src_coord.xy, src_coord.w), src_coord.z).g;
       copyout_stencil[dst_slot] = val;
     }
     else
     {
       if(is_float)
       {
-        float4 val = copyin_float_ms.sample[src_coord.z][uint3(src_coord.xy, src_coord.w)];
+        float4 val = copyin_float_ms.Load(uint3(src_coord.xy, src_coord.w), src_coord.z);
         copyout_float[dst_slot] = val.x;
         copyout_float[dst_slot + 1] = val.y;
         copyout_float[dst_slot + 2] = val.z;
@@ -85,7 +85,7 @@ RWBuffer<int> copyout_int : register(u4);
       }
       else if(is_uint)
       {
-        uint4 val = copyin_uint_ms.sample[src_coord.z][uint3(src_coord.xy, src_coord.w)];
+        uint4 val = copyin_uint_ms.Load(uint3(src_coord.xy, src_coord.w), src_coord.z);
         copyout_uint[dst_slot] = val.x;
         copyout_uint[dst_slot + 1] = val.y;
         copyout_uint[dst_slot + 2] = val.z;
@@ -93,7 +93,7 @@ RWBuffer<int> copyout_int : register(u4);
       }
       else if(is_int)
       {
-        int4 val = copyin_int_ms.sample[src_coord.z][uint3(src_coord.xy, src_coord.w)];
+        int4 val = copyin_int_ms.Load(uint3(src_coord.xy, src_coord.w), src_coord.z);
         copyout_int[dst_slot] = val.x;
         copyout_int[dst_slot + 1] = val.y;
         copyout_int[dst_slot + 2] = val.z;

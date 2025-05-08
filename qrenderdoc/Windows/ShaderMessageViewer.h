@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2021-2024 Baldur Karlsson
+ * Copyright (c) 2021-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -70,6 +70,8 @@ private:
   ButtonDelegate *m_gotoDelegate = NULL;
 
   bool m_Multiview = false, m_Multisampled = false;
+
+  int m_ResourceCacheID = -1;
 
   GraphicsAPI m_API;
   uint32_t m_EID;

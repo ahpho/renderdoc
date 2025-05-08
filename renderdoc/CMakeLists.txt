@@ -131,6 +131,8 @@ set(sources
     common/globalconfig.h
     common/result.h
     common/shader_cache.h
+    common/jobsystem.cpp
+    common/tex_data.h
     common/threading.h
     common/timing.h
     common/wrapped_pool.h
@@ -196,6 +198,7 @@ set(sources
     replay/replay_output.cpp
     replay/replay_controller.cpp
     replay/replay_controller.h
+    replay/common/var_dispatch_helpers.h
     serialise/serialiser.cpp
     serialise/serialiser.h
     serialise/lz4io.cpp
@@ -211,6 +214,8 @@ set(sources
     serialise/comp_io_tests.cpp
     serialise/serialiser_tests.cpp
     serialise/streamio_tests.cpp
+    shaders/controlflow.cpp
+    shaders/controlflow.h
     strings/grisu2.cpp
     strings/string_utils.cpp
     strings/string_utils.h
@@ -582,7 +587,7 @@ if(ENABLE_GL OR ENABLE_GLES)
 endif()
 
 # pull in the NVIDIA folder
-if(NOT ANDROID AND NOT APPLE AND (ENABLE_GL OR ENABLE_GLES OR ENABLE_VULKAN))
+if(ENABLE_GL OR ENABLE_GLES OR ENABLE_VULKAN)
     add_subdirectory(driver/ihv/nv)
     list(APPEND renderdoc_objects $<TARGET_OBJECTS:rdoc_nv>)
 endif()

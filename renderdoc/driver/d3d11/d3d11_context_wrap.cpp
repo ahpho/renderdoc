@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -7593,6 +7593,7 @@ bool WrappedID3D11DeviceContext::Serialise_Map(SerialiserType &ser, ID3D11Resour
     intercept.InitWrappedResource(resMap, Subresource, appMem);
     intercept.MapType = MapType;
     intercept.MapFlags = MapFlags;
+    intercept.state = m_State;
 
     RDCASSERT(pMappedResource);
     *pMappedResource = intercept.app;
@@ -7610,6 +7611,7 @@ bool WrappedID3D11DeviceContext::Serialise_Map(SerialiserType &ser, ID3D11Resour
     intercept.SetD3D(mappedResource);
     intercept.MapType = MapType;
     intercept.MapFlags = MapFlags;
+    intercept.state = m_State;
 
     if(intercept.verifyWrite)
     {
@@ -7726,6 +7728,7 @@ HRESULT WrappedID3D11DeviceContext::Map(ID3D11Resource *pResource, UINT Subresou
         MapIntercept intercept;
         intercept.MapType = MapType;
         intercept.MapFlags = MapFlags;
+        intercept.state = m_State;
 
         m_OpenMaps[MappedResource(GetIDForDeviceChild(pResource), Subresource)] = intercept;
       }
@@ -8068,13 +8071,25 @@ void WrappedID3D11DeviceContext::Unmap(ID3D11Resource *pResource, UINT Subresour
   }
   else if(IsCaptureMode(m_State))
   {
-    if(it == m_OpenMaps.end() && IsActiveCapturing(m_State))
+    // verify that the map was intercepted in a way that will allow us to finish capturing it. Read
+    // maps we can allow since they're a no-op, and discard maps we only need 'basic' interception
+    // to ensure the user wrote into our buffer which is the case if we have them in our list. Other
+    // types of maps such as plain D3D11_MAP_WRITE and WRITE_NO_OVERWRITE require shadow buffers to
+    // detect changes and this will not have been initialised unless we began the map during an
+    // active frame capture.
+    if(IsActiveCapturing(m_State))
     {
-      RDCWARN(
-          "Saw an Unmap that we didn't capture the corresponding Map for - this frame is "
-          "unsuccessful");
-      m_SuccessfulCapture = false;
-      m_FailureReason = CaptureFailed_UncappedUnmap;
+      if(it == m_OpenMaps.end() ||
+         (!IsActiveCapturing(it->second.state) && it->second.MapType != D3D11_MAP_WRITE_DISCARD &&
+          it->second.MapType != D3D11_MAP_READ))
+      {
+        RDCWARN(
+            "Saw an Unmap that we didn't capture the corresponding Map for - this frame is "
+            "unsuccessful");
+        m_SuccessfulCapture = false;
+        m_FailureReason = CaptureFailed_UncappedUnmap;
+        m_OpenMaps.erase(it);
+      }
     }
 
     if(it != m_OpenMaps.end())
@@ -8095,7 +8110,7 @@ void WrappedID3D11DeviceContext::Unmap(ID3D11Resource *pResource, UINT Subresour
 
         m_ContextRecord->AddChunk(scope.Get());
       }
-      else    // IsIdleCapturing(m_State)
+      else    // IsBackgroundCapturing(m_State)
       {
         D3D11ResourceRecord *record =
             m_pDevice->GetResourceManager()->GetResourceRecord(GetIDForDeviceChild(pResource));

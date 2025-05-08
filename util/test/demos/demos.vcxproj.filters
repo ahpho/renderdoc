@@ -691,6 +691,39 @@
     <ClCompile Include="d3d12\d3d12_mesh_shader.cpp">
       <Filter>D3D12\demos</Filter>
     </ClCompile>
+    <ClCompile Include="d3d12\d3d12_rtas_zoo.cpp">
+      <Filter>D3D12\demos</Filter>
+    </ClCompile>
+    <ClCompile Include="vk\vk_ray_query.cpp">
+      <Filter>Vulkan\demos</Filter>
+    </ClCompile>
+    <ClCompile Include="vk\vk_subgroup_zoo.cpp">
+      <Filter>Vulkan\demos</Filter>
+    </ClCompile>
+    <ClCompile Include="vk\vk_groupshared.cpp">
+      <Filter>Vulkan\demos</Filter>
+    </ClCompile>
+    <ClCompile Include="vk\vk_mesh_shader.cpp">
+      <Filter>Vulkan\demos</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d12\d3d12_groupshared.cpp">
+      <Filter>D3D12\demos</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d11\d3d11_groupshared.cpp">
+      <Filter>D3D11\demos</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d12\d3d12_shader_debugdata_zoo.cpp">
+      <Filter>D3D12\demos</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d12\d3d12_subgroup_zoo.cpp">
+      <Filter>D3D12\demos</Filter>
+    </ClCompile>
+    <ClCompile Include="vk\vk_workgroup_zoo.cpp">
+      <Filter>Vulkan\demos</Filter>
+    </ClCompile>
+    <ClCompile Include="d3d12\d3d12_workgroup_zoo.cpp">
+      <Filter>D3D12\demos</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="D3D11">

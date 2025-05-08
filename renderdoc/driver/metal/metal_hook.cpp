@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2022-2024 Baldur Karlsson
+ * Copyright (c) 2022-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,7 @@
 
 static MetalHook metalhook;
 
-static void MetalHooked(void *handle)
+static void MetalHooked(void *handle, const char *)
 {
   RDCDEBUG("Metal library hooked");
 

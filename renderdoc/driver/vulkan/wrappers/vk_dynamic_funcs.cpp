@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -937,7 +937,7 @@ bool WrappedVulkan::Serialise_vkCmdSetLineStippleKHR(SerialiserType &ser,
         {
           VulkanRenderState &renderstate = GetCmdRenderState();
 
-          renderstate.dynamicStates[VkDynamicLineStippleKHR] = true;
+          renderstate.dynamicStates[VkDynamicLineStipple] = true;
 
           renderstate.stippleFactor = lineStippleFactor;
           renderstate.stipplePattern = lineStipplePattern;
@@ -2837,8 +2837,7 @@ void WrappedVulkan::vkCmdSetExtraPrimitiveOverestimationSizeEXT(VkCommandBuffer 
 
 template <typename SerialiserType>
 bool WrappedVulkan::Serialise_vkCmdSetLineRasterizationModeEXT(
-    SerialiserType &ser, VkCommandBuffer commandBuffer,
-    VkLineRasterizationModeKHR lineRasterizationMode)
+    SerialiserType &ser, VkCommandBuffer commandBuffer, VkLineRasterizationMode lineRasterizationMode)
 {
   SERIALISE_ELEMENT(commandBuffer);
   SERIALISE_ELEMENT(lineRasterizationMode).Important();
@@ -2879,7 +2878,7 @@ bool WrappedVulkan::Serialise_vkCmdSetLineRasterizationModeEXT(
 }
 
 void WrappedVulkan::vkCmdSetLineRasterizationModeEXT(VkCommandBuffer commandBuffer,
-                                                     VkLineRasterizationModeKHR lineRasterizationMode)
+                                                     VkLineRasterizationMode lineRasterizationMode)
 {
   SCOPED_DBG_SINK();
 
@@ -3566,6 +3565,138 @@ void WrappedVulkan::vkCmdSetRayTracingPipelineStackSizeKHR(VkCommandBuffer comma
   }
 }
 
+template <typename SerialiserType>
+bool WrappedVulkan::Serialise_vkCmdSetRenderingAttachmentLocationsKHR(
+    SerialiserType &ser, VkCommandBuffer commandBuffer,
+    const VkRenderingAttachmentLocationInfo *pLocationInfo)
+{
+  SERIALISE_ELEMENT(commandBuffer);
+  SERIALISE_ELEMENT_LOCAL(locationInfo, *pLocationInfo).Named("pLocationInfo"_lit).Important();
+
+  Serialise_DebugMessages(ser);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    m_LastCmdBufferID = GetResourceManager()->GetOriginalID(GetResID(commandBuffer));
+
+    if(IsActiveReplaying(m_State))
+    {
+      if(InRerecordRange(m_LastCmdBufferID))
+      {
+        commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
+
+        {
+          VulkanRenderState &renderstate = GetCmdRenderState();
+
+          renderstate.dynamicRendering.localRead.UpdateLocations(locationInfo);
+        }
+      }
+      else
+      {
+        commandBuffer = VK_NULL_HANDLE;
+      }
+    }
+
+    if(commandBuffer != VK_NULL_HANDLE)
+      ObjDisp(commandBuffer)->CmdSetRenderingAttachmentLocationsKHR(Unwrap(commandBuffer), &locationInfo);
+  }
+
+  return true;
+}
+
+void WrappedVulkan::vkCmdSetRenderingAttachmentLocationsKHR(
+    VkCommandBuffer commandBuffer, const VkRenderingAttachmentLocationInfo *pLocationInfo)
+{
+  SCOPED_DBG_SINK();
+
+  SERIALISE_TIME_CALL(
+      ObjDisp(commandBuffer)
+          ->CmdSetRenderingAttachmentLocationsKHR(Unwrap(commandBuffer), pLocationInfo));
+
+  if(IsCaptureMode(m_State))
+  {
+    VkResourceRecord *record = GetRecord(commandBuffer);
+
+    CACHE_THREAD_SERIALISER();
+
+    SCOPED_SERIALISE_CHUNK(VulkanChunk::vkCmdSetRenderingAttachmentLocationsKHR);
+    Serialise_vkCmdSetRenderingAttachmentLocationsKHR(ser, commandBuffer, pLocationInfo);
+
+    record->AddChunk(scope.Get(&record->cmdInfo->alloc));
+  }
+}
+
+template <typename SerialiserType>
+bool WrappedVulkan::Serialise_vkCmdSetRenderingInputAttachmentIndicesKHR(
+    SerialiserType &ser, VkCommandBuffer commandBuffer,
+    const VkRenderingInputAttachmentIndexInfo *pInputAttachmentIndexInfo)
+{
+  SERIALISE_ELEMENT(commandBuffer);
+  SERIALISE_ELEMENT_LOCAL(inputAttachmentIndexInfo, *pInputAttachmentIndexInfo)
+      .Named("pInputAttachmentIndexInfo"_lit)
+      .Important();
+
+  Serialise_DebugMessages(ser);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    m_LastCmdBufferID = GetResourceManager()->GetOriginalID(GetResID(commandBuffer));
+
+    if(IsActiveReplaying(m_State))
+    {
+      if(InRerecordRange(m_LastCmdBufferID))
+      {
+        commandBuffer = RerecordCmdBuf(m_LastCmdBufferID);
+
+        {
+          VulkanRenderState &renderstate = GetCmdRenderState();
+
+          renderstate.dynamicRendering.localRead.UpdateInputIndices(inputAttachmentIndexInfo);
+        }
+      }
+      else
+      {
+        commandBuffer = VK_NULL_HANDLE;
+      }
+    }
+
+    if(commandBuffer != VK_NULL_HANDLE)
+      ObjDisp(commandBuffer)
+          ->CmdSetRenderingInputAttachmentIndicesKHR(Unwrap(commandBuffer),
+                                                     &inputAttachmentIndexInfo);
+  }
+
+  return true;
+}
+
+void WrappedVulkan::vkCmdSetRenderingInputAttachmentIndicesKHR(
+    VkCommandBuffer commandBuffer,
+    const VkRenderingInputAttachmentIndexInfo *pInputAttachmentIndexInfo)
+{
+  SCOPED_DBG_SINK();
+
+  SERIALISE_TIME_CALL(ObjDisp(commandBuffer)
+                          ->CmdSetRenderingInputAttachmentIndicesKHR(Unwrap(commandBuffer),
+                                                                     pInputAttachmentIndexInfo));
+
+  if(IsCaptureMode(m_State))
+  {
+    VkResourceRecord *record = GetRecord(commandBuffer);
+
+    CACHE_THREAD_SERIALISER();
+
+    SCOPED_SERIALISE_CHUNK(VulkanChunk::vkCmdSetRenderingInputAttachmentIndicesKHR);
+    Serialise_vkCmdSetRenderingInputAttachmentIndicesKHR(ser, commandBuffer,
+                                                         pInputAttachmentIndexInfo);
+
+    record->AddChunk(scope.Get(&record->cmdInfo->alloc));
+  }
+}
+
 INSTANTIATE_FUNCTION_SERIALISED(void, vkCmdSetViewport, VkCommandBuffer commandBuffer,
                                 uint32_t firstViewport, uint32_t viewportCount,
                                 const VkViewport *pViewports);
@@ -3685,7 +3816,7 @@ INSTANTIATE_FUNCTION_SERIALISED(void, vkCmdSetExtraPrimitiveOverestimationSizeEX
                                 VkCommandBuffer commandBuffer,
                                 float extraPrimitiveOverestimationSize);
 INSTANTIATE_FUNCTION_SERIALISED(void, vkCmdSetLineRasterizationModeEXT, VkCommandBuffer commandBuffer,
-                                VkLineRasterizationModeKHR lineRasterizationMode);
+                                VkLineRasterizationMode lineRasterizationMode);
 INSTANTIATE_FUNCTION_SERIALISED(void, vkCmdSetLineStippleEnableEXT, VkCommandBuffer commandBuffer,
                                 VkBool32 stippledLineEnable);
 INSTANTIATE_FUNCTION_SERIALISED(void, vkCmdSetLogicOpEnableEXT, VkCommandBuffer commandBuffer,
@@ -3707,3 +3838,10 @@ INSTANTIATE_FUNCTION_SERIALISED(void, vkCmdSetTessellationDomainOriginEXT,
                                 VkTessellationDomainOrigin domainOrigin);
 INSTANTIATE_FUNCTION_SERIALISED(void, vkCmdSetRayTracingPipelineStackSizeKHR,
                                 VkCommandBuffer commandBuffer, uint32_t pipelineStackSize)
+
+INSTANTIATE_FUNCTION_SERIALISED(void, vkCmdSetRenderingAttachmentLocationsKHR,
+                                VkCommandBuffer commandBuffer,
+                                const VkRenderingAttachmentLocationInfo *pLocationInfo);
+INSTANTIATE_FUNCTION_SERIALISED(void, vkCmdSetRenderingInputAttachmentIndicesKHR,
+                                VkCommandBuffer commandBuffer,
+                                const VkRenderingInputAttachmentIndexInfo *pInputAttachmentIndexInfo);

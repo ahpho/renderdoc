@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -112,6 +112,14 @@ ID3D12GraphicsCommandList *Unwrap(ID3D12GraphicsCommandList9 *obj)
   return ((WrappedID3D12GraphicsCommandList *)obj)->GetReal();
 }
 
+ID3D12GraphicsCommandList *Unwrap(ID3D12GraphicsCommandList10 *obj)
+{
+  if(obj == NULL)
+    return NULL;
+
+  return ((WrappedID3D12GraphicsCommandList *)obj)->GetReal();
+}
+
 ID3D12GraphicsCommandList1 *Unwrap1(ID3D12GraphicsCommandList1 *obj)
 {
   if(obj == NULL)
@@ -182,6 +190,14 @@ ID3D12GraphicsCommandList9 *Unwrap9(ID3D12GraphicsCommandList9 *obj)
     return NULL;
 
   return ((WrappedID3D12GraphicsCommandList *)obj)->GetReal9();
+}
+
+ID3D12GraphicsCommandList10 *Unwrap10(ID3D12GraphicsCommandList10 *obj)
+{
+  if(obj == NULL)
+    return NULL;
+
+  return ((WrappedID3D12GraphicsCommandList *)obj)->GetReal10();
 }
 
 template <>
@@ -284,6 +300,15 @@ ResourceId GetResID(ID3D12GraphicsCommandList9 *obj)
 }
 
 template <>
+ResourceId GetResID(ID3D12GraphicsCommandList10 *obj)
+{
+  if(obj == NULL)
+    return ResourceId();
+
+  return ((WrappedID3D12GraphicsCommandList *)obj)->GetResourceID();
+}
+
+template <>
 ResourceId GetResID(ID3D12CommandList *obj)
 {
   if(obj == NULL)
@@ -378,6 +403,11 @@ WrappedID3D12GraphicsCommandList *GetWrapped(ID3D12GraphicsCommandList8 *obj)
 }
 
 WrappedID3D12GraphicsCommandList *GetWrapped(ID3D12GraphicsCommandList9 *obj)
+{
+  return ((WrappedID3D12GraphicsCommandList *)obj);
+}
+
+WrappedID3D12GraphicsCommandList *GetWrapped(ID3D12GraphicsCommandList10 *obj)
 {
   return ((WrappedID3D12GraphicsCommandList *)obj);
 }
@@ -641,9 +671,8 @@ void WrappedID3D12CommandQueue::CheckAndFreeRayDispatches()
   {
     if(signalled >= ray.fenceValue)
     {
-      SAFE_RELEASE(ray.patchScratchBuffer);
-      SAFE_RELEASE(ray.lookupBuffer);
-      SAFE_RELEASE(ray.argumentBuffer);
+      GetResourceManager()->GetRTManager()->AddDispatchTimer(ray.query);
+      ray.Release();
     }
   }
 
@@ -1006,6 +1035,10 @@ bool WrappedID3D12CommandQueue::ProcessChunk(ReadSerialiser &ser, D3D12Chunk chu
     case D3D12Chunk::Device_AddToStateObject:
     case D3D12Chunk::CreateAS:
     case D3D12Chunk::StateObject_SetPipelineStackSize:
+    case D3D12Chunk::Device_CreateHeapFromAddress1:
+    case D3D12Chunk::Device_CreateRootSignatureFromSubobjectInLibrary:
+    case D3D12Chunk::List_SetProgram:
+    case D3D12Chunk::List_DispatchGraph:
       RDCERR("Unexpected chunk while processing frame: %s", ToStr(chunk).c_str());
       return false;
 
@@ -1322,6 +1355,7 @@ WrappedID3D12GraphicsCommandList::WrappedID3D12GraphicsCommandList(ID3D12Graphic
     m_pList->QueryInterface(__uuidof(ID3D12GraphicsCommandList7), (void **)&m_pList7);
     m_pList->QueryInterface(__uuidof(ID3D12GraphicsCommandList8), (void **)&m_pList8);
     m_pList->QueryInterface(__uuidof(ID3D12GraphicsCommandList9), (void **)&m_pList9);
+    m_pList->QueryInterface(__uuidof(ID3D12GraphicsCommandList10), (void **)&m_pList10);
   }
 
   // create a temporary and grab its resource ID
@@ -1381,6 +1415,10 @@ WrappedID3D12GraphicsCommandList::~WrappedID3D12GraphicsCommandList()
 {
   SAFE_RELEASE(m_AMDMarkers);
 
+  for(std::function<void()> &func : m_UnusedCleanupCallbacks)
+    func();
+  m_UnusedCleanupCallbacks.clear();
+
   if(m_pList)
     m_pDevice->GetResourceManager()->RemoveWrapper(m_pList);
 
@@ -1399,6 +1437,7 @@ WrappedID3D12GraphicsCommandList::~WrappedID3D12GraphicsCommandList()
   SAFE_RELEASE(m_WrappedDebug.m_pReal1);
   SAFE_RELEASE(m_WrappedDebug.m_pReal2);
   SAFE_RELEASE(m_WrappedDebug.m_pReal3);
+  SAFE_RELEASE(m_pList10);
   SAFE_RELEASE(m_pList9);
   SAFE_RELEASE(m_pList8);
   SAFE_RELEASE(m_pList7);
@@ -1436,9 +1475,7 @@ void WrappedID3D12GraphicsCommandList::AddRayDispatches(rdcarray<PatchedRayDispa
   for(const PatchedRayDispatch::Resources &r : m_RayDispatches)
   {
     dispatches.push_back(r);
-    SAFE_ADDREF(r.lookupBuffer);
-    SAFE_ADDREF(r.patchScratchBuffer);
-    SAFE_ADDREF(r.argumentBuffer);
+    r.AddRef();
   }
 }
 
@@ -1634,6 +1671,19 @@ HRESULT STDMETHODCALLTYPE WrappedID3D12GraphicsCommandList::QueryInterface(REFII
       return E_NOINTERFACE;
     }
   }
+  else if(riid == __uuidof(ID3D12GraphicsCommandList10))
+  {
+    if(m_pList10)
+    {
+      *ppvObject = (ID3D12GraphicsCommandList10 *)this;
+      AddRef();
+      return S_OK;
+    }
+    else
+    {
+      return E_NOINTERFACE;
+    }
+  }
   else if(riid == __uuidof(ID3D12CommandList))
   {
     *ppvObject = (ID3D12CommandList *)this;
@@ -1768,6 +1818,7 @@ void D3D12CommandData::GetIndirectBuffer(size_t size, ID3D12Resource **buf, uint
     HRESULT hr = m_pDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &indirectDesc,
                                                     D3D12_RESOURCE_STATE_COPY_DEST, NULL,
                                                     __uuidof(ID3D12Resource), (void **)&argbuf);
+    m_pDevice->RemoveReplayResource(GetResID(argbuf));
 
     SetObjName(argbuf, StringFormat::Fmt("Indirect Readback Buf (%llu bytes)", (uint64_t)size));
 

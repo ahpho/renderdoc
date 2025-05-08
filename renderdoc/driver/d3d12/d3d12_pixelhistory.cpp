@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2023-2024 Baldur Karlsson
+ * Copyright (c) 2023-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -88,6 +88,9 @@
 #include "d3d12_debug.h"
 #include "d3d12_replay.h"
 #include "d3d12_shader_cache.h"
+
+const uint32_t D3D12_PIXEL_HISTORY_MIN_EVENTS_TO_STORE = 128;
+const uint32_t D3D12_PIXEL_HISTORY_AVG_FRAGMENTS_PER_EVENT = 8;
 
 struct D3D12CopyPixelParams
 {
@@ -650,6 +653,15 @@ protected:
 
   void CopyImagePixel(ID3D12GraphicsCommandListX *cmd, D3D12CopyPixelParams &p, size_t offset)
   {
+    D3D12_RESOURCE_DESC srcDesc = p.srcImage->GetDesc();
+    if((p.x < 0 || p.y < 0 || p.x >= srcDesc.Width || p.y >= srcDesc.Height))
+    {
+      // If the pixel is out of bounds, we can't read from the target image
+      RDCERR("Pixel is out of bounds %d,%d Dimensions %d x %d", p.x, p.y, srcDesc.Width,
+             srcDesc.Height);
+      return;
+    }
+
     uint32_t baseMip = m_CallbackInfo.targetSubresource.mip;
     bool copy3d = m_CallbackInfo.targetDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D;
     uint32_t baseSlice = m_CallbackInfo.targetSubresource.slice;
@@ -879,7 +891,7 @@ struct D3D12OcclusionCallback : public D3D12PixelHistoryCallback
     HRESULT hr = m_pDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
                                                     D3D12_RESOURCE_STATE_COPY_DEST, NULL,
                                                     __uuidof(ID3D12Resource), (void **)&readbackBuf);
-    m_pDevice->CheckHRESULT(hr);
+    CHECK_HR(m_pDevice, hr);
     if(FAILED(hr))
     {
       RDCERR("Failed to create query readback buffer HRESULT: %s", ToStr(hr).c_str());
@@ -897,7 +909,6 @@ struct D3D12OcclusionCallback : public D3D12PixelHistoryCallback
 
     m_pDevice->ExecuteLists();
     m_pDevice->FlushLists(true);
-    m_pDevice->GPUSyncAllQueues();
 
     D3D12_RANGE range;
     range.Begin = 0;
@@ -905,7 +916,7 @@ struct D3D12OcclusionCallback : public D3D12PixelHistoryCallback
 
     uint64_t *data;
     hr = readbackBuf->Map(0, &range, (void **)&data);
-    m_pDevice->CheckHRESULT(hr);
+    CHECK_HR(m_pDevice, hr);
     if(FAILED(hr))
     {
       RDCERR("Failed to map query heap data HRESULT: %s", ToStr(hr).c_str());
@@ -987,15 +998,21 @@ private:
   rdcarray<uint64_t> m_OcclusionResults;
 };
 
+struct EventInfo
+{
+  D3D12_RESOURCE_STATES resourceState;
+  bool hasDepth;
+};
+
 struct D3D12ColorAndStencilCallback : public D3D12PixelHistoryCallback
 {
   D3D12ColorAndStencilCallback(WrappedID3D12Device *device, D3D12PixelHistoryShaderCache *shaderCache,
                                const D3D12PixelHistoryCallbackInfo &callbackInfo,
                                const rdcarray<uint32_t> &events,
-                               std::map<uint32_t, D3D12_RESOURCE_STATES> resourceStates)
+                               const std::map<uint32_t, EventInfo> &eventInfos)
       : D3D12PixelHistoryCallback(device, shaderCache, callbackInfo, NULL),
         m_Events(events),
-        m_ResourceStates(resourceStates)
+        m_EventInfos(eventInfos)
   {
   }
 
@@ -1175,7 +1192,9 @@ private:
     targetCopyParams.mip = m_CallbackInfo.targetSubresource.mip;
     targetCopyParams.arraySlice = m_CallbackInfo.targetSubresource.slice;
     targetCopyParams.multisampled = (m_CallbackInfo.targetDesc.SampleDesc.Count != 1);
-    D3D12_RESOURCE_STATES nonRtFallback = m_ResourceStates[eid];
+    const EventInfo &eventInfo = m_EventInfos.at(eid);
+    bool hasDepth = eventInfo.hasDepth;
+    D3D12_RESOURCE_STATES nonRtFallback = eventInfo.resourceState;
     bool rtOutput = (nonRtFallback == D3D12_RESOURCE_STATE_RENDER_TARGET);
     D3D12_RESOURCE_STATES fallback = D3D12_RESOURCE_STATE_RENDER_TARGET;
 
@@ -1213,6 +1232,10 @@ private:
 
     // If the target image is a depth/stencil view, we already copied the value above.
     if(depthTarget)
+      return;
+
+    // return if the event does not have valid depth i.e. Clear, Copy, Dispatch
+    if(!hasDepth)
       return;
 
     // Get the bound depth format for this event
@@ -1353,7 +1376,7 @@ private:
   D3D12RenderState m_SavedState;
   std::map<ResourceId, D3D12PipelineReplacements> m_PipeCache;
   rdcarray<uint32_t> m_Events;
-  std::map<uint32_t, D3D12_RESOURCE_STATES> m_ResourceStates;
+  const std::map<uint32_t, EventInfo> &m_EventInfos;
   // Key is event ID, and value is an index of where the event data is stored.
   std::map<uint32_t, size_t> m_EventIndices;
   std::map<uint32_t, DXGI_FORMAT> m_DepthFormats;
@@ -1470,7 +1493,7 @@ struct D3D12TestsFailedCallback : public D3D12PixelHistoryCallback
     HRESULT hr = m_pDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
                                                     D3D12_RESOURCE_STATE_COPY_DEST, NULL,
                                                     __uuidof(ID3D12Resource), (void **)&readbackBuf);
-    m_pDevice->CheckHRESULT(hr);
+    CHECK_HR(m_pDevice, hr);
     if(FAILED(hr))
     {
       RDCERR("Failed to create query readback buffer HRESULT: %s", ToStr(hr).c_str());
@@ -1488,7 +1511,6 @@ struct D3D12TestsFailedCallback : public D3D12PixelHistoryCallback
 
     m_pDevice->ExecuteLists();
     m_pDevice->FlushLists(true);
-    m_pDevice->GPUSyncAllQueues();
 
     D3D12_RANGE range;
     range.Begin = 0;
@@ -1496,7 +1518,7 @@ struct D3D12TestsFailedCallback : public D3D12PixelHistoryCallback
 
     uint64_t *data;
     hr = readbackBuf->Map(0, &range, (void **)&data);
-    m_pDevice->CheckHRESULT(hr);
+    CHECK_HR(m_pDevice, hr);
     if(FAILED(hr))
     {
       RDCERR("Failed to map query heap data HRESULT: %s", ToStr(hr).c_str());
@@ -2037,6 +2059,7 @@ struct D3D12PixelHistoryPerFragmentCallback : D3D12PixelHistoryCallback
     }
     else
     {
+      renderTargetIndex = D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT;
       for(uint32_t i = 0; i < state.rts.size(); ++i)
       {
         ResourceId img = state.rts[i].GetResResourceId();
@@ -2060,17 +2083,6 @@ struct D3D12PixelHistoryPerFragmentCallback : D3D12PixelHistoryCallback
     origPSO->Fill(origPipeDesc);
 
     PerFragmentPipelines pipes = CreatePerFragmentPipelines(state, eid, 0, renderTargetIndex);
-
-    for(uint32_t i = 0; i < state.views.size(); i++)
-    {
-      ScissorToPixel(state.views[i], state.scissors[i]);
-
-      // Set scissor to the whole pixel quad
-      state.scissors[i].left &= ~0x1;
-      state.scissors[i].top &= ~0x1;
-      state.scissors[i].right = state.scissors[i].left + 2;
-      state.scissors[i].bottom = state.scissors[i].top + 2;
-    }
 
     ID3D12PipelineState *psosIter[2];
     psosIter[0] = pipes.primitiveIdPipe;
@@ -2096,9 +2108,17 @@ struct D3D12PixelHistoryPerFragmentCallback : D3D12PixelHistoryCallback
 
     rdcarray<D3D12Descriptor> origRts = state.rts;
 
+    uint32_t maxFrags =
+        (UINT)(m_CallbackInfo.dstBuffer->GetDesc().Width / sizeof(D3D12PerFragmentInfo));
     // Get primitive ID and shader output value for each fragment.
     for(uint32_t f = 0; f < numFragmentsInEvent; f++)
     {
+      if(fragsProcessed + numFragmentsInEvent > maxFrags)
+      {
+        RDCERR("Pixel History exceeded maximum number of fragments to process Max %d %d %d",
+               maxFrags, fragsProcessed, numFragmentsInEvent);
+        break;
+      }
       for(uint32_t i = 0; i < 2; i++)
       {
         uint32_t storeOffset = (fragsProcessed + f) * sizeof(D3D12PerFragmentInfo);
@@ -2187,6 +2207,13 @@ struct D3D12PixelHistoryPerFragmentCallback : D3D12PixelHistoryCallback
     // For every fragment except the last one, retrieve post-modification value.
     for(uint32_t f = 0; f < numFragmentsInEvent - 1; ++f)
     {
+      if(fragsProcessed + numFragmentsInEvent > maxFrags)
+      {
+        RDCERR("Pixel History exceeded maximum number of fragments to process Max %d %d %d",
+               maxFrags, fragsProcessed, numFragmentsInEvent);
+        break;
+      }
+
       D3D12MarkerRegion region(cmd,
                                StringFormat::Fmt("Getting postmod for fragment %u in %u", f, eid));
 
@@ -2398,6 +2425,7 @@ struct D3D12PixelHistoryPerFragmentCallback : D3D12PixelHistoryCallback
   void PreCloseCommandList(ID3D12GraphicsCommandListX *cmd) {}
   void AliasEvent(uint32_t primary, uint32_t alias) {}
 
+  bool ContainsEvent(uint32_t eid) { return (m_EventIndices.count(eid) > 0); }
   uint32_t GetEventOffset(uint32_t eid)
   {
     auto it = m_EventIndices.find(eid);
@@ -2515,7 +2543,7 @@ struct D3D12PixelHistoryDiscardedFragmentsCallback : D3D12PixelHistoryCallback
     HRESULT hr = m_pDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
                                                     D3D12_RESOURCE_STATE_COPY_DEST, NULL,
                                                     __uuidof(ID3D12Resource), (void **)&readbackBuf);
-    m_pDevice->CheckHRESULT(hr);
+    CHECK_HR(m_pDevice, hr);
     if(FAILED(hr))
     {
       RDCERR("Failed to create query readback buffer HRESULT: %s", ToStr(hr).c_str());
@@ -2533,7 +2561,6 @@ struct D3D12PixelHistoryDiscardedFragmentsCallback : D3D12PixelHistoryCallback
 
     m_pDevice->ExecuteLists();
     m_pDevice->FlushLists(true);
-    m_pDevice->GPUSyncAllQueues();
 
     D3D12_RANGE range;
     range.Begin = 0;
@@ -2541,7 +2568,7 @@ struct D3D12PixelHistoryDiscardedFragmentsCallback : D3D12PixelHistoryCallback
 
     uint64_t *data;
     hr = readbackBuf->Map(0, &range, (void **)&data);
-    m_pDevice->CheckHRESULT(hr);
+    CHECK_HR(m_pDevice, hr);
     if(FAILED(hr))
     {
       RDCERR("Failed to map query heap data HRESULT: %s", ToStr(hr).c_str());
@@ -2661,7 +2688,7 @@ bool D3D12DebugManager::PixelHistorySetupResources(D3D12PixelHistoryResources &r
   hr = m_pDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &imageDesc,
                                           D3D12_RESOURCE_STATE_RENDER_TARGET, NULL,
                                           __uuidof(ID3D12Resource), (void **)&colorImage);
-  m_pDevice->CheckHRESULT(hr);
+  CHECK_HR(m_pDevice, hr);
   if(FAILED(hr))
   {
     RDCERR("Failed to create scratch render target for pixel history: %s", ToStr(hr).c_str());
@@ -2681,7 +2708,7 @@ bool D3D12DebugManager::PixelHistorySetupResources(D3D12PixelHistoryResources &r
   hr = m_pDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &imageDesc,
                                           D3D12_RESOURCE_STATE_DEPTH_WRITE, NULL,
                                           __uuidof(ID3D12Resource), (void **)&dsImage);
-  m_pDevice->CheckHRESULT(hr);
+  CHECK_HR(m_pDevice, hr);
   if(FAILED(hr))
   {
     RDCERR("Failed to create scratch depth stencil for pixel history: %s", ToStr(hr).c_str());
@@ -2715,12 +2742,20 @@ bool D3D12DebugManager::PixelHistorySetupResources(D3D12PixelHistoryResources &r
   bufDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
   bufDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
-  bufDesc.Width = AlignUp((uint32_t)(numEvents * sizeof(D3D12EventInfo)), 4096U);
+  numEvents = RDCMAX(numEvents, D3D12_PIXEL_HISTORY_MIN_EVENTS_TO_STORE);
+  uint32_t bufferEventsSize = numEvents * sizeof(D3D12EventInfo);
+
+  uint32_t numFragments = numEvents * D3D12_PIXEL_HISTORY_AVG_FRAGMENTS_PER_EVENT;
+  uint32_t bufferFragmentsSize = numFragments * sizeof(D3D12PerFragmentInfo);
+
+  uint32_t bufferSize = RDCMAX(bufferEventsSize, bufferFragmentsSize);
+
+  bufDesc.Width = AlignUp(bufferSize, 4096U);
 
   hr = m_pDevice->CreateCommittedResource(&readbackHeapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
                                           D3D12_RESOURCE_STATE_COPY_DEST, NULL,
                                           __uuidof(ID3D12Resource), (void **)&dstBuffer);
-  m_pDevice->CheckHRESULT(hr);
+  CHECK_HR(m_pDevice, hr);
   if(FAILED(hr))
   {
     RDCERR("Failed to create readback buffer for pixel history: %s", ToStr(hr).c_str());
@@ -2851,7 +2886,7 @@ rdcarray<PixelModification> D3D12Replay::PixelHistory(rdcarray<EventUsage> event
     D3D12MarkerRegion occlRegion(m_pDevice->GetQueue()->GetReal(), "D3D12OcclusionCallback");
     m_pDevice->ReplayLog(0, events.back().eventId, eReplay_Full);
     m_pDevice->FlushLists(true);
-    m_pDevice->GPUSyncAllQueues();
+    m_pDevice->DeviceWaitForIdle();
     occlCb.FetchOcclusionResults();
     SAFE_RELEASE(pOcclusionQueryHeap);
   }
@@ -2860,12 +2895,17 @@ rdcarray<PixelModification> D3D12Replay::PixelHistory(rdcarray<EventUsage> event
   // to determine if these draws failed for some reason (for ex., depth test).
   rdcarray<uint32_t> modEvents;
   rdcarray<uint32_t> drawEvents;
-  std::map<uint32_t, D3D12_RESOURCE_STATES> resourceStates;
+  std::map<uint32_t, EventInfo> eventInfos;
   for(size_t ev = 0; ev < events.size(); ev++)
   {
     ResourceUsage usage = events[ev].usage;
+    const uint32_t eventId = events[ev].eventId;
     bool clear = (usage == ResourceUsage::Clear);
-    bool directWrite = IsDirectWrite(events[ev].usage);
+    bool directWrite = IsDirectWrite(usage);
+    EventInfo eventInfo = {};
+    const ActionDescription *action = m_pDevice->GetAction(eventId);
+    eventInfo.hasDepth =
+        (action->flags & (ActionFlags::MeshDispatch | ActionFlags::Drawcall)) ? true : false;
 
     D3D12_RESOURCE_STATES resourceState = D3D12_RESOURCE_STATE_RENDER_TARGET;
     if(IsUavWrite(usage))
@@ -2874,32 +2914,34 @@ rdcarray<PixelModification> D3D12Replay::PixelHistory(rdcarray<EventUsage> event
       resourceState = D3D12_RESOURCE_STATE_RESOLVE_DEST;
     else if(IsCopyWrite(usage))
       resourceState = D3D12_RESOURCE_STATE_COPY_DEST;
-    resourceStates[events[ev].eventId] = resourceState;
+    eventInfo.resourceState = resourceState;
 
     if(directWrite || clear)
     {
-      modEvents.push_back(events[ev].eventId);
+      modEvents.push_back(eventId);
+      RDCASSERT(eventInfo.hasDepth == false);
     }
     else
     {
-      uint64_t occlData = occlCb.GetOcclusionResult((uint32_t)events[ev].eventId);
+      uint64_t occlData = occlCb.GetOcclusionResult(eventId);
       if(occlData > 0)
       {
         D3D12MarkerRegion::Set(m_pDevice->GetQueue()->GetReal(),
-                               StringFormat::Fmt("%u has occl %llu", events[ev].eventId, occlData));
-        drawEvents.push_back(events[ev].eventId);
-        modEvents.push_back(events[ev].eventId);
+                               StringFormat::Fmt("%u has occl %llu", eventId, occlData));
+        drawEvents.push_back(eventId);
+        modEvents.push_back(eventId);
       }
     }
+    eventInfos[eventId] = eventInfo;
   }
 
-  D3D12ColorAndStencilCallback cb(m_pDevice, shaderCache, callbackInfo, modEvents, resourceStates);
+  D3D12ColorAndStencilCallback cb(m_pDevice, shaderCache, callbackInfo, modEvents, eventInfos);
   {
     D3D12MarkerRegion colorStencilRegion(m_pDevice->GetQueue()->GetReal(),
                                          "D3D12ColorAndStencilCallback");
     m_pDevice->ReplayLog(0, events.back().eventId, eReplay_Full);
     m_pDevice->FlushLists(true);
-    m_pDevice->GPUSyncAllQueues();
+    m_pDevice->DeviceWaitForIdle();
   }
 
   // If there are any draw events, do another replay pass, in order to figure
@@ -2921,7 +2963,7 @@ rdcarray<PixelModification> D3D12Replay::PixelHistory(rdcarray<EventUsage> event
                                         drawEvents);
     m_pDevice->ReplayLog(0, events.back().eventId, eReplay_Full);
     m_pDevice->FlushLists(true);
-    m_pDevice->GPUSyncAllQueues();
+    m_pDevice->DeviceWaitForIdle();
     tfCb->FetchOcclusionResults();
     SAFE_RELEASE(pTfOcclusionQueryHeap);
   }
@@ -2978,7 +3020,8 @@ rdcarray<PixelModification> D3D12Replay::PixelHistory(rdcarray<EventUsage> event
   {
     PixelModification &mod = history[h];
 
-    int32_t eventIndex = cb.GetEventIndex(mod.eventId);
+    uint32_t eid = mod.eventId;
+    int32_t eventIndex = cb.GetEventIndex(eid);
     if(eventIndex == -1)
     {
       // There is no information, skip the event.
@@ -3006,21 +3049,34 @@ rdcarray<PixelModification> D3D12Replay::PixelHistory(rdcarray<EventUsage> event
       FillInColor(fmt, ei.postmod, mod.postMod);
     }
 
-    DXGI_FORMAT depthFormat = cb.GetDepthFormat(mod.eventId);
-    if(depthFormat != DXGI_FORMAT_UNKNOWN)
+    EventInfo eventInfo = eventInfos[eid];
+    bool hasDepth = eventInfo.hasDepth;
+
+    if(hasDepth)
     {
-      mod.preMod.stencil = ei.premod.stencil;
-      mod.postMod.stencil = ei.postmod.stencil;
-      if(multisampled)
+      DXGI_FORMAT depthFormat = cb.GetDepthFormat(mod.eventId);
+      if(depthFormat != DXGI_FORMAT_UNKNOWN)
       {
-        mod.preMod.depth = ei.premod.depth.fdepth;
-        mod.postMod.depth = ei.postmod.depth.fdepth;
+        mod.preMod.stencil = ei.premod.stencil;
+        mod.postMod.stencil = ei.postmod.stencil;
+        if(multisampled)
+        {
+          mod.preMod.depth = ei.premod.depth.fdepth;
+          mod.postMod.depth = ei.postmod.depth.fdepth;
+        }
+        else
+        {
+          mod.preMod.depth = GetDepthValue(depthFormat, ei.premod);
+          mod.postMod.depth = GetDepthValue(depthFormat, ei.postmod);
+        }
       }
-      else
-      {
-        mod.preMod.depth = GetDepthValue(depthFormat, ei.premod);
-        mod.postMod.depth = GetDepthValue(depthFormat, ei.postmod);
-      }
+    }
+    else
+    {
+      mod.preMod.stencil = -1;
+      mod.preMod.depth = -1;
+      mod.postMod.stencil = -1;
+      mod.postMod.depth = -1;
     }
 
     int32_t frags = int32_t(ei.dsWithoutShaderDiscard[0]);
@@ -3036,10 +3092,14 @@ rdcarray<PixelModification> D3D12Replay::PixelHistory(rdcarray<EventUsage> event
       eventPremods[mod.eventId] = mod.preMod;
     }
 
-    for(int32_t f = 1; f < frags; f++)
     {
-      history.insert(h + 1, mod);
+      PixelModification duplicate = mod;
+      for(int32_t f = 1; f < frags; f++)
+      {
+        history.insert(h + 1, duplicate);
+      }
     }
+
     for(int32_t f = 0; f < frags; f++)
       history[h + f].fragIndex = f;
     h += RDCMAX(1, frags);
@@ -3047,7 +3107,7 @@ rdcarray<PixelModification> D3D12Replay::PixelHistory(rdcarray<EventUsage> event
         "PixelHistory event id: %u, fixed shader stencilValue = %u, "
         "original shader stencilValue = "
         "%u",
-        mod.eventId, ei.dsWithoutShaderDiscard[0], ei.dsWithShaderDiscard[0]);
+        eid, ei.dsWithoutShaderDiscard[0], ei.dsWithShaderDiscard[0]);
   }
 
   if(eventsWithFrags.size() > 0)
@@ -3060,7 +3120,7 @@ rdcarray<PixelModification> D3D12Replay::PixelHistory(rdcarray<EventUsage> event
                                       "D3D12PixelHistoryPerFragmentCallback");
       m_pDevice->ReplayLog(0, eventsWithFrags.rbegin()->first, eReplay_Full);
       m_pDevice->FlushLists(true);
-      m_pDevice->GPUSyncAllQueues();
+      m_pDevice->DeviceWaitForIdle();
     }
 
     bytebuf fragData;
@@ -3076,14 +3136,22 @@ rdcarray<PixelModification> D3D12Replay::PixelHistory(rdcarray<EventUsage> event
       uint32_t eid = history[h].eventId;
       if(eventsWithFrags.find(eid) == eventsWithFrags.end())
         continue;
-      uint32_t f = history[h].fragIndex;
-      bool someFragsClipped = (history[h].primitiveID == 1);
-      int32_t primId = fragInfo[perFragmentCB.GetEventOffset(eid) + f].primitiveID;
-      history[h].primitiveID = primId;
-      if(someFragsClipped)
+      if(perFragmentCB.ContainsEvent(eid))
       {
-        discardedPrimsEvents[eid].push_back(primId);
-        primitivesToCheck++;
+        uint32_t f = history[h].fragIndex;
+        bool someFragsClipped = (history[h].primitiveID == 1);
+        int32_t primId = fragInfo[perFragmentCB.GetEventOffset(eid) + f].primitiveID;
+        history[h].primitiveID = primId;
+        if(someFragsClipped)
+        {
+          discardedPrimsEvents[eid].push_back(primId);
+          primitivesToCheck++;
+        }
+      }
+      else
+      {
+        RDCWARN("Failed to find fragment data for event %d", eid);
+        eventsWithFrags.erase(eid);
       }
     }
 
@@ -3106,7 +3174,7 @@ rdcarray<PixelModification> D3D12Replay::PixelHistory(rdcarray<EventUsage> event
 
       m_pDevice->ReplayLog(0, events.back().eventId, eReplay_Full);
       m_pDevice->FlushLists(true);
-      m_pDevice->GPUSyncAllQueues();
+      m_pDevice->DeviceWaitForIdle();
       discardedCb.FetchOcclusionResults();
       SAFE_RELEASE(pDiscardedFragsOcclusionQueryHeap);
 
@@ -3136,37 +3204,45 @@ rdcarray<PixelModification> D3D12Replay::PixelHistory(rdcarray<EventUsage> event
             history[h].postMod = history[h - 1].postMod;
           continue;
         }
-        uint32_t offset = perFragmentCB.GetEventOffset(eid) + f - discardOffset;
-        if(multisampled)
-          memcpy(history[h].shaderOut.col.floatValue.data(), &fragInfo[offset].shaderOut.color[0],
-                 history[h].shaderOut.col.floatValue.byteSize());
-        else
-          FillInColor(shaderOutFormat, fragInfo[offset].shaderOut, history[h].shaderOut);
-
-        if(multisampled)
-          history[h].shaderOut.depth = fragInfo[offset].shaderOut.depth.fdepth;
-        else
-          history[h].shaderOut.depth =
-              GetDepthValue(DXGI_FORMAT_D32_FLOAT_S8X24_UINT, fragInfo[offset].shaderOut);
-
-        if((h < history.size() - 1) && (history[h].eventId == history[h + 1].eventId))
+        if(perFragmentCB.ContainsEvent(eid))
         {
-          // Get post-modification value if this is not the last fragment for the event.
-          ConvertAndFillInColor(shaderOutFormat, fragInfo[offset].postMod, fmt, history[h].postMod);
-
-          // MSAA depth is expanded out to floats in the compute shader
+          uint32_t offset = perFragmentCB.GetEventOffset(eid) + f - discardOffset;
           if(multisampled)
-            history[h].postMod.depth = fragInfo[offset].postMod.depth.fdepth;
+            memcpy(history[h].shaderOut.col.floatValue.data(), &fragInfo[offset].shaderOut.color[0],
+                   history[h].shaderOut.col.floatValue.byteSize());
           else
-            history[h].postMod.depth =
-                GetDepthValue(DXGI_FORMAT_D32_FLOAT_S8X24_UINT, fragInfo[offset].postMod);
-          history[h].postMod.stencil = -2;
+            FillInColor(shaderOutFormat, fragInfo[offset].shaderOut, history[h].shaderOut);
+
+          if(multisampled)
+            history[h].shaderOut.depth = fragInfo[offset].shaderOut.depth.fdepth;
+          else
+            history[h].shaderOut.depth =
+                GetDepthValue(DXGI_FORMAT_D32_FLOAT_S8X24_UINT, fragInfo[offset].shaderOut);
+
+          if((h < history.size() - 1) && (history[h].eventId == history[h + 1].eventId))
+          {
+            // Get post-modification value if this is not the last fragment for the event.
+            ConvertAndFillInColor(shaderOutFormat, fragInfo[offset].postMod, fmt, history[h].postMod);
+
+            // MSAA depth is expanded out to floats in the compute shader
+            if(multisampled)
+              history[h].postMod.depth = fragInfo[offset].postMod.depth.fdepth;
+            else
+              history[h].postMod.depth =
+                  GetDepthValue(DXGI_FORMAT_D32_FLOAT_S8X24_UINT, fragInfo[offset].postMod);
+            history[h].postMod.stencil = -2;
+          }
+          // If it is not the first fragment for the event, set the preMod to the
+          // postMod of the previous fragment.
+          if(h > 0 && (history[h].eventId == history[h - 1].eventId))
+          {
+            history[h].preMod = history[h - 1].postMod;
+          }
         }
-        // If it is not the first fragment for the event, set the preMod to the
-        // postMod of the previous fragment.
-        if(h > 0 && (history[h].eventId == history[h - 1].eventId))
+        else
         {
-          history[h].preMod = history[h - 1].postMod;
+          RDCWARN("Failed to find fragment data for event %d", eid);
+          eventsWithFrags.erase(eid);
         }
       }
 

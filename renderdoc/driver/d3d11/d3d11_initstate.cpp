@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1297,8 +1297,7 @@ void WrappedID3D11Device::Create_InitialState(ResourceId id, ID3D11DeviceChild *
   }
 }
 
-void WrappedID3D11Device::Apply_InitialState(ID3D11DeviceChild *live,
-                                             const D3D11InitialContents &initial)
+void WrappedID3D11Device::Apply_InitialState(ID3D11DeviceChild *live, D3D11InitialContents &initial)
 {
   if(HasFatalError())
     return;

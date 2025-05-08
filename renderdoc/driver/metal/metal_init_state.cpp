@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2022-2024 Baldur Karlsson
+ * Copyright (c) 2022-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -161,7 +161,7 @@ void WrappedMTLDevice::Create_InitialState(ResourceId id, WrappedMTLObject *live
   METAL_NOT_IMPLEMENTED();
 }
 
-void WrappedMTLDevice::Apply_InitialState(WrappedMTLObject *live, const MetalInitialContents &initial)
+void WrappedMTLDevice::Apply_InitialState(WrappedMTLObject *live, MetalInitialContents &initial)
 {
   METAL_NOT_IMPLEMENTED();
 }

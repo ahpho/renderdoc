@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,6 +32,14 @@
 #include "vk_common.h"
 #include "vk_dispatch_defs.h"
 #include "vk_hookset_defs.h"
+
+namespace Threading
+{
+namespace JobSystem
+{
+struct Job;
+};
+};
 
 struct VkResourceRecord;
 
@@ -157,7 +165,12 @@ struct WrappedVkNonDispRes : public WrappedVkRes
 
   RealVkRes real;
   ResourceId id;
-  VkResourceRecord *record;
+
+  union
+  {
+    VkResourceRecord *record;
+    Threading::JobSystem::Job *deferredJob;
+  };
 };
 
 class WrappedVulkan;
@@ -205,7 +218,11 @@ struct WrappedVkDispRes : public WrappedVkRes
   uintptr_t loaderTable, table;
   RealVkRes real;
   ResourceId id;
-  VkResourceRecord *record;
+  union
+  {
+    VkResourceRecord *record;
+    Threading::JobSystem::Job *deferredJob;
+  };
   // we store this here so that any entry point with a dispatchable object can find the
   // write instance to invoke into, without needing to keep any around. Its lifetime is
   // tied to the VkInstance
@@ -1071,6 +1088,24 @@ struct MemRefs
 struct ImgRefs;
 struct ImageState;
 
+class VkPendingSubmissionCompleteCallbacks
+{
+public:
+  VkPendingSubmissionCompleteCallbacks() = default;
+  VkPendingSubmissionCompleteCallbacks(const VkPendingSubmissionCompleteCallbacks &) = delete;
+  VkPendingSubmissionCompleteCallbacks(VkPendingSubmissionCompleteCallbacks &&) = delete;
+
+  void AddRef() { Atomic::Inc32(&refCount); }
+  void Release();
+
+  VkDevice device = VK_NULL_HANDLE;
+  VkEvent event = VK_NULL_HANDLE;
+  rdcarray<std::function<void()>> callbacks;
+
+private:
+  int32_t refCount = 1;
+};
+
 struct CmdPoolInfo
 {
   CmdPoolInfo() : pool(4 * 1024) {}
@@ -1087,13 +1122,19 @@ struct CmdPoolInfo
 
 struct CmdBufferRecordingInfo
 {
-  CmdBufferRecordingInfo(CmdPoolInfo &pool) : alloc(pool.pool) {}
+  CmdBufferRecordingInfo(CmdPoolInfo &pool)
+      : alloc(pool.pool),
+        pendingSubmissionCompleteCallbacks(new VkPendingSubmissionCompleteCallbacks())
+  {
+  }
   CmdBufferRecordingInfo(const CmdBufferRecordingInfo &) = delete;
   CmdBufferRecordingInfo(CmdBufferRecordingInfo &&) = delete;
   CmdBufferRecordingInfo &operator=(const CmdBufferRecordingInfo &) = delete;
   ~CmdBufferRecordingInfo()
   {
     // nothing to do explicitly, the alloc destructor will clean up any pages it holds
+    // pendingSubmissionCompleteCallbacks manages itself via ref-counting
+    pendingSubmissionCompleteCallbacks->Release();
   }
 
   VkDevice device;
@@ -1126,6 +1167,9 @@ struct CmdBufferRecordingInfo
 
   // A list of acceleration structures that this command buffer will build or copy
   rdcarray<VkResourceRecord *> accelerationStructures;
+
+  // The VkEvent and the list of callbacks to be executed once it has been signalled
+  VkPendingSubmissionCompleteCallbacks *pendingSubmissionCompleteCallbacks = NULL;
 
   // AdvanceFrame/Present should be called after this buffer is submitted
   bool present;
@@ -1549,6 +1593,16 @@ public:
     m_value = ImageSubresourceState(VK_QUEUE_FAMILY_IGNORED, UNKNOWN_PREV_IMG_LAYOUT, refType);
   }
 
+  bool IsInitialised() const
+  {
+    // When merging image states from a secondary command buffer into a primary, some of those image
+    // states may have been added in an unknown layout when the image was referenced and never
+    // updated. These cases need to be detected and handled separately, otherwise the layout
+    // transitions recorded to the primary may be improperly overwritten.
+    return (!m_values.empty() || m_value.oldLayout != UNKNOWN_PREV_IMG_LAYOUT ||
+            m_value.newLayout != UNKNOWN_PREV_IMG_LAYOUT);
+  }
+
   void ToArray(rdcarray<ImageSubresourceStateForRange> &arr);
 
   void FromArray(const rdcarray<ImageSubresourceStateForRange> &arr);
@@ -1717,6 +1771,13 @@ struct ImageBarrierSequence
     if(maxQueueFamilyIndex > MaxQueueFamilyIndex)
       MaxQueueFamilyIndex = maxQueueFamilyIndex;
   }
+
+  void ResizeForMaxQueueFamilyIndex(uint32_t maxQueueFamilyIndex)
+  {
+    for(uint32_t i = 0; i < MAX_BATCH_COUNT; i++)
+      batches[i].resize_for_index(maxQueueFamilyIndex);
+  }
+
   ImageBarrierSequence()
   {
     for(uint32_t i = 0; i < MAX_BATCH_COUNT; i++)
@@ -2192,6 +2253,17 @@ inline FrameRefType MarkMemoryReferenced(std::unordered_map<ResourceId, MemRefs>
   return MarkMemoryReferenced(memRefs, mem, offset, size, refType, ComposeFrameRefs);
 }
 
+// Used as an alternative backing store to VkQueryPool to replace query results
+class QueryPoolInfo
+{
+public:
+  QueryPoolInfo(WrappedVulkan *driver, VkDevice device, const VkQueryPoolCreateInfo *pCreateInfo);
+  ~QueryPoolInfo();
+
+  GPUBuffer m_Buffer;
+  byte *m_MappedMem;
+};
+
 struct DescUpdateTemplate;
 struct ImageLayouts;
 struct VkAccelerationStructureInfo;
@@ -2230,6 +2302,8 @@ public:
     cmdInfo->imageStates.swap(bakedCommands->cmdInfo->imageStates);
     cmdInfo->memFrameRefs.swap(bakedCommands->cmdInfo->memFrameRefs);
     cmdInfo->accelerationStructures.swap(bakedCommands->cmdInfo->accelerationStructures);
+    std::swap(cmdInfo->pendingSubmissionCompleteCallbacks,
+              bakedCommands->cmdInfo->pendingSubmissionCompleteCallbacks);
   }
 
   // we have a lot of 'cold' data in the resource record, as it can be accessed
@@ -2286,6 +2360,7 @@ public:
     DescPoolInfo *descPoolInfo;              // only for descriptor pools
     CmdPoolInfo *cmdPoolInfo;                // only for command pools
     uint32_t queueFamilyIndex;               // only for queues
+    QueryPoolInfo *queryPoolInfo;            // only for query pools
     VkAccelerationStructureInfo *accelerationStructureInfo;    // only for acceleration structures
   };
 

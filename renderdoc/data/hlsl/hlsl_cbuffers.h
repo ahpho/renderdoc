@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -283,7 +283,8 @@ struct BlasAddressPair
 // This corresponds to D3D12_RAYTRACING_INSTANCE_DESC structure
 struct InstanceDesc
 {
-  uint2 padding[7];
+  uint4 padding1[3];
+  uint2 padding2;
   GPUAddress blasAddress;
 };
 
@@ -337,7 +338,8 @@ struct LocalRootSigData
 
 cbuffer RayIndirectDispatchCB REG(b0)
 {
-  GPUAddress scratchBuffer;
+  GPUAddress destBuffer;
+  GPUAddress destBufferEnd;
 
   uint commandSigDispatchOffset;
   uint commandSigStride;
@@ -361,6 +363,14 @@ struct PatchingExecute
   uint2 padding2;
 };
 
+struct TLASCopyExecute
+{
+  uint index;
+  uint2 blasPointer;
+  uint3 dispatchDim;
+  uint2 padding;
+};
+
 cbuffer DebugSampleOperation REG(b0)
 {
   float4 debugSampleUV;
@@ -372,7 +382,8 @@ cbuffer DebugSampleOperation REG(b0)
   int debugSampleGatherChannel;
   int debugSampleSampleIndex;
   int debugSampleOperation;
-  float debugSampleLodCompare;
+  float debugSampleLod;
+  float debugSampleCompare;
 };
 
 #define DEBUG_SAMPLE_MATH_DXBC_RCP 1000
@@ -387,13 +398,17 @@ cbuffer DebugSampleOperation REG(b0)
 #define DEBUG_SAMPLE_TEX_SAMPLE_GRAD 103
 #define DEBUG_SAMPLE_TEX_SAMPLE_CMP 104
 #define DEBUG_SAMPLE_TEX_SAMPLE_CMP_LEVEL_ZERO 105
-#define DEBUG_SAMPLE_TEX_GATHER4 106
-#define DEBUG_SAMPLE_TEX_GATHER4_CMP 107
-#define DEBUG_SAMPLE_TEX_GATHER4_PO 108
-#define DEBUG_SAMPLE_TEX_GATHER4_PO_CMP 109
-#define DEBUG_SAMPLE_TEX_LOD 110
-#define DEBUG_SAMPLE_TEX_LOAD 111
-#define DEBUG_SAMPLE_TEX_LOAD_MS 112
+#define DEBUG_SAMPLE_TEX_SAMPLE_CMP_LEVEL 106    // SM 6.7
+#define DEBUG_SAMPLE_TEX_SAMPLE_CMP_BIAS 107     // SM 6.8
+#define DEBUG_SAMPLE_TEX_SAMPLE_CMP_GRAD 108     // SM 6.8
+
+#define DEBUG_SAMPLE_TEX_GATHER4 109
+#define DEBUG_SAMPLE_TEX_GATHER4_CMP 110
+#define DEBUG_SAMPLE_TEX_GATHER4_PO 111
+#define DEBUG_SAMPLE_TEX_GATHER4_PO_CMP 112
+#define DEBUG_SAMPLE_TEX_LOD 113
+#define DEBUG_SAMPLE_TEX_LOAD 114
+#define DEBUG_SAMPLE_TEX_LOAD_MS 115
 
 #define DEBUG_SAMPLE_TEX1D 1
 #define DEBUG_SAMPLE_TEX2D 2

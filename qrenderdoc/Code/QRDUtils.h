@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -247,6 +247,8 @@ public:
 
   static QString DeclareStruct(Packing::Rules pack, ResourceId shader, const QString &name,
                                const rdcarray<ShaderConstant> &members, uint32_t requiredByteStride);
+  static QString DeclareEnum(const QString &name, const rdcarray<ShaderConstant> &members,
+                             VarType baseType);
 };
 
 QVariantList GetVariants(ResourceFormat format, const ShaderConstant &var, const byte *&data,
@@ -265,6 +267,8 @@ QString TypeString(const SigParameter &sig);
 QString D3DSemanticString(const SigParameter &sig);
 QString GetComponentString(byte mask);
 
+QIcon MakeSwatchIcon(QWidget *parentWidget, QColor swatchColor);
+float ConvertLinearToSRGB(float linear);
 void CombineUsageEvents(
     ICaptureContext &ctx, const rdcarray<EventUsage> &usage,
     std::function<void(uint32_t startEID, uint32_t endEID, ResourceUsage use)> callback);
@@ -915,8 +919,12 @@ public:
 class QMenu;
 
 // helper for doing a manual blocking invoke of a dialog
-struct RDDialog
+class RDDialog : public QDialog
 {
+private:
+  Q_OBJECT
+
+public:
   static const QMessageBox::StandardButtons YesNoCancel;
 
   static QString DefaultBrowsePath;
@@ -993,6 +1001,14 @@ struct RDDialog
                                  const QString &dir = QString(), const QString &filter = QString(),
                                  QString *selectedFilter = NULL,
                                  QFileDialog::Options options = QFileDialog::Options());
+
+signals:
+  void aboutToClose(QCloseEvent *);
+  void keyPress(QKeyEvent *e);
+
+private:
+  void closeEvent(QCloseEvent *) override;
+  void keyPressEvent(QKeyEvent *e) override;
 };
 
 class QGridLayout;

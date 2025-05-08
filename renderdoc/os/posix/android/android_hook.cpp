@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -811,7 +811,7 @@ void LibraryHooks::EndHookRegistration()
       HOOK_DEBUG_PRINT("Calling callbacks for %s", it->first.c_str());
       for(FunctionLoadCallback callback : it->second)
         if(callback)
-          callback(handle);
+          callback(handle, it->first.c_str());
     }
   }
 

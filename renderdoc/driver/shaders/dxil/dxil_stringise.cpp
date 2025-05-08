@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,7 @@
 
 #include "dxil_bytecode.h"
 #include "dxil_common.h"
+#include "dxil_debuginfo.h"
 
 template <>
 rdcstr DoStringise(const DXIL::InstructionFlags &el)
@@ -125,6 +126,52 @@ rdcstr DoStringise(const DXIL::AtomicBinOpCode &el)
   }
   END_ENUM_STRINGISE();
 }
+
+template <>
+rdcstr DoStringise(const DXIL::QuadOpKind &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::QuadOpKind)
+  {
+    STRINGISE_ENUM_CLASS(ReadAcrossX)
+    STRINGISE_ENUM_CLASS(ReadAcrossY)
+    STRINGISE_ENUM_CLASS(ReadAcrossDiagonal)
+  }
+  END_ENUM_STRINGISE();
+};
+
+template <>
+rdcstr DoStringise(const DXIL::QuadVoteOpKind &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::QuadVoteOpKind)
+  {
+    STRINGISE_ENUM_CLASS(All)
+    STRINGISE_ENUM_CLASS(Any)
+  }
+  END_ENUM_STRINGISE();
+};
+
+template <>
+rdcstr DoStringise(const DXIL::PackMode &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::PackMode)
+  {
+    STRINGISE_ENUM_CLASS(Trunc)
+    STRINGISE_ENUM_CLASS(UClamp)
+    STRINGISE_ENUM_CLASS(SClamp)
+  }
+  END_ENUM_STRINGISE();
+};
+
+template <>
+rdcstr DoStringise(const DXIL::UnpackMode &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::UnpackMode)
+  {
+    STRINGISE_ENUM_CLASS(Unsigned)
+    STRINGISE_ENUM_CLASS(Signed)
+  }
+  END_ENUM_STRINGISE();
+};
 
 template <>
 rdcstr DoStringise(const DXIL::Operation &el)
@@ -518,6 +565,327 @@ rdcstr DoStringise(const DXIL::Type::ScalarKind &el)
     STRINGISE_ENUM_CLASS(Void);
     STRINGISE_ENUM_CLASS(Float);
     STRINGISE_ENUM_CLASS(Int);
+  }
+  END_ENUM_STRINGISE();
+}
+
+template <>
+rdcstr DoStringise(const DXIL::LLVMIntrinsicOp &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::LLVMIntrinsicOp);
+  {
+    STRINGISE_ENUM_CLASS(Unknown);
+    STRINGISE_ENUM_CLASS(DbgDeclare);
+    STRINGISE_ENUM_CLASS(DbgValue);
+    STRINGISE_ENUM_CLASS(LifetimeStart);
+    STRINGISE_ENUM_CLASS(LifetimeEnd);
+    STRINGISE_ENUM_CLASS(InvariantStart);
+    STRINGISE_ENUM_CLASS(InvariantEnd);
+  }
+  END_ENUM_STRINGISE();
+}
+
+template <>
+rdcstr DoStringise(const DXIL::DIBase::Type &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::DIBase::Type);
+  {
+    STRINGISE_ENUM_CLASS(File);
+    STRINGISE_ENUM_CLASS(CompileUnit);
+    STRINGISE_ENUM_CLASS(BasicType);
+    STRINGISE_ENUM_CLASS(DerivedType);
+    STRINGISE_ENUM_CLASS(CompositeType);
+    STRINGISE_ENUM_CLASS(TemplateTypeParameter);
+    STRINGISE_ENUM_CLASS(TemplateValueParameter);
+    STRINGISE_ENUM_CLASS(Subprogram);
+    STRINGISE_ENUM_CLASS(SubroutineType);
+    STRINGISE_ENUM_CLASS(GlobalVariable);
+    STRINGISE_ENUM_CLASS(LocalVariable);
+    STRINGISE_ENUM_CLASS(Expression);
+    STRINGISE_ENUM_CLASS(LexicalBlock);
+    STRINGISE_ENUM_CLASS(Subrange);
+    STRINGISE_ENUM_CLASS(Namespace);
+    STRINGISE_ENUM_CLASS(ImportedEntity);
+    STRINGISE_ENUM_CLASS(Enum);
+  }
+  END_ENUM_STRINGISE();
+};
+
+template <>
+rdcstr DoStringise(const DXIL::DW_OP &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::DW_OP);
+  {
+    STRINGISE_ENUM_CLASS(DW_OP_none);
+    STRINGISE_ENUM_CLASS(DW_OP_addr);
+    STRINGISE_ENUM_CLASS(DW_OP_deref);
+    STRINGISE_ENUM_CLASS(DW_OP_const1u);
+    STRINGISE_ENUM_CLASS(DW_OP_const1s);
+    STRINGISE_ENUM_CLASS(DW_OP_const2u);
+    STRINGISE_ENUM_CLASS(DW_OP_const2s);
+    STRINGISE_ENUM_CLASS(DW_OP_const4u);
+    STRINGISE_ENUM_CLASS(DW_OP_const4s);
+    STRINGISE_ENUM_CLASS(DW_OP_const8u);
+    STRINGISE_ENUM_CLASS(DW_OP_const8s);
+    STRINGISE_ENUM_CLASS(DW_OP_constu);
+    STRINGISE_ENUM_CLASS(DW_OP_consts);
+    STRINGISE_ENUM_CLASS(DW_OP_dup);
+    STRINGISE_ENUM_CLASS(DW_OP_drop);
+    STRINGISE_ENUM_CLASS(DW_OP_over);
+    STRINGISE_ENUM_CLASS(DW_OP_pick);
+    STRINGISE_ENUM_CLASS(DW_OP_swap);
+    STRINGISE_ENUM_CLASS(DW_OP_rot);
+    STRINGISE_ENUM_CLASS(DW_OP_xderef);
+    STRINGISE_ENUM_CLASS(DW_OP_abs);
+    STRINGISE_ENUM_CLASS(DW_OP_and);
+    STRINGISE_ENUM_CLASS(DW_OP_div);
+    STRINGISE_ENUM_CLASS(DW_OP_minus);
+    STRINGISE_ENUM_CLASS(DW_OP_mod);
+    STRINGISE_ENUM_CLASS(DW_OP_mul);
+    STRINGISE_ENUM_CLASS(DW_OP_neg);
+    STRINGISE_ENUM_CLASS(DW_OP_not);
+    STRINGISE_ENUM_CLASS(DW_OP_or);
+    STRINGISE_ENUM_CLASS(DW_OP_plus);
+    STRINGISE_ENUM_CLASS(DW_OP_plus_uconst);
+    STRINGISE_ENUM_CLASS(DW_OP_shl);
+    STRINGISE_ENUM_CLASS(DW_OP_shr);
+    STRINGISE_ENUM_CLASS(DW_OP_shra);
+    STRINGISE_ENUM_CLASS(DW_OP_xor);
+    STRINGISE_ENUM_CLASS(DW_OP_skip);
+    STRINGISE_ENUM_CLASS(DW_OP_bra);
+    STRINGISE_ENUM_CLASS(DW_OP_eq);
+    STRINGISE_ENUM_CLASS(DW_OP_ge);
+    STRINGISE_ENUM_CLASS(DW_OP_gt);
+    STRINGISE_ENUM_CLASS(DW_OP_le);
+    STRINGISE_ENUM_CLASS(DW_OP_lt);
+    STRINGISE_ENUM_CLASS(DW_OP_ne);
+    STRINGISE_ENUM_CLASS(DW_OP_lit0);
+    STRINGISE_ENUM_CLASS(DW_OP_lit1);
+    STRINGISE_ENUM_CLASS(DW_OP_lit2);
+    STRINGISE_ENUM_CLASS(DW_OP_lit3);
+    STRINGISE_ENUM_CLASS(DW_OP_lit4);
+    STRINGISE_ENUM_CLASS(DW_OP_lit5);
+    STRINGISE_ENUM_CLASS(DW_OP_lit6);
+    STRINGISE_ENUM_CLASS(DW_OP_lit7);
+    STRINGISE_ENUM_CLASS(DW_OP_lit8);
+    STRINGISE_ENUM_CLASS(DW_OP_lit9);
+    STRINGISE_ENUM_CLASS(DW_OP_lit10);
+    STRINGISE_ENUM_CLASS(DW_OP_lit11);
+    STRINGISE_ENUM_CLASS(DW_OP_lit12);
+    STRINGISE_ENUM_CLASS(DW_OP_lit13);
+    STRINGISE_ENUM_CLASS(DW_OP_lit14);
+    STRINGISE_ENUM_CLASS(DW_OP_lit15);
+    STRINGISE_ENUM_CLASS(DW_OP_lit16);
+    STRINGISE_ENUM_CLASS(DW_OP_lit17);
+    STRINGISE_ENUM_CLASS(DW_OP_lit18);
+    STRINGISE_ENUM_CLASS(DW_OP_lit19);
+    STRINGISE_ENUM_CLASS(DW_OP_lit20);
+    STRINGISE_ENUM_CLASS(DW_OP_lit21);
+    STRINGISE_ENUM_CLASS(DW_OP_lit22);
+    STRINGISE_ENUM_CLASS(DW_OP_lit23);
+    STRINGISE_ENUM_CLASS(DW_OP_lit24);
+    STRINGISE_ENUM_CLASS(DW_OP_lit25);
+    STRINGISE_ENUM_CLASS(DW_OP_lit26);
+    STRINGISE_ENUM_CLASS(DW_OP_lit27);
+    STRINGISE_ENUM_CLASS(DW_OP_lit28);
+    STRINGISE_ENUM_CLASS(DW_OP_lit29);
+    STRINGISE_ENUM_CLASS(DW_OP_lit30);
+    STRINGISE_ENUM_CLASS(DW_OP_lit31);
+    STRINGISE_ENUM_CLASS(DW_OP_reg0);
+    STRINGISE_ENUM_CLASS(DW_OP_reg1);
+    STRINGISE_ENUM_CLASS(DW_OP_reg2);
+    STRINGISE_ENUM_CLASS(DW_OP_reg3);
+    STRINGISE_ENUM_CLASS(DW_OP_reg4);
+    STRINGISE_ENUM_CLASS(DW_OP_reg5);
+    STRINGISE_ENUM_CLASS(DW_OP_reg6);
+    STRINGISE_ENUM_CLASS(DW_OP_reg7);
+    STRINGISE_ENUM_CLASS(DW_OP_reg8);
+    STRINGISE_ENUM_CLASS(DW_OP_reg9);
+    STRINGISE_ENUM_CLASS(DW_OP_reg10);
+    STRINGISE_ENUM_CLASS(DW_OP_reg11);
+    STRINGISE_ENUM_CLASS(DW_OP_reg12);
+    STRINGISE_ENUM_CLASS(DW_OP_reg13);
+    STRINGISE_ENUM_CLASS(DW_OP_reg14);
+    STRINGISE_ENUM_CLASS(DW_OP_reg15);
+    STRINGISE_ENUM_CLASS(DW_OP_reg16);
+    STRINGISE_ENUM_CLASS(DW_OP_reg17);
+    STRINGISE_ENUM_CLASS(DW_OP_reg18);
+    STRINGISE_ENUM_CLASS(DW_OP_reg19);
+    STRINGISE_ENUM_CLASS(DW_OP_reg20);
+    STRINGISE_ENUM_CLASS(DW_OP_reg21);
+    STRINGISE_ENUM_CLASS(DW_OP_reg22);
+    STRINGISE_ENUM_CLASS(DW_OP_reg23);
+    STRINGISE_ENUM_CLASS(DW_OP_reg24);
+    STRINGISE_ENUM_CLASS(DW_OP_reg25);
+    STRINGISE_ENUM_CLASS(DW_OP_reg26);
+    STRINGISE_ENUM_CLASS(DW_OP_reg27);
+    STRINGISE_ENUM_CLASS(DW_OP_reg28);
+    STRINGISE_ENUM_CLASS(DW_OP_reg29);
+    STRINGISE_ENUM_CLASS(DW_OP_reg30);
+    STRINGISE_ENUM_CLASS(DW_OP_reg31);
+    STRINGISE_ENUM_CLASS(DW_OP_breg0);
+    STRINGISE_ENUM_CLASS(DW_OP_breg1);
+    STRINGISE_ENUM_CLASS(DW_OP_breg2);
+    STRINGISE_ENUM_CLASS(DW_OP_breg3);
+    STRINGISE_ENUM_CLASS(DW_OP_breg4);
+    STRINGISE_ENUM_CLASS(DW_OP_breg5);
+    STRINGISE_ENUM_CLASS(DW_OP_breg6);
+    STRINGISE_ENUM_CLASS(DW_OP_breg7);
+    STRINGISE_ENUM_CLASS(DW_OP_breg8);
+    STRINGISE_ENUM_CLASS(DW_OP_breg9);
+    STRINGISE_ENUM_CLASS(DW_OP_breg10);
+    STRINGISE_ENUM_CLASS(DW_OP_breg11);
+    STRINGISE_ENUM_CLASS(DW_OP_breg12);
+    STRINGISE_ENUM_CLASS(DW_OP_breg13);
+    STRINGISE_ENUM_CLASS(DW_OP_breg14);
+    STRINGISE_ENUM_CLASS(DW_OP_breg15);
+    STRINGISE_ENUM_CLASS(DW_OP_breg16);
+    STRINGISE_ENUM_CLASS(DW_OP_breg17);
+    STRINGISE_ENUM_CLASS(DW_OP_breg18);
+    STRINGISE_ENUM_CLASS(DW_OP_breg19);
+    STRINGISE_ENUM_CLASS(DW_OP_breg20);
+    STRINGISE_ENUM_CLASS(DW_OP_breg21);
+    STRINGISE_ENUM_CLASS(DW_OP_breg22);
+    STRINGISE_ENUM_CLASS(DW_OP_breg23);
+    STRINGISE_ENUM_CLASS(DW_OP_breg24);
+    STRINGISE_ENUM_CLASS(DW_OP_breg25);
+    STRINGISE_ENUM_CLASS(DW_OP_breg26);
+    STRINGISE_ENUM_CLASS(DW_OP_breg27);
+    STRINGISE_ENUM_CLASS(DW_OP_breg28);
+    STRINGISE_ENUM_CLASS(DW_OP_breg29);
+    STRINGISE_ENUM_CLASS(DW_OP_breg30);
+    STRINGISE_ENUM_CLASS(DW_OP_breg31);
+    STRINGISE_ENUM_CLASS(DW_OP_regx);
+    STRINGISE_ENUM_CLASS(DW_OP_fbreg);
+    STRINGISE_ENUM_CLASS(DW_OP_bregx);
+    STRINGISE_ENUM_CLASS(DW_OP_piece);
+    STRINGISE_ENUM_CLASS(DW_OP_deref_size);
+    STRINGISE_ENUM_CLASS(DW_OP_xderef_size);
+    STRINGISE_ENUM_CLASS(DW_OP_nop);
+    STRINGISE_ENUM_CLASS(DW_OP_push_object_address);
+    STRINGISE_ENUM_CLASS(DW_OP_call2);
+    STRINGISE_ENUM_CLASS(DW_OP_call4);
+    STRINGISE_ENUM_CLASS(DW_OP_call_ref);
+    STRINGISE_ENUM_CLASS(DW_OP_form_tls_address);
+    STRINGISE_ENUM_CLASS(DW_OP_call_frame_cfa);
+    STRINGISE_ENUM_CLASS(DW_OP_bit_piece);
+    STRINGISE_ENUM_CLASS(DW_OP_implicit_value);
+    STRINGISE_ENUM_CLASS(DW_OP_stack_value);
+    STRINGISE_ENUM_CLASS(DW_OP_GNU_push_tls_address);
+    STRINGISE_ENUM_CLASS(DW_OP_GNU_addr_index);
+    STRINGISE_ENUM_CLASS(DW_OP_GNU_const_index);
+  }
+  END_ENUM_STRINGISE();
+};
+
+template <>
+rdcstr DoStringise(const DXIL::ValueKind &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::ValueKind);
+  {
+    STRINGISE_ENUM_CLASS(ForwardReferencePlaceholder);
+    STRINGISE_ENUM_CLASS(Literal);
+    STRINGISE_ENUM_CLASS(Alias);
+    STRINGISE_ENUM_CLASS(Constant);
+    STRINGISE_ENUM_CLASS(GlobalVar);
+    STRINGISE_ENUM_CLASS(Metadata);
+    STRINGISE_ENUM_CLASS(Instruction);
+    STRINGISE_ENUM_CLASS(Function);
+    STRINGISE_ENUM_CLASS(BasicBlock);
+  }
+  END_ENUM_STRINGISE();
+};
+
+template <>
+rdcstr DoStringise(const DXIL::BarrierMode &el)
+{
+  BEGIN_BITFIELD_STRINGISE(DXIL::BarrierMode);
+  {
+    STRINGISE_BITFIELD_CLASS_BIT(Invalid);
+    STRINGISE_BITFIELD_CLASS_BIT(SyncThreadGroup);
+    STRINGISE_BITFIELD_CLASS_BIT(UAVFenceGlobal);
+    STRINGISE_BITFIELD_CLASS_BIT(UAVFenceThreadGroup);
+    STRINGISE_BITFIELD_CLASS_BIT(TGSMFence);
+  }
+  END_BITFIELD_STRINGISE();
+};
+
+template <>
+rdcstr DoStringise(const DXIL::ResourceKind &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::ResourceKind);
+  {
+    STRINGISE_ENUM_CLASS(Unknown);
+    STRINGISE_ENUM_CLASS(Texture1D);
+    STRINGISE_ENUM_CLASS(Texture2D);
+    STRINGISE_ENUM_CLASS(Texture2DMS);
+    STRINGISE_ENUM_CLASS(Texture3D);
+    STRINGISE_ENUM_CLASS(TextureCube);
+    STRINGISE_ENUM_CLASS(Texture1DArray);
+    STRINGISE_ENUM_CLASS(Texture2DArray);
+    STRINGISE_ENUM_CLASS(Texture2DMSArray);
+    STRINGISE_ENUM_CLASS(TextureCubeArray);
+    STRINGISE_ENUM_CLASS(TypedBuffer);
+    STRINGISE_ENUM_CLASS(RawBuffer);
+    STRINGISE_ENUM_CLASS(StructuredBuffer);
+    STRINGISE_ENUM_CLASS(CBuffer);
+    STRINGISE_ENUM_CLASS(Sampler);
+    STRINGISE_ENUM_CLASS(TBuffer);
+    STRINGISE_ENUM_CLASS(RTAccelerationStructure);
+    STRINGISE_ENUM_CLASS(FeedbackTexture2D);
+    STRINGISE_ENUM_CLASS(FeedbackTexture2DArray);
+    STRINGISE_ENUM_CLASS(StructuredBufferWithCounter);
+    STRINGISE_ENUM_CLASS(SamplerComparison);
+  }
+  END_ENUM_STRINGISE();
+};
+
+template <>
+rdcstr DoStringise(const DXIL::WaveOpCode &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::WaveOpCode)
+  {
+    STRINGISE_ENUM_CLASS(Sum)
+    STRINGISE_ENUM_CLASS(Product)
+    STRINGISE_ENUM_CLASS(Min)
+    STRINGISE_ENUM_CLASS(Max)
+  }
+  END_ENUM_STRINGISE();
+}
+
+template <>
+rdcstr DoStringise(const DXIL::SignedOpKind &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::SignedOpKind)
+  {
+    STRINGISE_ENUM_CLASS(Signed)
+    STRINGISE_ENUM_CLASS(Unsigned)
+  }
+  END_ENUM_STRINGISE();
+}
+
+template <>
+rdcstr DoStringise(const DXIL::WaveBitOpCode &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::WaveBitOpCode)
+  {
+    STRINGISE_ENUM_CLASS(And)
+    STRINGISE_ENUM_CLASS(Or)
+    STRINGISE_ENUM_CLASS(Xor)
+  }
+  END_ENUM_STRINGISE();
+}
+
+template <>
+rdcstr DoStringise(const DXIL::WaveMultiPrefixOpCode &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::WaveMultiPrefixOpCode)
+  {
+    STRINGISE_ENUM_CLASS(Sum)
+    STRINGISE_ENUM_CLASS(And)
+    STRINGISE_ENUM_CLASS(Or)
+    STRINGISE_ENUM_CLASS(Xor)
+    STRINGISE_ENUM_CLASS(Product)
   }
   END_ENUM_STRINGISE();
 }

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -332,7 +332,8 @@ layout(set = 0, binding = 0) cbuffer consts
   float4 dummy1;
 
   float o[4];                             // should cover 4 float4s = 48, <..>, 52, <..>, 56, <..>, 60
-  float p;                                // can't be packed in with above array = 64, <65, 66, 67>
+  float p;                                // with glslang regression to scalar packing, is packed after = 61
+  float3 glslang_regression;
   float4 dummy2;
   float4 gldummy;
 
@@ -393,7 +394,8 @@ layout(set = 0, binding = 0) cbuffer consts
                                           // row1: {197, 201}
                                           //       <198, 202>
                                           //       <199, 203>
-  float z;                                // doesn't overlap in final row = 204, <205, 206, 207>
+  float z;                                // with glslang regression to scalar packing, is packed after = 202
+  float3 glslang_regression2;
 
   // SPIR-V can't represent single-dimension matrices properly at the moment
 /*
@@ -572,6 +574,10 @@ float4 main() : SV_Target0
     devExts.push_back(VK_KHR_RELAXED_BLOCK_LAYOUT_EXTENSION_NAME);
     optDevExts.push_back(VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME);
 
+    // new glslang has a regression that requires scalar block layout for hlsl and does not support
+    // generating non-scalar layout hlsl packing
+    devExts.push_back(VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME);
+
     VulkanGraphicsTest::Prepare(argc, argv);
 
     static VkPhysicalDeviceInlineUniformBlockFeaturesEXT inlineFeats = {
@@ -584,6 +590,19 @@ float4 main() : SV_Target0
       inlineFeats.pNext = (void *)devInfoNext;
       devInfoNext = &inlineFeats;
     }
+
+    static VkPhysicalDeviceScalarBlockLayoutFeaturesEXT scalarFeatures = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES_EXT,
+    };
+
+    getPhysFeatures2(&scalarFeatures);
+
+    if(!scalarFeatures.scalarBlockLayout)
+      Avail = "Scalar block layout feature 'scalarBlockLayout' not available";
+
+    scalarFeatures.pNext = (void *)devInfoNext;
+
+    devInfoNext = &scalarFeatures;
   }
 
   int main()
@@ -742,16 +761,14 @@ float4 main() : SV_Target0
 
     if(hasExt(VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME))
     {
-      VkWriteDescriptorSetInlineUniformBlockEXT inlineUpdate = {};
-      inlineUpdate.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK_EXT;
-      inlineUpdate.pData = &inlinedata;
-      inlineUpdate.dataSize = sizeof(inlinedata);
       vkh::updateDescriptorSets(
-          device, {
-                      vkh::WriteDescriptorSet(
-                          descset, 1, inlineUpdate,
-                          vkh::DescriptorBufferInfo(cb.buffer, bindOffset * sizeof(Vec4f))),
-                  });
+          device,
+          {
+              vkh::WriteDescriptorSet(
+                  descset, 1,
+                  vkh::WriteDescriptorSetInlineUniformBlockEXT(&inlinedata, sizeof(inlinedata)),
+                  vkh::DescriptorBufferInfo(cb.buffer, bindOffset * sizeof(Vec4f))),
+          });
     }
     else
     {

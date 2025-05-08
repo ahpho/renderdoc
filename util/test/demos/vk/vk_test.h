@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -41,6 +41,7 @@ struct AllocatedBuffer
   VmaAllocator allocator = NULL;
   VkBuffer buffer = VK_NULL_HANDLE;
   VmaAllocation alloc = {};
+  VkDeviceAddress address = 0;
 
   AllocatedBuffer() {}
   AllocatedBuffer(VulkanGraphicsTest *test, const VkBufferCreateInfo &bufInfo,
@@ -184,6 +185,7 @@ private:
   uint32_t semIdx = 0;
   VkSemaphore renderStartSemaphore[4] = {};
   VkSemaphore renderEndSemaphore[4] = {};
+  VkFence imageFences[4] = {};
   std::vector<VkFramebuffer> fbs;
 
   GraphicsWindow *m_Win;
@@ -217,6 +219,8 @@ struct VulkanGraphicsTest : public GraphicsTest
   void SubmitAndPresent(const std::vector<VkCommandBuffer> &cmds);
   void Present();
 
+  VkPipelineShaderStageCreateInfo LoadShaderModule(const std::string &filename, ShaderStage stage,
+                                                   const char *entry_point = "main");
   VkPipelineShaderStageCreateInfo CompileShaderModule(
       const std::string &source_text, ShaderLang lang, ShaderStage stage,
       const char *entry_point = "main", const std::map<std::string, std::string> &macros = {},
@@ -331,6 +335,7 @@ struct VulkanGraphicsTest : public GraphicsTest
 
   // VMA
   bool vmaDedicated = false;
+  bool vmaBDA = false;
   VmaAllocator allocator = VK_NULL_HANDLE;
 
 private:

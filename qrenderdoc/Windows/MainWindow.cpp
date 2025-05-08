@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -239,6 +239,9 @@ MainWindow::MainWindow(ICaptureContext &ctx) : QMainWindow(NULL), ui(new Ui::Mai
     {
       // do a remoteProbe immediately to populate the device list on startup.
       remoteProbe();
+
+      // allow any early-init replay host switches now that we've populated the device list
+      m_RemoteInitialProbeReady.release();
 
       // do several small sleeps so we can respond quicker when we need to shut down
       for(int i = 0; i < 50; i++)
@@ -692,7 +695,7 @@ void MainWindow::OnCaptureTrigger(const QString &exe, const QString &workingDir,
       {
         RDDialog::critical(
             this, tr("Error launching capture"),
-            tr("Error launching %1 for capture.\n\n%2.").arg(exe).arg(ret.result.Message()));
+            tr("Error launching %1 for capture.\n\n%2").arg(exe).arg(ret.result.Message()));
         return;
       }
 
@@ -1932,6 +1935,11 @@ void MainWindow::setRemoteHost(int hostIdx)
   if(!PromptCloseCapture())
     return;
 
+  // we only want to block once before the initial remoteProbe has happened. After that once we can
+  // acquire once, we re-release so the next one can happen
+  m_RemoteInitialProbeReady.acquire();
+  m_RemoteInitialProbeReady.release();
+
   rdcarray<RemoteHost> hosts = m_Ctx.Config().GetRemoteHosts();
 
   RemoteHost host;
@@ -2170,7 +2178,10 @@ void MainWindow::OnCaptureLoaded()
 
   statusProgress->setVisible(false);
 
-  ui->action_Recompress_Capture->setEnabled(true);
+  // don't allow capture recompress on opened images
+  QString driver = m_Ctx.Replay().GetCaptureAccess()->DriverName();
+  bool is_image = driver == lit("Image");
+  ui->action_Recompress_Capture->setEnabled(!is_image);
 
   ui->action_Start_Replay_Loop->setEnabled(true);
   ui->action_Open_RGP_Profile->setEnabled(
@@ -2577,7 +2588,7 @@ void MainWindow::on_action_Start_Replay_Loop_triggered()
   if(!m_Ctx.IsCaptureLoaded())
     return;
 
-  QDialog popup;
+  RDDialog popup;
   popup.setWindowFlags(popup.windowFlags() & ~Qt::WindowContextHelpButtonHint);
   popup.setWindowIcon(windowIcon());
 
@@ -2639,6 +2650,13 @@ void MainWindow::on_action_Start_Replay_Loop_triggered()
   WindowingData winData = m_Ctx.CreateWindowingData(&popup);
 
   m_Ctx.Replay().AsyncInvoke([winData, id](IReplayController *r) { r->ReplayLoop(winData, id); });
+
+  QObject::connect(&popup, &RDDialog::aboutToClose,
+                   [this](QCloseEvent *) { m_Ctx.Replay().CancelReplayLoop(); });
+  QObject::connect(&popup, &RDDialog::keyPress, [this](QKeyEvent *e) {
+    if(e->matches(QKeySequence::Cancel))
+      m_Ctx.Replay().CancelReplayLoop();
+  });
 
   RDDialog::show(&popup);
 

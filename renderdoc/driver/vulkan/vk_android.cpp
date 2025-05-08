@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -90,7 +90,7 @@ void VulkanReplay::OutputWindow::CreateSurface(WrappedVulkan *driver, VkInstance
   createInfo.window = wnd;
 
   VkResult vkr = ObjDisp(inst)->CreateAndroidSurfaceKHR(Unwrap(inst), &createInfo, NULL, &surface);
-  driver->CheckVkResult(vkr);
+  CHECK_VKR(driver, vkr);
 }
 
 void VulkanReplay::GetOutputWindowDimensions(uint64_t id, int32_t &w, int32_t &h)

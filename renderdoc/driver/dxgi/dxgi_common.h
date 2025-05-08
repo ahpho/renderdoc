@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -74,7 +74,7 @@ void WarnUnknownGUID(const char *name, REFIID riid);
 
 struct ReplayOptions;
 
-rdcstr GetDriverVersion(DXGI_ADAPTER_DESC &desc);
+rdcstr GetDriverVersion(DXGI_ADAPTER_DESC &desc, LARGE_INTEGER adapterQueryVersion);
 void ChooseBestMatchingAdapter(GraphicsAPI api, IDXGIFactory *factory,
                                const DXGI_ADAPTER_DESC &AdapterDesc, const ReplayOptions &opts,
                                bool *useWarp, IDXGIAdapter **adapter);

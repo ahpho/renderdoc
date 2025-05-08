@@ -5,9 +5,12 @@ import rdtest
 # Not a direct test, re-used by API-specific tests
 class Buffer_Truncation(rdtest.TestCase):
     internal = True
+    draw_action = None
 
     def check_capture(self):
-        action = self.find_action("Draw")
+        action = self.draw_action
+        if action is None:
+            action = self.find_action("Draw")
 
         self.check(action is not None)
 
@@ -148,7 +151,7 @@ class Buffer_Truncation(rdtest.TestCase):
                     self.check(all(['consts.padding[' in c.name for c in cbuf_sourceVars[0:16]]))
                     self.check(cbuf_sourceVars[16].name == 'consts.outcol')
 
-                    self.check(cbuf_sourceVars[16].variables[0].name == 'cb0[16]')
+                    self.check(cbuf_sourceVars[16].variables[0].name == 'cb0[16]' or cbuf_sourceVars[16].variables[0].name == 'consts[16]')
 
                     if not rdtest.value_compare(debugged_cb.value.f32v[0:4], [0.0, 0.0, 0.0, 0.0]):
                         raise rdtest.TestFailureException("expected outcol to be 0s, but got {}".format(debugged_cb.members[1].value.f32v[0:4]))

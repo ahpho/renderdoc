@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2021-2024 Baldur Karlsson
+ * Copyright (c) 2021-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -223,11 +223,14 @@ private:
         // how many remaining bits are there in the next byte
         const size_t remainingBits = bufBitSize - 8;
 
-        buf++;
-        b = *buf;
-        // mask as necessary
-        if(remainingBits < 8)
-          b &= (1 << remainingBits) - 1;
+        if(remainingBits > 0)
+        {
+          buf++;
+          b = *buf;
+          // mask as necessary
+          if(remainingBits < 8)
+            b &= (1 << remainingBits) - 1;
+        }
       }
 
       bufBitSize -= 8;

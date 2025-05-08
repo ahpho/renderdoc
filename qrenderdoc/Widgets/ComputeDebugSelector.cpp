@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2021-2024 Baldur Karlsson
+ * Copyright (c) 2021-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -63,6 +63,21 @@ ComputeDebugSelector::ComputeDebugSelector(QWidget *parent)
 ComputeDebugSelector::~ComputeDebugSelector()
 {
   delete ui;
+}
+
+void ComputeDebugSelector::SetDefaultDispatch(const rdcfixedarray<uint32_t, 3> &group,
+                                              const rdcfixedarray<uint32_t, 3> &thread)
+{
+  QSignalBlocker blockers[6] = {QSignalBlocker(ui->groupX),  QSignalBlocker(ui->groupY),
+                                QSignalBlocker(ui->groupZ),  QSignalBlocker(ui->threadX),
+                                QSignalBlocker(ui->threadY), QSignalBlocker(ui->threadZ)};
+
+  ui->groupX->setValue(group[0]);
+  ui->groupY->setValue(group[1]);
+  ui->groupZ->setValue(group[2]);
+  ui->threadX->setValue(thread[0]);
+  ui->threadY->setValue(thread[1]);
+  ui->threadZ->setValue(thread[2]);
 }
 
 void ComputeDebugSelector::SetThreadBounds(const rdcfixedarray<uint32_t, 3> &group,

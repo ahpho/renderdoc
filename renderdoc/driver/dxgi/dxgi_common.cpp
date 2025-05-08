@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1833,7 +1833,7 @@ static uint32_t HexToInt(char hex)
   return 0;
 }
 
-rdcstr GetDriverVersion(DXGI_ADAPTER_DESC &desc)
+rdcstr GetDriverVersion(DXGI_ADAPTER_DESC &desc, LARGE_INTEGER adapterQueryVersion)
 {
   rdcstr device = StringFormat::Wide2UTF8(rdcwstr(desc.Description));
 
@@ -1863,10 +1863,6 @@ rdcstr GetDriverVersion(DXGI_ADAPTER_DESC &desc)
       SetupDiDestroyDeviceInfoList(devs);
       return device;
     }
-
-    // if we got a version, and didn't have one yet, set it
-    if(driverVersion.empty())
-      driverVersion = version;
 
     rdcstr pciid = GetDeviceProperty(devs, &data, &DEVPKEY_Device_MatchingDeviceId);
 
@@ -1906,6 +1902,13 @@ rdcstr GetDriverVersion(DXGI_ADAPTER_DESC &desc)
     RDCEraseEl(data);
     data.cbSize = sizeof(data);
     idx++;
+  }
+
+  if(driverVersion.empty())
+  {
+    driverVersion = StringFormat::Fmt(
+        "%u.%u.%u.%u", adapterQueryVersion.HighPart >> 16, adapterQueryVersion.HighPart & 0xffff,
+        adapterQueryVersion.LowPart >> 16, adapterQueryVersion.LowPart & 0xffff);
   }
 
   SetupDiDestroyDeviceInfoList(devs);

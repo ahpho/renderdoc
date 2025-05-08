@@ -13,7 +13,7 @@ https://github.com/baldurk/renderdoc/blob/v1.x/docs/CONTRIBUTING/Filing-Issues.m
 I'm happy to help, but you have to ensure I fully understand what you want and have the information I need. If you're unsure, please read the guide above for full information on what is expected for filing issues.
 -->
 
-## Description
+## Description of Feature
 
 <!-- Here you should not just describe what feature you want. Please describe the context of what you are trying to do or what workflow you would like, and why you can't do that with RenderDoc today. -->
 

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -84,7 +84,7 @@ void setupRenderingInfo(const VulkanRenderState::DynamicRendering &dynamicRender
     if(!att)
       continue;
 
-    if(att->loadOp != VK_ATTACHMENT_LOAD_OP_NONE_KHR)
+    if(att->loadOp != VK_ATTACHMENT_LOAD_OP_NONE)
       att->loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 
     if(att->storeOp != VK_ATTACHMENT_STORE_OP_NONE)
@@ -229,6 +229,16 @@ void VulkanRenderState::BeginRenderPassAndApplyState(WrappedVulkan *vk, VkComman
     beginInfo.flags = conditionalRendering.flags;
 
     ObjDisp(cmd)->CmdBeginConditionalRenderingEXT(Unwrap(cmd), &beginInfo);
+  }
+
+  if(dynamicRendering.localRead.AreLocationsNonDefault())
+  {
+    dynamicRendering.localRead.SetLocations(cmd);
+  }
+
+  if(dynamicRendering.localRead.AreInputIndicesNonDefault())
+  {
+    dynamicRendering.localRead.SetInputIndices(cmd);
   }
 }
 
@@ -673,7 +683,7 @@ void VulkanRenderState::BindDynamicState(WrappedVulkan *vk, VkCommandBuffer cmd)
     ObjDisp(cmd)->CmdSetDiscardRectangleEXT(Unwrap(cmd), 0, (uint32_t)discardRectangles.size(),
                                             &discardRectangles[0]);
 
-  if(stippleFactor && dynamicStates[VkDynamicLineStippleKHR])
+  if(stippleFactor && dynamicStates[VkDynamicLineStipple])
     ObjDisp(cmd)->CmdSetLineStippleEXT(Unwrap(cmd), stippleFactor, stipplePattern);
 
   if(vk->FragmentShadingRate())
@@ -695,11 +705,16 @@ void VulkanRenderState::BindDynamicState(WrappedVulkan *vk, VkCommandBuffer cmd)
     if(ibuffer.bytewidth == 4)
       type = VK_INDEX_TYPE_UINT32;
     else if(ibuffer.bytewidth == 1)
-      type = VK_INDEX_TYPE_UINT8_KHR;
+      type = VK_INDEX_TYPE_UINT8;
 
-    ObjDisp(cmd)->CmdBindIndexBuffer(
-        Unwrap(cmd), Unwrap(vk->GetResourceManager()->GetCurrentHandle<VkBuffer>(ibuffer.buf)),
-        ibuffer.offs, type);
+    if(vk->Maintenance5() && ibuffer.size != VK_WHOLE_SIZE)
+      ObjDisp(cmd)->CmdBindIndexBuffer2KHR(
+          Unwrap(cmd), Unwrap(vk->GetResourceManager()->GetCurrentHandle<VkBuffer>(ibuffer.buf)),
+          ibuffer.offs, ibuffer.size, type);
+    else
+      ObjDisp(cmd)->CmdBindIndexBuffer(
+          Unwrap(cmd), Unwrap(vk->GetResourceManager()->GetCurrentHandle<VkBuffer>(ibuffer.buf)),
+          ibuffer.offs, type);
   }
 
   if((vk->DynamicVertexInput() || vk->ShaderObject()) && dynamicStates[VkDynamicVertexInputEXT])
@@ -1058,7 +1073,7 @@ void VulkanRenderState::BindDescriptorSet(WrappedVulkan *vk, const DescSetLayout
   ResourceId pipeLayout = GetPipeline(bindPoint).descSets[setIndex].pipeLayout;
   VkPipelineLayout layout = vk->GetResourceManager()->GetCurrentHandle<VkPipelineLayout>(pipeLayout);
 
-  if((descLayout.flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR) == 0)
+  if((descLayout.flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT) == 0)
   {
     ObjDisp(cmd)->CmdBindDescriptorSets(
         Unwrap(cmd), bindPoint, Unwrap(layout), (uint32_t)setIndex, 1,

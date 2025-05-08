@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -37,6 +37,16 @@
 #include "d3d12_common.h"
 #include "d3d12_manager.h"
 
+typedef struct D3D11_RESOURCE_FLAGS
+{
+  UINT BindFlags;
+  UINT MiscFlags;
+  UINT CPUAccessFlags;
+  UINT StructureByteStride;
+} D3D11_RESOURCE_FLAGS;
+
+#include "driver/dx/official/d3d12compatibility.h"
+
 struct IAmdExtD3DFactory;
 
 struct D3D12InitParams
@@ -54,7 +64,7 @@ struct D3D12InitParams
   UINT SDKVersion = 0;
 
   // check if a frame capture section version is supported
-  static const uint64_t CurrentVersion = 0x12;
+  static const uint64_t CurrentVersion = 0x13;
 
   static bool IsSupportedVersion(uint64_t ver);
 };
@@ -447,55 +457,6 @@ public:
   virtual void STDMETHODCALLTYPE EndCapturableWork(_In_ REFGUID guid);
 };
 
-// these aren't documented, they're defined in D3D12TranslationLayer in the d3d11on12 codebase
-typedef enum D3D12_COMPATIBILITY_SHARED_FLAGS
-{
-  D3D12_COMPATIBILITY_SHARED_FLAG_NONE = 0,
-  D3D12_COMPATIBILITY_SHARED_FLAG_NON_NT_HANDLE = 0x1,
-  D3D12_COMPATIBILITY_SHARED_FLAG_KEYED_MUTEX = 0x2,
-  D3D12_COMPATIBILITY_SHARED_FLAG_9_ON_12 = 0x4
-} D3D12_COMPATIBILITY_SHARED_FLAGS;
-
-typedef enum D3D12_REFLECT_SHARED_PROPERTY
-{
-  D3D12_REFLECT_SHARED_PROPERTY_D3D11_RESOURCE_FLAGS = 0,
-  D3D12_REFELCT_SHARED_PROPERTY_COMPATIBILITY_SHARED_FLAGS =
-      (D3D12_REFLECT_SHARED_PROPERTY_D3D11_RESOURCE_FLAGS + 1),
-  D3D12_REFLECT_SHARED_PROPERTY_NON_NT_SHARED_HANDLE =
-      (D3D12_REFELCT_SHARED_PROPERTY_COMPATIBILITY_SHARED_FLAGS + 1)
-} D3D12_REFLECT_SHARED_PROPERTY;
-
-typedef struct D3D11_RESOURCE_FLAGS
-{
-  UINT BindFlags;
-  UINT MiscFlags;
-  UINT CPUAccessFlags;
-  UINT StructureByteStride;
-} D3D11_RESOURCE_FLAGS;
-
-MIDL_INTERFACE("8f1c0e3c-fae3-4a82-b098-bfe1708207ff")
-ID3D12CompatibilityDevice : public IUnknown
-{
-public:
-  virtual HRESULT STDMETHODCALLTYPE CreateSharedResource(
-      _In_ const D3D12_HEAP_PROPERTIES *pHeapProperties, D3D12_HEAP_FLAGS HeapFlags,
-      _In_ const D3D12_RESOURCE_DESC *pDesc, D3D12_RESOURCE_STATES InitialResourceState,
-      _In_opt_ const D3D12_CLEAR_VALUE *pOptimizedClearValue,
-      _In_opt_ const D3D11_RESOURCE_FLAGS *pFlags11,
-      D3D12_COMPATIBILITY_SHARED_FLAGS CompatibilityFlags,
-      _In_opt_ ID3D12LifetimeTracker *pLifetimeTracker,
-      _In_opt_ ID3D12SwapChainAssistant *pOwningSwapchain, REFIID riid,
-      _COM_Outptr_opt_ void **ppResource) = 0;
-
-  virtual HRESULT STDMETHODCALLTYPE CreateSharedHeap(
-      _In_ const D3D12_HEAP_DESC *pHeapDesc, D3D12_COMPATIBILITY_SHARED_FLAGS CompatibilityFlags,
-      REFIID riid, _COM_Outptr_opt_ void **ppHeap) = 0;
-
-  virtual HRESULT STDMETHODCALLTYPE ReflectSharedProperties(
-      _In_ ID3D12Object * pHeapOrResource, D3D12_REFLECT_SHARED_PROPERTY ReflectType,
-      _Out_writes_bytes_(DataSize) void *pData, UINT DataSize) = 0;
-};
-
 struct WrappedCompatibilityDevice : public ID3D12CompatibilityDevice
 {
   WrappedID3D12Device &m_pDevice;
@@ -588,7 +549,27 @@ class WrappedID3D12CommandQueue;
   template <typename SerialiserType>                         \
   bool CONCAT(Serialise_, func(SerialiserType &ser, __VA_ARGS__));
 
-class WrappedID3D12Device : public IFrameCapturer, public ID3DDevice, public ID3D12Device12
+template <typename DRED_NODE>
+inline void GetDREDContexts(const DRED_NODE *node, D3D12_DRED_BREADCRUMB_CONTEXT **contexts,
+                            UINT &numContexts);
+
+template <>
+inline void GetDREDContexts(const D3D12_AUTO_BREADCRUMB_NODE *node,
+                            D3D12_DRED_BREADCRUMB_CONTEXT **contexts, UINT &numContexts)
+{
+  *contexts = NULL;
+  numContexts = 0;
+}
+
+template <>
+inline void GetDREDContexts(const D3D12_AUTO_BREADCRUMB_NODE1 *node,
+                            D3D12_DRED_BREADCRUMB_CONTEXT **contexts, UINT &numContexts)
+{
+  *contexts = node->pBreadcrumbContexts;
+  numContexts = node->BreadcrumbContextsCount;
+}
+
+class WrappedID3D12Device : public IFrameCapturer, public ID3DDevice, public ID3D12Device14
 {
 private:
   ID3D12Device *m_pDevice;
@@ -604,6 +585,8 @@ private:
   ID3D12Device10 *m_pDevice10;
   ID3D12Device11 *m_pDevice11;
   ID3D12Device12 *m_pDevice12;
+  ID3D12Device13 *m_pDevice13;
+  ID3D12Device14 *m_pDevice14;
   ID3D12DeviceDownlevel *m_pDownlevel;
 
   WrappedID3D12DeviceConfiguration m_DevConfig;
@@ -612,8 +595,8 @@ private:
   rdcarray<WrappedID3D12CommandQueue *> m_Queues;
   rdcarray<ID3D12Fence *> m_QueueFences;
 
-  // if we've called GPUSyncAllQueues since the last replay
-  bool m_GPUSynced = false;
+  // if we've called ReplayWorkWaitForIdle since the last replay or internal work
+  bool m_WaitedForIdleAfterReplay = false;
 
   // list of queues and buffers kept alive during capture artificially even if the user destroys
   // them, so we can use them in the capture. Storing this separately prevents races where a
@@ -622,9 +605,10 @@ private:
   rdcarray<WrappedID3D12CommandQueue *> m_RefQueues;
   rdcarray<ID3D12Resource *> m_RefBuffers;
 
-  rdcarray<D3D12ResourceRecord *> m_ForcedReferences;
+  std::unordered_set<D3D12ResourceRecord *> m_ForcedReferences;
   Threading::CriticalSection m_ForcedReferencesLock;
   bool m_HaveSeenASBuild = false;
+  Intervals<ResourceId> m_ASDebugTracking;
 
   int64_t m_QueueCounter = 0;
 
@@ -634,7 +618,9 @@ private:
 
     {
       SCOPED_LOCK(m_ForcedReferencesLock);
-      ret = m_ForcedReferences;
+      ret.reserve(m_ForcedReferences.size());
+      for(auto it = m_ForcedReferences.begin(); it != m_ForcedReferences.end(); ++it)
+        ret.push_back(*it);
     }
 
     return ret;
@@ -648,9 +634,16 @@ private:
   ID3D12GraphicsCommandList *m_DataUploadList[64] = {};
   size_t m_CurDataUpload = 0;
   ID3D12DescriptorHeap *m_RTVHeap = NULL;
-  ID3D12Fence *m_GPUSyncFence;
-  HANDLE m_GPUSyncHandle;
-  UINT64 m_GPUSyncCounter;
+  ID3D12Fence *m_WFIFence;
+  HANDLE m_WFIHandle;
+  UINT64 m_WFICounter;
+
+  ID3D12Fence *m_OverlayFence = NULL;
+  UINT64 m_CurOverlay = 0;
+  HANDLE m_OverlaySyncHandle;
+  static const uint64_t MaxOverlayInFlight = 5;
+  ID3D12CommandAllocator *m_OverlayAllocs[MaxOverlayInFlight] = {};
+  ID3D12GraphicsCommandList *m_OverlayLists[MaxOverlayInFlight] = {};
 
   WrappedDownlevelDevice m_WrappedDownlevel;
   WrappedDRED m_DRED;
@@ -685,6 +678,8 @@ private:
   DummyID3D12DebugDevice m_DummyDebug;
   WrappedID3D12DebugDevice m_WrappedDebug;
   WrappedID3D12SharingContract m_SharingContract;
+
+  D3D_ROOT_SIGNATURE_VERSION m_RootSigVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
 
   D3D12Replay *m_Replay;
   D3D12ShaderCache *m_ShaderCache = NULL;
@@ -739,6 +734,11 @@ private:
   rdcarray<FrameDescription> m_CapturedFrames;
   rdcarray<ActionDescription *> m_Actions;
 
+  rdcarray<rdcpair<ID3D12DeviceChild *, rdcstr>> m_CustomNames;
+
+  Threading::CriticalSection m_DeferredResultLock;
+  RDResult m_DeferredResult = ResultCode::Succeeded;
+  double m_DeferredTime = 0.0;
   RDResult m_FailedReplayResult = ResultCode::APIReplayFailed;
 
   bool m_AppControlledCapture = false;
@@ -753,6 +753,7 @@ private:
   uint32_t m_SubmitCounter = 0;
 
   bool m_UsedDXIL = false;
+  bool m_UsedRT = false;
 
   DriverInformation m_DriverInfo = {};
 
@@ -824,6 +825,49 @@ private:
   bool Serialise_CaptureScope(SerialiserType &ser);
   void EndCaptureFrame();
 
+  void DumpDREDPageFault(const D3D12_DRED_PAGE_FAULT_OUTPUT &DredPageFaultOutput);
+
+  template <typename DRED_NODE>
+  void DumpDRED(DRED_NODE *head)
+  {
+    uint32_t i = 0, count = 0;
+    while(head && i < 100)
+    {
+      D3D12_AUTO_BREADCRUMB_NODE *node = (D3D12_AUTO_BREADCRUMB_NODE *)head;
+
+      // stop if this is a terminal node
+      if(node == NULL || node->pLastBreadcrumbValue == NULL)
+        break;
+
+      count++;
+
+      // if this node is fully executed or not executed at all keep going to get the count, but don't process
+      if(*node->pLastBreadcrumbValue == node->BreadcrumbCount || *node->pLastBreadcrumbValue == 0)
+      {
+        head = head->pNext;
+        i++;
+        continue;
+      }
+
+      D3D12_DRED_BREADCRUMB_CONTEXT *contexts = NULL;
+      UINT numContexts = 0;
+
+      GetDREDContexts(head, &contexts, numContexts);
+
+      RDCLOG("DRED node %u:", i);
+
+      DumpDRED(node, contexts, numContexts);
+
+      head = head->pNext;
+      i++;
+    }
+
+    RDCLOG("%u DRED nodes found", count);
+  }
+
+  void DumpDRED(D3D12_AUTO_BREADCRUMB_NODE *head, D3D12_DRED_BREADCRUMB_CONTEXT *contexts,
+                UINT numContexts);
+
   bool m_debugLayerEnabled;
 
   static Threading::CriticalSection m_DeviceWrappersLock;
@@ -844,6 +888,7 @@ public:
     return m_DescriptorIncrements[type];
   }
 
+  D3D_ROOT_SIGNATURE_VERSION RootSigVersion() const { return m_RootSigVersion; }
   const D3D12_FEATURE_DATA_D3D12_OPTIONS &GetOpts() { return m_D3D12Opts; }
   const D3D12_FEATURE_DATA_D3D12_OPTIONS1 &GetOpts1() { return m_D3D12Opts1; }
   const D3D12_FEATURE_DATA_D3D12_OPTIONS2 &GetOpts2() { return m_D3D12Opts2; }
@@ -858,11 +903,7 @@ public:
   const D3D12_FEATURE_DATA_D3D12_OPTIONS16 &GetOpts16() { return m_D3D12Opts16; }
   void RemoveQueue(WrappedID3D12CommandQueue *queue);
 
-  void AddForcedReference(D3D12ResourceRecord *record)
-  {
-    SCOPED_LOCK(m_ForcedReferencesLock);
-    m_ForcedReferences.push_back(record);
-  }
+  void AddForcedReference(D3D12ResourceRecord *record);
 
   // only valid on replay
   const std::map<ResourceId, WrappedID3D12Resource *> &GetResourceList() { return *m_ResourceList; }
@@ -910,7 +951,11 @@ public:
     else
       m_OOMHandler--;
   }
-  void CheckHRESULT(HRESULT hr);
+  void CheckHRESULT(const char *file, int line, HRESULT hr);
+
+  void CheckDeferredResult(const RDResult &res);
+  void AddDeferredTime(double ms);
+
   void ReportFatalError(RDResult error) { m_FatalError = error; }
   RDResult FatalErrorCheck() { return m_FatalError; }
   bool HasFatalError() { return m_FatalError != ResultCode::Succeeded; }
@@ -1005,6 +1050,9 @@ public:
   ID3D12GraphicsCommandListX *GetNewList();
   ID3D12GraphicsCommandListX *GetInitialStateList();
 
+  ID3D12GraphicsCommandListX *StealNewList();
+  void ReturnStolenList(ID3D12GraphicsCommandListX *list);
+
   bool IsReadOnlyResource(ResourceId id) { return m_ModResources.find(id) == m_ModResources.end(); }
   void CloseInitialStateList();
   ID3D12Resource *GetUploadBuffer(uint64_t chunkOffset, uint64_t byteSize);
@@ -1021,12 +1069,20 @@ public:
                    bool InFrameCaptureBoundary = false);
   void MarkListExecuted(ID3D12GraphicsCommandListX *list);
   void ExecuteLists(WrappedID3D12CommandQueue *queue = NULL, bool InFrameCaptureBoundary = false);
-  void FlushLists(bool forceSync = false, ID3D12CommandQueue *queue = NULL);
+  void FlushLists(bool forceSync = false);
 
   void DataUploadSync();
 
-  void GPUSync(ID3D12CommandQueue *queue = NULL, ID3D12Fence *fence = NULL);
-  void GPUSyncAllQueues();
+  // Sync a single queue, by submitting the fence then waiting on it
+  void QueueWaitForIdle(ID3D12CommandQueue *queue, ID3D12Fence *fence);
+  // Sync to the internal queue - used to ensure any internal work has finished (e.g. FlushLists() above)
+  // or generally any internal command buffers submitted to the GetQueue() main internal queue.
+  void InternalQueueWaitForIdle();
+  // Sync all queues - this always flushes the entire GPU
+  void DeviceWaitForIdle();
+  // Sync all queues but only once after each replay or internal work submit. used when fetching data
+  // or after a replay to ensure work completes on all captured queues before doing any analysis work
+  void ReplayWorkWaitForIdle();
 
   RDCDriver GetFrameCaptureDriver() { return RDCDriver::D3D12; }
   void StartFrameCapture(DeviceOwnedWindow devWnd);
@@ -1077,7 +1133,8 @@ public:
        iid == __uuidof(ID3D12Device6) || iid == __uuidof(ID3D12Device7) ||
        iid == __uuidof(ID3D12Device8) || iid == __uuidof(ID3D12Device9) ||
        iid == __uuidof(ID3D12Device10) || iid == __uuidof(ID3D12Device11) ||
-       iid == __uuidof(ID3D12Device12))
+       iid == __uuidof(ID3D12Device12) || iid == __uuidof(ID3D12Device13) ||
+       iid == __uuidof(ID3D12Device14))
       return true;
 
     return false;
@@ -1110,6 +1167,10 @@ public:
       return (ID3D12Device11 *)this;
     else if(iid == __uuidof(ID3D12Device12))
       return (ID3D12Device12 *)this;
+    else if(iid == __uuidof(ID3D12Device13))
+      return (ID3D12Device13 *)this;
+    else if(iid == __uuidof(ID3D12Device14))
+      return (ID3D12Device14 *)this;
 
     RDCERR("Requested unknown device interface %s", ToStr(iid).c_str());
 
@@ -1219,6 +1280,18 @@ public:
       this->AddRef();
       return S_OK;
     }
+    else if(riid == __uuidof(ID3D12Device13))
+    {
+      *ppvDevice = (ID3D12Device13 *)this;
+      this->AddRef();
+      return S_OK;
+    }
+    else if(riid == __uuidof(ID3D12Device14))
+    {
+      *ppvDevice = (ID3D12Device14 *)this;
+      this->AddRef();
+      return S_OK;
+    }
 
     return E_NOINTERFACE;
   }
@@ -1287,8 +1360,9 @@ public:
                                        const char *Path);
 
   IMPLEMENT_FUNCTION_THREAD_SERIALISED(void, CreateAS, ID3D12Resource *pResource,
-                                       UINT64 resourceOffset, UINT64 byteSize,
-                                       D3D12AccelerationStructure *as);
+                                       UINT64 resourceOffset,
+                                       D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE type,
+                                       UINT64 byteSize, D3D12AccelerationStructure *as);
 
   // IHV APIs
   IMPLEMENT_FUNCTION_SERIALISED(void, SetShaderExtUAV, GPUVendor vendor, uint32_t reg,
@@ -1781,4 +1855,20 @@ public:
       _In_opt_count_(numResourceDescs) const UINT32 *pNumCastableFormats,
       _In_opt_count_(numResourceDescs) const DXGI_FORMAT *const *ppCastableFormats,
       _Out_writes_opt_(numResourceDescs) D3D12_RESOURCE_ALLOCATION_INFO1 *pResourceAllocationInfo1);
+
+  //////////////////////////////
+  // implement ID3D12Device13
+
+  IMPLEMENT_FUNCTION_THREAD_SERIALISED(virtual HRESULT STDMETHODCALLTYPE,
+                                       OpenExistingHeapFromAddress1, _In_ const void *pAddress,
+                                       SIZE_T size, REFIID riid, _COM_Outptr_ void **ppvHeap);
+
+  //////////////////////////////
+  // implement ID3D12Device14
+
+  IMPLEMENT_FUNCTION_THREAD_SERIALISED(virtual HRESULT STDMETHODCALLTYPE,
+                                       CreateRootSignatureFromSubobjectInLibrary, _In_ UINT nodeMask,
+                                       _In_reads_(blobLengthInBytes) const void *pLibraryBlob,
+                                       _In_ SIZE_T blobLengthInBytes, _In_opt_ LPCWSTR subobjectName,
+                                       REFIID riid, _COM_Outptr_ void **ppvRootSignature);
 };

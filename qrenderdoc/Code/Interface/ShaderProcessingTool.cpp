@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -279,7 +279,7 @@ ShaderToolOutput ShaderProcessingTool::DisassembleShader(QWidget *window,
       arg = output_file = tmpPath(lit("shader_output"));
     if(arg == lit("{entry_point}"))
     {
-      arg = shaderDetails->debugInfo.entrySourceName;
+      arg = shaderDetails->entryPoint;
       if(arg.isEmpty())
         arg = lit("main");
     }

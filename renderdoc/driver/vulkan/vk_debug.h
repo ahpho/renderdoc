@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -62,6 +62,12 @@ public:
   ~VulkanDebugManager();
 
   void GetBufferData(ResourceId buff, uint64_t offset, uint64_t len, bytebuf &ret);
+  void GetBufferData(VkBuffer unwrappedBuf, uint64_t bufsize, uint64_t readOffset, uint64_t readLen,
+                     bytebuf &ret);
+  void GetBufferData(GPUBuffer &buf, uint64_t readOffset, uint64_t readLen, bytebuf &ret)
+  {
+    GetBufferData(buf.UnwrappedBuffer(), buf.TotalSize(), readOffset, readLen, ret);
+  }
 
   void CopyTex2DMSToBuffer(VkCommandBuffer cmd, VkBuffer destBuffer, VkImage srcMS,
                            VkExtent3D extent, uint32_t baseSlice, uint32_t numSlices,
@@ -76,8 +82,8 @@ public:
 
   void InitReadbackBuffer(VkDeviceSize sz);
   byte *GetReadbackPtr() { return m_ReadbackPtr; }
-  VkBuffer GetReadbackBuffer() { return m_ReadbackWindow.buf; }
-  VkDeviceMemory GetReadbackMemory() { return m_ReadbackWindow.mem; }
+  VkBuffer GetUnwrappedReadbackBuffer() { return m_ReadbackWindow.UnwrappedBuffer(); }
+  VkDeviceMemory GetUnwrappedReadbackMemory() { return m_ReadbackWindow.UnwrappedMemory(); }
   VkPipelineCache GetPipelineCache() { return m_PipelineCache; }
   VkPipeline GetCustomPipeline() { return m_Custom.TexPipeline; }
   VkPipeline GetDummyPipeline() { return m_DummyPipeline; }
@@ -121,7 +127,6 @@ public:
   const WrappedVulkan::DescriptorSetInfo &GetDescSetInfo(ResourceId ds) const;
 
 private:
-  void CheckVkResult(VkResult vkr) { return m_pDriver->CheckVkResult(vkr); }
   // GetBufferData
   GPUBuffer m_ReadbackWindow;
   byte *m_ReadbackPtr = NULL;
@@ -143,11 +148,11 @@ private:
   VkPipeline m_DepthMS2BufferPipe = VK_NULL_HANDLE;
 
   // MSAA dummy images
-  VkDeviceMemory m_DummyMemory = VK_NULL_HANDLE;
-  VkImage m_DummyDepthImage = {VK_NULL_HANDLE};
-  VkImageView m_DummyDepthView = {VK_NULL_HANDLE};
-  VkImage m_DummyStencilImage = {VK_NULL_HANDLE};
-  VkImageView m_DummyStencilView = {VK_NULL_HANDLE};
+  VkDeviceMemory m_UnwrappedDummyMemory = VK_NULL_HANDLE;
+  VkImage m_UnwrappedDummyDepthImage = {VK_NULL_HANDLE};
+  VkImageView m_UnwrappedDummyDepthView = {VK_NULL_HANDLE};
+  VkImage m_UnwrappedDummyStencilImage = {VK_NULL_HANDLE};
+  VkImageView m_UnwrappedDummyStencilView = {VK_NULL_HANDLE};
 
   // dummy pipeline
   VkPipelineLayout m_DummyPipelineLayout = VK_NULL_HANDLE;

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -2687,6 +2687,16 @@ void LLVMOrderAccumulator::processFunction(const Function *f)
 
 void LLVMOrderAccumulator::exitFunction()
 {
+  // reset IDs for function constants, so that if they're used in a different function they get a new id
+  for(size_t i = firstFuncConst; i < firstFuncConst + numFuncConsts; i++)
+  {
+    if(cast<Constant>(values[i]))
+    {
+      Value *value = (Value *)values[i];
+      value->id = Value::UnvisitedID;
+    }
+  }
+
   values.resize(functionWaterMark);
 }
 

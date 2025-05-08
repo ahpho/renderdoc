@@ -31,7 +31,18 @@ class D3D12_PrimitiveID(rdtest.TestCase):
         else:
             # Look up the matching register in the inputs, and see if the expected value matches
             inputs: List[rd.ShaderVariable] = list(trace.inputs)
-            primValue = [var for var in inputs if var.name == primInput.variables[0].name][0]
+            primInputName = primInput.variables[0].name
+            if inputs[0].name.startswith('_IN') and primInputName.startswith('_IN.'):
+                # Walk the DXIL input structure
+                inputVars = inputs[0].members
+                # Remove the input name prefix
+                primInputName = primInputName[4:]
+            else:
+                inputVars = inputs
+
+            primVars = [var for var in inputVars if var.name == primInputName]
+
+            primValue = primVars[0]
             if primValue.value.u32v[0] not in expected_prim:
                 rdtest.log.error("Expected prim {} at {},{} did not match actual prim {}.".format(
                     str(expected_prim), x, y, primValue.value.u32v[0]))
@@ -59,27 +70,36 @@ class D3D12_PrimitiveID(rdtest.TestCase):
 
         success = True
 
-        # Jump to the action
-        test_marker: rd.ActionDescription = self.find_action("Test")
+        markers = ["SM5.0", "SM6.0"]
+        for i in range(2):
+            rdtest.log.begin_section(markers[i])
+            # Jump to the action
+            test_marker: rd.ActionDescription = self.find_action(markers[i])
+            if test_marker is None:
+                rdtest.log.print(f"No {markers[i]} actions to test")
+                return
 
-        # Draw 1: No GS, PS without prim
-        action = test_marker.next
-        success &= self.test_action(action, 100, 80, rd.ReplayController.NoPreference, [0], [0, 1, 0, 1])
+            y = 40 + i * 150
+            # Draw 1: No GS, PS without prim
+            action = test_marker.next
+            success &= self.test_action(action, 100, y, rd.ReplayController.NoPreference, [0], [0, 1, 0, 1])
 
-        # Draw 2: No GS, PS with prim
-        action = action.next
-        success &= self.test_action(action, 300, 80, rd.ReplayController.NoPreference, [0], [0, 1, 0, 1])
+            # Draw 2: No GS, PS with prim
+            action = action.next
+            success &= self.test_action(action, 300, y, rd.ReplayController.NoPreference, [0], [0, 1, 0, 1])
 
-        # Draw 3: GS, PS without prim
-        action = action.next
-        success &= self.test_action(action, 125, 250, rd.ReplayController.NoPreference, [0], [0, 1, 0, 1])
+            # Draw 3: GS, PS without prim
+            y = 125 + i * 150
+            action = action.next
+            success &= self.test_action(action, 125, y, rd.ReplayController.NoPreference, [0], [0, 1, 0, 1])
 
-        # Draw 4: GS, PS with prim
-        action = action.next
-        success &= self.test_action(action, 325, 250, 2, [2], [0.5, 1, 0, 1])
-        success &= self.test_action(action, 325, 250, 3, [3], [0.75, 1, 0, 1])
-        # No expected output here, since it's nondeterministic which primitive gets selected
-        success &= self.test_action(action, 325, 250, rd.ReplayController.NoPreference, [2, 3], None)
+            # Draw 4: GS, PS with prim
+            action = action.next
+            success &= self.test_action(action, 325, y, 2, [2], [0.5, 1, 0, 1])
+            success &= self.test_action(action, 325, y, 3, [3], [0.75, 1, 0, 1])
+            # No expected output here, since it's nondeterministic which primitive gets selected
+            success &= self.test_action(action, 325, y, rd.ReplayController.NoPreference, [2, 3], None)
+            rdtest.log.end_section(markers[i])
 
         if not success:
             raise rdtest.TestFailureException("Some tests were not as expected")

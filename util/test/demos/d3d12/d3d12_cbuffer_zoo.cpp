@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -330,8 +330,13 @@ float4 main() : SV_Target0
     ID3DBlobPtr vs5blob = Compile(D3DDefaultVertex, "main", "vs_5_0");
     ID3DBlobPtr ps5blob = Compile(pixel, "main", "ps_5_1");
 
-    ID3DBlobPtr vs6blob = m_DXILSupport ? Compile(D3DDefaultVertex, "main", "vs_6_0") : NULL;
-    ID3DBlobPtr ps6blob = m_DXILSupport ? Compile(pixel, "main", "ps_6_0") : NULL;
+    bool supportSM60 = (m_HighestShaderModel >= D3D_SHADER_MODEL_6_0) && m_DXILSupport;
+    bool supportSM66 = (m_HighestShaderModel >= D3D_SHADER_MODEL_6_6) && m_DXILSupport;
+
+    ID3DBlobPtr vs6blob = supportSM60 ? Compile(D3DDefaultVertex, "main", "vs_6_0") : NULL;
+    ID3DBlobPtr ps6blob = supportSM60 ? Compile(pixel, "main", "ps_6_0") : NULL;
+    ID3DBlobPtr vs66blob = supportSM66 ? Compile(D3DDefaultVertex, "main", "vs_6_6") : NULL;
+    ID3DBlobPtr ps66blob = supportSM66 ? Compile(pixel, "main", "ps_6_6") : NULL;
 
     const size_t bindOffset = 16;
 
@@ -387,6 +392,12 @@ float4 main() : SV_Target0
       dxilpso = MakePSO().RootSig(sig).InputLayout().VS(vs6blob).PS(ps6blob).RTVs(
           {DXGI_FORMAT_R32G32B32A32_FLOAT});
 
+    ID3D12PipelineStatePtr sm6_6pso = NULL;
+
+    if(vs66blob && ps66blob)
+      sm6_6pso = MakePSO().RootSig(sig).InputLayout().VS(vs66blob).PS(ps66blob).RTVs(
+          {DXGI_FORMAT_R32G32B32A32_FLOAT});
+
     ResourceBarrier(vb, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
     ResourceBarrier(cb, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 
@@ -436,7 +447,15 @@ float4 main() : SV_Target0
       {
         cmd->SetPipelineState(dxilpso);
 
-        setMarker(cmd, "DXIL Draw");
+        setMarker(cmd, "SM6.0");
+        cmd->DrawInstanced(3, 1, 0, 0);
+      }
+
+      if(sm6_6pso)
+      {
+        cmd->SetPipelineState(sm6_6pso);
+
+        setMarker(cmd, "SM6.6");
         cmd->DrawInstanced(3, 1, 0, 0);
       }
 

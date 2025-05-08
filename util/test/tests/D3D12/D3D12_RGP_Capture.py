@@ -10,11 +10,11 @@ except ImportError as ex:
 class D3D12_RGP_Capture(rdtest.TestCase):
     demos_test_name = 'D3D12_Simple_Triangle'
 
-    def check_support(self):
+    def check_support(self, **kwargs):
         if tkinter is None:
             return False, 'tkinter is required but not available'
         
-        return super().check_support()
+        return super().check_support(**kwargs)
 
     def check_capture(self):
         apiprops: rd.APIProperties = self.controller.GetAPIProperties()

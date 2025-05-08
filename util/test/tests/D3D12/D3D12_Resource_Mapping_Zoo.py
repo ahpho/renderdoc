@@ -40,6 +40,7 @@ class D3D12_Resource_Mapping_Zoo(rdtest.TestCase):
 
         failed = False
 
+        rdtest.log.begin_section("SM5.x tests")
         test_marker: rd.ActionDescription = self.find_action("sm_5_0")
         action = test_marker.next
         self.controller.SetFrameEvent(action.eventId, False)
@@ -71,6 +72,85 @@ class D3D12_Resource_Mapping_Zoo(rdtest.TestCase):
                 failed = not self.test_debug_pixel(200 + x, 200 + y, "Bindless({},{})".format(x, y)) or failed
 
         rdtest.log.end_section("Bindless tests")
+        rdtest.log.end_section("SM5.x tests")
+
+        test_marker: rd.ActionDescription = self.find_action("SM6.0")
+        if test_marker is None:
+            rdtest.log.print("No SM6.0 action to test")
+            return
+        
+        rdtest.log.begin_section("SM6.0 tests")
+
+        action = test_marker.next
+        self.controller.SetFrameEvent(action.eventId, False)
+        failed = not self.test_debug_pixel(200, 200, "SM6.0") or failed
+
+        test_marker: rd.ActionDescription = self.find_action("SM6.0 Table")
+        action = test_marker.next
+        self.controller.SetFrameEvent(action.eventId, False)
+        failed = not self.test_debug_pixel(200, 200, "SM6.0 Table") or failed
+
+        rdtest.log.begin_section("Resource array tests")
+        test_marker: rd.ActionDescription = self.find_action("SM6.0 ResArray")
+        action = test_marker.next
+        self.controller.SetFrameEvent(action.eventId, False)
+
+        for y in range(4):
+            for x in range(4):
+                failed = not self.test_debug_pixel(200 + x, 200 + y, "SM6.0 ResArray({},{})".format(x, y)) or failed
+
+        rdtest.log.end_section("Resource array tests")
+
+        rdtest.log.begin_section("Bindless tests")
+        test_marker: rd.ActionDescription = self.find_action("SM6.0 Bindless")
+        action = test_marker.next
+        self.controller.SetFrameEvent(action.eventId, False)
+
+        for y in range(4):
+            for x in range(4):
+                failed = not self.test_debug_pixel(200 + x, 200 + y, "SM6.0 Bindless({},{})".format(x, y)) or failed
+
+        rdtest.log.end_section("Bindless tests")
+        rdtest.log.end_section("SM6.0 tests")
+
+        test_marker: rd.ActionDescription = self.find_action("SM6.6")
+        if test_marker is None:
+            rdtest.log.print("No SM6.6 action to test")
+            return
+
+        rdtest.log.begin_section("SM6.6 tests")
+
+        action = test_marker.next
+        self.controller.SetFrameEvent(action.eventId, False)
+        failed = not self.test_debug_pixel(200, 200, "SM6.6") or failed
+
+        test_marker: rd.ActionDescription = self.find_action("SM6.6 Table")
+        action = test_marker.next
+        self.controller.SetFrameEvent(action.eventId, False)
+        failed = not self.test_debug_pixel(200, 200, "SM6.6 Table") or failed
+
+        rdtest.log.begin_section("Resource array tests")
+        test_marker: rd.ActionDescription = self.find_action("SM6.6 ResArray")
+        action = test_marker.next
+        self.controller.SetFrameEvent(action.eventId, False)
+
+        for y in range(4):
+            for x in range(4):
+                failed = not self.test_debug_pixel(200 + x, 200 + y, "SM6.6 ResArray({},{})".format(x, y)) or failed
+
+        rdtest.log.end_section("Resource array tests")
+
+        rdtest.log.begin_section("Bindless tests")
+        test_marker: rd.ActionDescription = self.find_action("SM6.6 Bindless")
+        action = test_marker.next
+        self.controller.SetFrameEvent(action.eventId, False)
+
+        for y in range(4):
+            for x in range(4):
+                failed = not self.test_debug_pixel(200 + x, 200 + y, "SM6.6 Bindless({},{})".format(x, y)) or failed
+
+        rdtest.log.end_section("Bindless tests")
+        rdtest.log.end_section("SM6.6 tests")
 
         if failed:
             raise rdtest.TestFailureException("Some tests were not as expected")

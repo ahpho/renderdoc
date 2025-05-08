@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -41,13 +41,6 @@ public:
   rdcstr GetShaderBlob(const char *source, const char *entry, const ShaderCompileFlags &compileFlags,
                        const rdcarray<rdcstr> &includeDirs, const char *profile, ID3DBlob **srcblob);
 
-  D3D12RootSignature GetRootSig(const void *data, size_t dataSize);
-  ID3DBlob *MakeRootSig(const rdcarray<D3D12_ROOT_PARAMETER1> &params,
-                        D3D12_ROOT_SIGNATURE_FLAGS Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE,
-                        UINT NumStaticSamplers = 0,
-                        const D3D12_STATIC_SAMPLER_DESC1 *StaticSamplers = NULL);
-  ID3DBlob *MakeRootSig(const D3D12RootSignature &rootsig);
-
   // must match the values in fixedcol.hlsl
   enum FixedColVariant
   {
@@ -63,8 +56,9 @@ public:
 
   void LoadDXC();
 
-  void SetDevConfiguration(D3D12DevConfiguration *config) { m_DevConfig = config; }
   void SetCaching(bool enabled) { m_CacheShaders = enabled; }
+  uint32_t GetCompileFlags() const { return m_CompileFlags; }
+
 private:
   static const uint32_t m_ShaderCacheMagic = 0xf000baba;
   static const uint32_t m_ShaderCacheVersion = 3;
@@ -73,9 +67,4 @@ private:
 
   bool m_ShaderCacheDirty = false, m_CacheShaders = false;
   std::map<uint32_t, ID3DBlob *> m_ShaderCache;
-
-  D3D12DevConfiguration *m_DevConfig = NULL;
-
-  D3D12_STATIC_SAMPLER_DESC1 Upconvert(const D3D12_STATIC_SAMPLER_DESC &StaticSampler);
-  D3D12_STATIC_SAMPLER_DESC Downconvert(const D3D12_STATIC_SAMPLER_DESC1 &StaticSampler);
 };

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -604,6 +604,7 @@ private:
   // final check function to ensure we don't try and render with no index or vertex buffer bound, as
   // many drivers will still try to access memory via legacy behaviour even on core profile.
   bool Check_SafeDraw(bool indexed);
+  bool Check_SafeDrawAtEventID(uint32_t eid) const;
 
   void StoreCompressedTexData(ResourceId texId, GLenum target, GLint level, bool subUpdate,
                               GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width,

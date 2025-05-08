@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -171,6 +171,11 @@ VkObjectType objType<VkBuffer>()
   return VK_OBJECT_TYPE_BUFFER;
 }
 template <>
+VkObjectType objType<VkDeviceMemory>()
+{
+  return VK_OBJECT_TYPE_DEVICE_MEMORY;
+}
+template <>
 VkObjectType objType<VkImage>()
 {
   return VK_OBJECT_TYPE_IMAGE;
@@ -189,6 +194,8 @@ VkObjectType objType<VkFramebuffer>()
 void GPUBuffer::Create(WrappedVulkan *driver, VkDevice dev, VkDeviceSize size, uint32_t ringSize,
                        uint32_t flags)
 {
+  RDCASSERT(size > 0 && ringSize > 0, size, ringSize);
+
   m_pDriver = driver;
   device = dev;
   createFlags = flags;
@@ -233,11 +240,13 @@ void GPUBuffer::Create(WrappedVulkan *driver, VkDevice dev, VkDeviceSize size, u
   if(flags & eGPUBufferAddressable)
     bufInfo.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
-  VkResult vkr = driver->vkCreateBuffer(dev, &bufInfo, NULL, &buf);
-  driver->CheckVkResult(vkr);
+  VkResult vkr = ObjDisp(dev)->CreateBuffer(Unwrap(dev), &bufInfo, NULL, &buf);
+  CHECK_VKR(driver, vkr);
+
+  NameUnwrappedVulkanObject(buf, "Unnamed GPUBuffer");
 
   VkMemoryRequirements mrq = {};
-  driver->vkGetBufferMemoryRequirements(dev, buf, &mrq);
+  ObjDisp(dev)->GetBufferMemoryRequirements(Unwrap(dev), buf, &mrq);
 
   VkMemoryAllocateInfo allocInfo = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, NULL, mrq.size, 0};
 
@@ -257,19 +266,33 @@ void GPUBuffer::Create(WrappedVulkan *driver, VkDevice dev, VkDeviceSize size, u
     memFlags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
   }
 
-  vkr = driver->vkAllocateMemory(dev, &allocInfo, NULL, &mem);
-  driver->CheckVkResult(vkr);
+  vkr = ObjDisp(dev)->AllocateMemory(Unwrap(dev), &allocInfo, NULL, &mem);
+  CHECK_VKR(driver, vkr);
 
   if(vkr != VK_SUCCESS)
     return;
 
-  vkr = driver->vkBindBufferMemory(dev, buf, mem, 0);
-  driver->CheckVkResult(vkr);
+  vkr = ObjDisp(dev)->BindBufferMemory(Unwrap(dev), buf, mem, 0);
+  CHECK_VKR(driver, vkr);
+
+  if(useBufferAddressKHR && (flags & eGPUBufferAddressable))
+  {
+    RDCCOMPILE_ASSERT(VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO ==
+                          VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_EXT,
+                      "KHR and EXT buffer_device_address should be interchangeable here.");
+    VkBufferDeviceAddressInfo getAddressInfo = {VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, NULL,
+                                                buf};
+
+    if(useBufferAddressKHR)
+      addr = ObjDisp(dev)->GetBufferDeviceAddress(Unwrap(dev), &getAddressInfo);
+    else
+      addr = ObjDisp(dev)->GetBufferDeviceAddressEXT(Unwrap(dev), &getAddressInfo);
+  }
 }
 
 void GPUBuffer::FillDescriptor(VkDescriptorBufferInfo &desc)
 {
-  desc.buffer = Unwrap(buf);
+  desc.buffer = buf;
   desc.offset = 0;
   desc.range = sz;
 }
@@ -278,9 +301,15 @@ void GPUBuffer::Destroy()
 {
   if(device != VK_NULL_HANDLE)
   {
-    m_pDriver->vkDestroyBuffer(device, buf, NULL);
-    m_pDriver->vkFreeMemory(device, mem, NULL);
+    ObjDisp(device)->DestroyBuffer(Unwrap(device), buf, NULL);
+    ObjDisp(device)->FreeMemory(Unwrap(device), mem, NULL);
   }
+  addr = 0;
+}
+
+void GPUBuffer::Name(const rdcstr &str)
+{
+  NameUnwrappedVulkanObject(buf, str);
 }
 
 void *GPUBuffer::Map(uint32_t *bindoffset, VkDeviceSize usedsize)
@@ -310,17 +339,17 @@ void *GPUBuffer::Map(uint32_t *bindoffset, VkDeviceSize usedsize)
   if(mem == VK_NULL_HANDLE)
   {
     RDCERR("Manually reporting failed memory map with no memory");
-    m_pDriver->CheckVkResult(VK_ERROR_MEMORY_MAP_FAILED);
+    CHECK_VKR(m_pDriver, VK_ERROR_MEMORY_MAP_FAILED);
   }
 
   void *ptr = NULL;
-  VkResult vkr = m_pDriver->vkMapMemory(device, mem, offset, size, 0, (void **)&ptr);
-  m_pDriver->CheckVkResult(vkr);
+  VkResult vkr = ObjDisp(device)->MapMemory(Unwrap(device), mem, offset, size, 0, (void **)&ptr);
+  CHECK_VKR(m_pDriver, vkr);
 
   if(!ptr)
   {
     RDCERR("Manually reporting failed memory map");
-    m_pDriver->CheckVkResult(VK_ERROR_MEMORY_MAP_FAILED);
+    CHECK_VKR(m_pDriver, VK_ERROR_MEMORY_MAP_FAILED);
   }
 
   if(createFlags & eGPUBufferReadback)
@@ -329,8 +358,8 @@ void *GPUBuffer::Map(uint32_t *bindoffset, VkDeviceSize usedsize)
         VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, NULL, mem, offset, size,
     };
 
-    vkr = m_pDriver->vkInvalidateMappedMemoryRanges(device, 1, &range);
-    m_pDriver->CheckVkResult(vkr);
+    vkr = ObjDisp(device)->InvalidateMappedMemoryRanges(Unwrap(device), 1, &range);
+    CHECK_VKR(m_pDriver, vkr);
   }
 
   return ptr;
@@ -355,11 +384,35 @@ void GPUBuffer::Unmap()
         VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, NULL, mem, mapoffset, VK_WHOLE_SIZE,
     };
 
-    VkResult vkr = m_pDriver->vkFlushMappedMemoryRanges(device, 1, &range);
-    m_pDriver->CheckVkResult(vkr);
+    VkResult vkr = ObjDisp(device)->FlushMappedMemoryRanges(Unwrap(device), 1, &range);
+    CHECK_VKR(m_pDriver, vkr);
   }
 
-  m_pDriver->vkUnmapMemory(device, mem);
+  ObjDisp(device)->UnmapMemory(Unwrap(device), mem);
+}
+
+void GPUBuffer::WriteDescriptor(VkDescriptorSet unwrappedDescSet, uint32_t destBinding,
+                                uint32_t destArrayElement)
+{
+  // vkUpdateDescriptorSet desc set to point to buffer
+  VkDescriptorBufferInfo desc = {0};
+
+  FillDescriptor(desc);
+
+  VkWriteDescriptorSet write = {
+      VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      NULL,
+      unwrappedDescSet,
+      destBinding,
+      destArrayElement,
+      1,
+      VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+      NULL,
+      &desc,
+      NULL,
+  };
+
+  ObjDisp(device)->UpdateDescriptorSets(Unwrap(device), 1, &write, 0, NULL);
 }
 
 bool VkInitParams::IsSupportedVersion(uint64_t ver)
@@ -924,7 +977,7 @@ rdcstr HumanDriverName(VkDriverId driverId)
     case VK_DRIVER_ID_MESA_NVK: return "Mesa NVK";
     case VK_DRIVER_ID_IMAGINATION_OPEN_SOURCE_MESA: return "Imagination Open-source";
     case VK_DRIVER_ID_MESA_HONEYKRISP: return "Mesa Honeykrisp";
-    case VK_DRIVER_ID_RESERVED_27: return "<Unknown>";
+    case VK_DRIVER_ID_VULKAN_SC_EMULATION_ON_VULKAN: return "Vulkan SC Emulation on Vulkan";
     case VK_DRIVER_ID_MAX_ENUM: break;
   }
 
@@ -1364,6 +1417,108 @@ void DescriptorSetSlot::AccumulateBindRefs(DescriptorBindRefs &refs, VulkanResou
   {
     AddBindFrameRef(refs, resource, eFrameRef_Read);
   }
+}
+
+void DynamicRenderingLocalRead::Init(const VkBaseInStructure *infoStruct)
+{
+  const VkRenderingAttachmentLocationInfo *attachmentLocationInfo =
+      (const VkRenderingAttachmentLocationInfo *)FindNextStruct(
+          infoStruct, VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_LOCATION_INFO);
+  if(attachmentLocationInfo != NULL)
+  {
+    UpdateLocations(*attachmentLocationInfo);
+  }
+
+  const VkRenderingInputAttachmentIndexInfo *inputAttachmentIndexInfo =
+      (const VkRenderingInputAttachmentIndexInfo *)FindNextStruct(
+          infoStruct, VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO);
+  if(inputAttachmentIndexInfo != NULL)
+  {
+    UpdateInputIndices(*inputAttachmentIndexInfo);
+  }
+}
+
+void DynamicRenderingLocalRead::UpdateLocations(
+    const VkRenderingAttachmentLocationInfo &attachmentLocationInfo)
+{
+  // If NULL is given, an identity mapping is assumed.  This is indicated by an empty
+  // array.  This works out because not providing VkRenderingAttachmentLocationInfo has the
+  // same meaning.
+  if(attachmentLocationInfo.pColorAttachmentLocations == NULL)
+  {
+    colorAttachmentLocations.clear();
+  }
+  else
+  {
+    colorAttachmentLocations.assign(attachmentLocationInfo.pColorAttachmentLocations,
+                                    attachmentLocationInfo.colorAttachmentCount);
+  }
+}
+
+void DynamicRenderingLocalRead::UpdateInputIndices(
+    const VkRenderingInputAttachmentIndexInfo &inputAttachmentIndexInfo)
+{
+  // If NULL is given, an identity mapping is assumed.  This is indicated by an empty
+  // array.  This works out because not providing VkRenderingInputAttachmentIndexInfo has the
+  // same meaning.
+  if(inputAttachmentIndexInfo.pColorAttachmentInputIndices == NULL)
+  {
+    colorAttachmentInputIndices.clear();
+  }
+  else
+  {
+    colorAttachmentInputIndices.assign(inputAttachmentIndexInfo.pColorAttachmentInputIndices,
+                                       inputAttachmentIndexInfo.colorAttachmentCount);
+  }
+  isDepthInputAttachmentIndexImplicit = inputAttachmentIndexInfo.pDepthInputAttachmentIndex == NULL;
+  isStencilInputAttachmentIndexImplicit =
+      inputAttachmentIndexInfo.pStencilInputAttachmentIndex == NULL;
+  if(!isDepthInputAttachmentIndexImplicit)
+  {
+    depthInputAttachmentIndex = *inputAttachmentIndexInfo.pDepthInputAttachmentIndex;
+  }
+  if(!isStencilInputAttachmentIndexImplicit)
+  {
+    stencilInputAttachmentIndex = *inputAttachmentIndexInfo.pStencilInputAttachmentIndex;
+  }
+}
+
+void DynamicRenderingLocalRead::CopyLocations(const DynamicRenderingLocalRead &from)
+{
+  colorAttachmentLocations = from.colorAttachmentLocations;
+}
+
+void DynamicRenderingLocalRead::CopyInputIndices(const DynamicRenderingLocalRead &from)
+{
+  colorAttachmentInputIndices = from.colorAttachmentInputIndices;
+  isDepthInputAttachmentIndexImplicit = from.isDepthInputAttachmentIndexImplicit;
+  isStencilInputAttachmentIndexImplicit = from.isStencilInputAttachmentIndexImplicit;
+  depthInputAttachmentIndex = from.depthInputAttachmentIndex;
+  stencilInputAttachmentIndex = from.stencilInputAttachmentIndex;
+}
+
+void DynamicRenderingLocalRead::SetLocations(VkCommandBuffer cmd)
+{
+  VkRenderingAttachmentLocationInfo attachmentLocations = {};
+  attachmentLocations.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_LOCATION_INFO;
+  attachmentLocations.colorAttachmentCount = colorAttachmentLocations.count();
+  attachmentLocations.pColorAttachmentLocations = colorAttachmentLocations.data();
+
+  ObjDisp(cmd)->CmdSetRenderingAttachmentLocationsKHR(Unwrap(cmd), &attachmentLocations);
+}
+
+void DynamicRenderingLocalRead::SetInputIndices(VkCommandBuffer cmd)
+{
+  VkRenderingInputAttachmentIndexInfo inputIndices = {};
+  inputIndices.sType = VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO;
+  inputIndices.colorAttachmentCount = colorAttachmentInputIndices.count();
+  inputIndices.pColorAttachmentInputIndices = colorAttachmentInputIndices.data();
+  inputIndices.pDepthInputAttachmentIndex =
+      isDepthInputAttachmentIndexImplicit ? NULL : &depthInputAttachmentIndex;
+  inputIndices.pStencilInputAttachmentIndex =
+      isStencilInputAttachmentIndexImplicit ? NULL : &stencilInputAttachmentIndex;
+
+  ObjDisp(cmd)->CmdSetRenderingInputAttachmentIndicesKHR(Unwrap(cmd), &inputIndices);
 }
 
 #if ENABLED(ENABLE_UNIT_TESTS)

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -133,6 +133,19 @@ enum class GlobalShaderFlags : int64_t
   ShadingRate = 0x080000,
   Raytracing1_1 = 0x100000,
   SamplerFeedback = 0x200000,
+  AtomicInt64OnTypedResource = 0x400000,
+  AtomicInt64OnGroupShared = 0x800000,
+  DerivativesInMeshAndAmpShaders = 0x1000000,
+  ResourceDescriptorHeapIndexing = 0x2000000,
+  SamplerDescriptorHeapIndexing = 0x4000000,
+  WaveMatrix = 0x8000000,
+  AtomicInt64OnHeapResource = 0x10000000,
+  AdvancedTextureOps = 0x20000000,
+  WriteableMSAATextures = 0x40000000,
+  SampleCmpGradientOrBias = 0x80000000,
+  ShaderFeatureInfo_ExtendedCommandInfo = 0x100000000,
+  KNOWN_FLAGS_MASK =
+      ShaderFeatureInfo_ExtendedCommandInfo + (ShaderFeatureInfo_ExtendedCommandInfo - 1),
 };
 
 BITMASK_OPERATORS(GlobalShaderFlags);
@@ -162,6 +175,8 @@ static const uint32_t FOURCC_SFI0 = MAKE_FOURCC('S', 'F', 'I', '0');
 static const uint32_t FOURCC_PSV0 = MAKE_FOURCC('P', 'S', 'V', '0');
 static const uint32_t FOURCC_RTS0 = MAKE_FOURCC('R', 'T', 'S', '0');
 static const uint32_t FOURCC_RDAT = MAKE_FOURCC('R', 'D', 'A', 'T');
+static const uint32_t FOURCC_VERS = MAKE_FOURCC('V', 'E', 'R', 'S');
+static const uint32_t FOURCC_SRCI = MAKE_FOURCC('S', 'R', 'C', 'I');
 
 struct RDEFHeader;
 
@@ -192,6 +207,7 @@ public:
   const IDebugInfo *GetDebugInfo() const { return m_DebugInfo; }
   const Reflection *GetReflection() const { return m_Reflection; }
   D3D_PRIMITIVE_TOPOLOGY GetOutputTopology();
+  ThreadScope GetThreadScope() const { return m_Threadscope; }
 
   CBufferVariableType GetRayPayload(const ShaderEntryPoint &entry)
   {
@@ -221,18 +237,25 @@ public:
   }
 
   static const byte *FindChunk(const bytebuf &ByteCode, uint32_t fourcc, size_t &size);
+  static const byte *FindChunk(const byte *ByteCode, size_t ByteCodeLength, uint32_t fourcc,
+                               size_t &size);
 
   const DXBCBytecode::Program *GetDXBCByteCode() const { return m_DXBCByteCode; }
   DXBCBytecode::Program *GetDXBCByteCode() { return m_DXBCByteCode; }
   const DXIL::Program *GetDXILByteCode() const { return m_DXILByteCode; }
   DXIL::Program *GetDXILByteCode() { return m_DXILByteCode; }
-  static void GetHash(uint32_t hash[4], const void *ByteCode, size_t BytecodeLength);
+  static void GetHash(rdcfixedarray<uint32_t, 4> &hash, bool debugHashOnly, const void *ByteCode,
+                      size_t BytecodeLength);
+  GlobalShaderFlags GetGlobalShaderFlags() const { return m_GlobalFlags; }
 
   const byte *GetNonDebugDXILByteCode() const
   {
     return m_ShaderBlob.data() + m_NonDebugDXILByteCodeOffset;
   }
   size_t GetNonDebugDXILByteCodeSize() const { return m_NonDebugDXILByteCodeSize; }
+
+  static bytebuf MakeContainerForChunk(uint32_t fourcc, const byte *chunk, uint64_t chunkSize);
+
   static bool IsHashedContainer(const void *ByteCode, size_t BytecodeLength);
   static bool HashContainer(void *ByteCode, size_t BytecodeLength);
 
@@ -248,11 +271,14 @@ public:
   bool GetPipelineValidation(DXIL::PSVData &psv) const;
   bool GetRuntimeData(DXIL::RDATData &rdat) const;
 
+  static bool GetRuntimeData(const byte *RDATChunk, size_t RDATLength, DXIL::RDATData &rdat);
+
   static void SetPipelineValidation(bytebuf &ByteCode, const DXIL::PSVData &psv);
   static void SetRuntimeData(bytebuf &ByteCode, const DXIL::RDATData &rdat);
 
 private:
   void TryFetchSeparateDebugInfo(bytebuf &byteCode, const rdcstr &debugInfoPath);
+  void ProcessSourceInfo(const byte *chunkContents, uint32_t size);
 
   bytebuf m_DebugShaderBlob;
   bytebuf m_ShaderBlob;
@@ -282,6 +308,7 @@ private:
 
   rdcflatmap<ShaderEntryPoint, rdcpair<CBufferVariableType, CBufferVariableType>> m_RayPayloads;
 
+  ThreadScope m_Threadscope = ThreadScope::Thread;
   ShaderStatistics m_ShaderStats;
   DXBCBytecode::Program *m_DXBCByteCode = NULL;
   DXIL::Program *m_DXILByteCode = NULL;

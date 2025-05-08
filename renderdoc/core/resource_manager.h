@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -700,7 +700,7 @@ protected:
   virtual bool Serialise_InitialState(WriteSerialiser &ser, ResourceId id, RecordType *record,
                                       const InitialContentData *initialData) = 0;
   virtual void Create_InitialState(ResourceId id, WrappedResourceType live, bool hasData) = 0;
-  virtual void Apply_InitialState(WrappedResourceType live, const InitialContentData &initial) = 0;
+  virtual void Apply_InitialState(WrappedResourceType live, InitialContentData &initial) = 0;
   virtual rdcarray<ResourceId> InitialContentResources();
 
   void UpdateLastWriteTime(ResourceId id, FrameRefType refType);
@@ -1377,7 +1377,7 @@ void ResourceManager<Configuration>::ApplyInitialContents()
   for(auto it = resources.begin(); it != resources.end(); ++it)
   {
     ResourceId id = *it;
-    const InitialContentStorage &data = m_InitialContents[id];
+    InitialContentStorage &data = m_InitialContents[id];
     WrappedResourceType live = GetLiveResource(id);
     Apply_InitialState(live, data.data);
   }
@@ -1392,7 +1392,7 @@ rdcarray<ResourceId> ResourceManager<Configuration>::InitialContentResources()
   {
     ResourceId id = it->first;
 
-    if(HasLiveResource(id))
+    if(IsCaptureMode(m_State) || HasLiveResource(id))
     {
       resources.push_back(id);
     }
@@ -1566,9 +1566,10 @@ void ResourceManager<Configuration>::InsertInitialContentsChunks(WriteSerialiser
 
   End_PrepareInitialBatch();
 
-  for(auto it = m_InitialContents.begin(); it != m_InitialContents.end(); ++it)
+  rdcarray<ResourceId> resources = InitialContentResources();
+  for(auto it = resources.begin(); it != resources.end(); ++it)
   {
-    ResourceId id = it->first;
+    ResourceId id = *it;
 
     RenderDoc::Inst().SetProgress(CaptureProgress::SerialiseInitialStates, idx / num);
     idx += 1.0f;
@@ -1607,32 +1608,34 @@ void ResourceManager<Configuration>::InsertInitialContentsChunks(WriteSerialiser
 
     dirty++;
 
-    if(!Need_InitialStateChunk(id, it->second.data))
+    InitialContentStorage &data = m_InitialContents[id];
+
+    if(!Need_InitialStateChunk(id, data.data))
     {
       // this was handled in ApplyInitialContentsNonChunks(), do nothing as there's no point copying
       // the data again (it's already been serialised).
       continue;
     }
 
-    if(it->second.chunk)
+    if(data.chunk)
     {
-      it->second.chunk->Write(ser);
+      data.chunk->Write(ser);
     }
-    else if(!it->second.filename.empty())
+    else if(!data.filename.empty())
     {
-      FILE *f = FileIO::fopen(it->second.filename, FileIO::ReadBinary);
-      FileIO::fseek64(f, it->second.fileStart, SEEK_SET);
-      StreamReader reader(f, it->second.fileEnd - it->second.fileStart, Ownership::Stream);
+      FILE *f = FileIO::fopen(data.filename, FileIO::ReadBinary);
+      FileIO::fseek64(f, data.fileStart, SEEK_SET);
+      StreamReader reader(f, data.fileEnd - data.fileStart, Ownership::Stream);
 
       StreamTransfer(ser.GetWriter(), &reader, NULL);
     }
     else
     {
-      uint64_t size = GetSize_InitialState(id, it->second.data);
+      uint64_t size = GetSize_InitialState(id, data.data);
 
       SCOPED_SERIALISE_CHUNK(SystemChunk::InitialContents, size);
 
-      Serialise_InitialState(ser, id, record, &it->second.data);
+      Serialise_InitialState(ser, id, record, &data.data);
     }
 
     // Reset back to empty contents, unloading the actual resource.

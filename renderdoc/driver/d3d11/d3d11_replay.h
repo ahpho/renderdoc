@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -212,7 +212,6 @@ public:
   void DestroyOutputWindow(uint64_t id);
   bool CheckResizeOutputWindow(uint64_t id);
   void GetOutputWindowDimensions(uint64_t id, int32_t &w, int32_t &h);
-  void SetOutputWindowDimensions(uint64_t id, int32_t w, int32_t h);
   void GetOutputWindowData(uint64_t id, bytebuf &retData);
   void ClearOutputWindowColor(uint64_t id, FloatVector col);
   void ClearOutputWindowDepth(uint64_t id, float depth, uint8_t stencil);
@@ -254,6 +253,7 @@ public:
                          rdcstr &errors);
   void ReplaceResource(ResourceId from, ResourceId to);
   void RemoveReplacement(ResourceId id);
+  void ClearReplayCache();
 
   rdcarray<GPUCounter> EnumerateCounters();
   CounterDescription DescribeCounter(GPUCounter counterID);
@@ -288,6 +288,8 @@ public:
                                const DebugPixelInputs &inputs);
   ShaderDebugTrace *DebugThread(uint32_t eventId, const rdcfixedarray<uint32_t, 3> &groupid,
                                 const rdcfixedarray<uint32_t, 3> &threadid);
+  ShaderDebugTrace *DebugMeshThread(uint32_t eventId, const rdcfixedarray<uint32_t, 3> &groupid,
+                                    const rdcfixedarray<uint32_t, 3> &threadid);
   rdcarray<ShaderDebugState> ContinueDebug(ShaderDebugger *debugger);
   void FreeDebugger(ShaderDebugger *debugger);
 

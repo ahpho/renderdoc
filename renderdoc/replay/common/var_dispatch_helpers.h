@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2024 Baldur Karlsson
+ * Copyright (c) 2020-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -39,6 +39,10 @@ inline bool RDCISNAN(half_float::half input)
 inline bool RDCISINF(half_float::half input)
 {
   return half_float::isinf(input);
+}
+inline bool RDCISNORMAL(half_float::half input)
+{
+  return half_float::isnormal(input);
 }
 
 template <typename T>

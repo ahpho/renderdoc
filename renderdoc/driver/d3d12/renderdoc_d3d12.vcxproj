@@ -39,12 +39,9 @@
   <ImportGroup Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
+  <Import Project="$(SolutionDir)\util\WindowsSDKFix.props" />
   <PropertyGroup>
     <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
-    <ExecutablePath>$(ExecutablePath)</ExecutablePath>
-    <IncludePath>$(SolutionDir)\breakpad;$(IncludePath)</IncludePath>
-    <LibraryPath>$(LibraryPath)</LibraryPath>
-    <ExcludePath>$(ExcludePath)</ExcludePath>
     <TargetName>driver_$(ProjectName)</TargetName>
   </PropertyGroup>
   <PropertyGroup>
@@ -102,6 +99,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="d3d12_commands.cpp" />
+    <ClCompile Include="d3d12_command_list10_wrap.cpp" />
     <ClCompile Include="d3d12_command_list1_wrap.cpp" />
     <ClCompile Include="d3d12_command_list2_wrap.cpp" />
     <ClCompile Include="d3d12_command_list3_wrap.cpp" />
@@ -122,6 +120,8 @@
     <ClCompile Include="d3d12_device_wrap1.cpp" />
     <ClCompile Include="d3d12_device_wrap11.cpp" />
     <ClCompile Include="d3d12_device_wrap12.cpp" />
+    <ClCompile Include="d3d12_device_wrap13.cpp" />
+    <ClCompile Include="d3d12_device_wrap14.cpp" />
     <ClCompile Include="d3d12_device_wrap2.cpp" />
     <ClCompile Include="d3d12_device_wrap3.cpp" />
     <ClCompile Include="d3d12_device_wrap4.cpp" />
@@ -144,6 +144,7 @@
     <ClCompile Include="d3d12_rendertexture.cpp" />
     <ClCompile Include="d3d12_replay.cpp" />
     <ClCompile Include="d3d12_resources.cpp" />
+    <ClCompile Include="d3d12_rootsig.cpp" />
     <ClCompile Include="d3d12_sdk_select.cpp" />
     <ClCompile Include="d3d12_serialise.cpp" />
     <ClCompile Include="d3d12_shaderdebug.cpp" />
@@ -172,6 +173,7 @@
     <ClInclude Include="d3d12_rendertext.h" />
     <ClInclude Include="d3d12_replay.h" />
     <ClInclude Include="d3d12_resources.h" />
+    <ClInclude Include="d3d12_rootsig.h" />
     <ClInclude Include="d3d12_shaderdebug.h" />
     <ClInclude Include="d3d12_shader_cache.h" />
     <ClInclude Include="d3d12_state.h" />

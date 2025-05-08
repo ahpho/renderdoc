@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,8 +25,8 @@
 #include "spirv_processor.h"
 #include "common/formatting.h"
 #include "maths/half_convert.h"
+#include "replay/common/var_dispatch_helpers.h"
 #include "spirv_op_helpers.h"
-#include "var_dispatch_helpers.h"
 
 namespace rdcspv
 {
@@ -461,7 +461,7 @@ void Processor::Parse(const rdcarray<uint32_t> &spirvWords)
     }
     else if(opcode == Op::Decorate || opcode == Op::MemberDecorate || opcode == Op::GroupDecorate ||
             opcode == Op::GroupMemberDecorate || opcode == Op::DecorationGroup ||
-            opcode == Op::DecorateStringGOOGLE || opcode == Op::MemberDecorateStringGOOGLE)
+            opcode == Op::DecorateString || opcode == Op::MemberDecorateString)
     {
       START_SECTION(Section::Annotations);
     }
@@ -532,6 +532,26 @@ void Processor::RegisterOp(Iter it)
   {
     OpCapability decoded(it);
     capabilities.insert(decoded.capability);
+
+    if(decoded.capability == Capability::GroupNonUniform ||
+       decoded.capability == Capability::GroupNonUniformVote ||
+       decoded.capability == Capability::GroupNonUniformArithmetic ||
+       decoded.capability == Capability::GroupNonUniformBallot ||
+       decoded.capability == Capability::GroupNonUniformShuffle ||
+       decoded.capability == Capability::GroupNonUniformShuffleRelative ||
+       decoded.capability == Capability::GroupNonUniformClustered ||
+       decoded.capability == Capability::GroupNonUniformQuad ||
+       decoded.capability == Capability::GroupNonUniformRotateKHR ||
+       decoded.capability == Capability::GroupUniformArithmeticKHR ||
+       decoded.capability == Capability::SubgroupBallotKHR ||
+       decoded.capability == Capability::SubgroupVoteKHR)
+    {
+      m_ThreadScope |= ThreadScope::Subgroup;
+    }
+    else if(decoded.capability == Capability::GroupNonUniformQuad)
+    {
+      m_ThreadScope |= ThreadScope::Quad;
+    }
   }
   else if(opdata.op == Op::Extension)
   {
@@ -590,6 +610,9 @@ void Processor::RegisterOp(Iter it)
     if(decoded.storageClass != rdcspv::StorageClass::Function)
       globals.push_back(
           Variable(decoded.resultType, decoded.result, decoded.storageClass, decoded.initializer));
+
+    if(decoded.storageClass == StorageClass::Workgroup)
+      m_ThreadScope |= ThreadScope::Workgroup;
   }
   else if(opdata.op == Op::ConstantNull)
   {

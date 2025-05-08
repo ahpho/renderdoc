@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -84,6 +84,16 @@ enum class ShaderType : uint8_t
 };
 
 ShaderStage GetShaderStage(ShaderType type);
+
+enum class ThreadScope : uint32_t
+{
+  Thread = 0,
+  Quad = 0x1,
+  Subgroup = 0x2,
+  Workgroup = 0x4,
+};
+
+BITMASK_OPERATORS(ThreadScope);
 
 /////////////////////////////////////////////////////////////////////////
 // the below classes basically mimics the existing reflection interface.
@@ -424,12 +434,16 @@ struct CBufferVariableType
   rdcarray<CBufferVariable> members;
 };
 
+void RecalculateScalarOffsetsSizes(CBufferVariableType &type);
 rdcstr TypeName(CBufferVariableType desc);
 
 struct CBufferVariable
 {
   rdcstr name;
   uint32_t offset;    // offset in parent (cbuffer or nested struct)
+
+  uint16_t bitFieldOffset = 0;
+  uint16_t bitFieldSize = 0;
 
   // type details of this variable
   CBufferVariableType type;
@@ -481,6 +495,7 @@ struct Reflection
   rdcarray<SigParameter> PatchConstantSig;
 
   uint32_t DispatchThreadsDimension[3];
+  uint32_t WaveSize = 0;
 };
 
 class DXBCContainer;
@@ -501,11 +516,14 @@ public:
   virtual void GetCallstack(size_t instruction, uintptr_t offset,
                             rdcarray<rdcstr> &callstack) const = 0;
 
-  virtual bool HasSourceMapping() const = 0;
   virtual void GetLocals(const DXBC::DXBCContainer *dxbc, size_t instruction, uintptr_t offset,
                          rdcarray<SourceVariableMapping> &locals) const = 0;
+
+  virtual void FillReflection(DXBC::Reflection &refl) {}
 };
 
 rdcstr BasicDemangle(const rdcstr &possiblyMangledName);
+
+void ResetSearchDirsCache();
 
 };

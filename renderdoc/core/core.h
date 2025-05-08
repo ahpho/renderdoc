@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -42,7 +42,7 @@ struct ReplayOptions;
 struct SDObject;
 
 // not provided by tinyexr, just do by hand
-bool is_exr_file(FILE *f);
+bool is_exr_file(const byte *headerBuffer, size_t size);
 void LogReplayOptions(const ReplayOptions &opts);
 
 enum class RDCDriver : uint32_t;
@@ -478,7 +478,7 @@ public:
   void RegisterMemoryRegion(void *mem, size_t size);
   void UnregisterMemoryRegion(void *mem);
   void ResamplePixels(const FramePixels &in, RDCThumb &out);
-  void EncodePixelsPNG(const RDCThumb &in, RDCThumb &out);
+  void EncodeThumbPixels(const RDCThumb &in, RDCThumb &out);
   RDCFile *CreateRDC(RDCDriver driver, uint32_t frameNum, const FramePixels &fp);
   void FinishCaptureWriting(RDCFile *rdc, uint32_t frameNumber);
 

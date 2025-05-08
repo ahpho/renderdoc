@@ -76,7 +76,7 @@ class Texture_Zoo():
         pickCompType = testCompType
 
         if tex.format.type == rd.ResourceFormatType.S8:
-            pickCompType = rd.CompType.UInt
+            pickCompType = rd.CompType.Depth
 
         # When not running proxied, save non-typecasted textures to disk
         if not image_view and not self.proxied and (tex.format.compType == testCompType or
@@ -195,7 +195,7 @@ class Texture_Zoo():
             eps_significand = 2.5
         # Similarly SNorm essentially loses a bit of accuracy due to us only using negative values
         elif testCompType == rd.CompType.SNorm:
-            eps_significand = 2.0
+            eps_significand = 2.5
 
         if tex.format.type == rd.ResourceFormatType.R4G4B4A4 or tex.format.type == rd.ResourceFormatType.R4G4:
             eps = (eps_significand / 15.0)
@@ -506,7 +506,7 @@ class Texture_Zoo():
 
         if comp_type == rd.CompType.SInt:
             picked = [float(a) for a in picked_combo.intValue]
-        elif comp_type == rd.CompType.UInt:
+        elif comp_type == rd.CompType.UInt or tex.format.type == rd.ResourceFormatType.S8:
             picked = [float(a) for a in picked_combo.uintValue]
         else:
             picked = list(picked_combo.floatValue)

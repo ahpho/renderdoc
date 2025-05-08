@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -42,6 +42,19 @@ GPUAddressRange WrappedVulkan::CreateAddressRange(VkDevice device, VkBuffer buff
   VkResourceRecord *record = GetRecord(buffer);
   VkResourceRecord *memrecord = GetResourceManager()->GetResourceRecord(record->baseResourceMem);
 
+  const bool isSparse = record->resInfo && record->resInfo->IsSparse();
+
+  // If the buffer is not sparse and there's no baseResourceMem, then the buffer is being destroyed
+  // without being bound so exit early as there's nothing to do
+  if(!isSparse && !memrecord)
+    return {};
+
+  // Sparse buffers may not have a single device allocation so set the OOB size to the same as the
+  // buffer
+  VkDeviceSize oobSize = record->memSize;
+  if(!isSparse && memrecord)
+    oobSize = memrecord->memSize - record->memOffset;
+
   const VkBufferDeviceAddressInfo addrInfo = {
       VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
       NULL,
@@ -54,7 +67,7 @@ GPUAddressRange WrappedVulkan::CreateAddressRange(VkDevice device, VkBuffer buff
   return {
       address,
       address + record->memSize,
-      address + (memrecord->memSize - record->memOffset),
+      address + oobSize,
       record->GetResourceID(),
   };
 }
@@ -74,7 +87,12 @@ void WrappedVulkan::UntrackBufferAddress(VkDevice device, VkBuffer buffer)
   if(rng.id == ResourceId())
     return;
 
-  m_AddressTracker.RemoveFrom(rng);
+  m_AddressTracker.RemoveFrom(rng.start, rng.id);
+}
+
+void WrappedVulkan::GetResIDFromAddr(GPUAddressRange::Address addr, ResourceId &id, uint64_t &offs)
+{
+  m_AddressTracker.GetResIDFromAddr(addr, id, offs);
 }
 
 void WrappedVulkan::ChooseMemoryIndices()
@@ -330,7 +348,7 @@ MemoryAllocation WrappedVulkan::AllocateMemoryForResource(bool buffer, VkMemoryR
     }
 
     uint64_t initStateLimitMB = RenderDoc::Inst().GetCaptureOptions().softMemoryLimit;
-    if(initStateLimitMB > 0)
+    if(initStateLimitMB > 0 && initStateLimitMB < 512)
       allocSize = RDCMAX(initStateLimitMB, allocSize);
 
     uint32_t memoryTypeIndex = 0;
@@ -422,13 +440,16 @@ MemoryAllocation WrappedVulkan::AllocateMemoryForResource(bool buffer, VkMemoryR
 
     // do the actual allocation
     VkResult vkr = ObjDisp(d)->AllocateMemory(Unwrap(d), &info, NULL, &chunk.mem);
-    CheckVkResult(vkr);
+    CHECK_VKR(this, vkr);
 
     ret.offs = 0;
     ret.mem = VK_NULL_HANDLE;
 
     if(vkr != VK_SUCCESS)
+    {
+      RDCERR("Failed allocating internal memory: %s", ToStr(vkr).c_str());
       return ret;
+    }
 
     GetResourceManager()->WrapResource(Unwrap(d), chunk.mem);
 

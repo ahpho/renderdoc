@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2021-2024 Baldur Karlsson
+ * Copyright (c) 2021-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -167,7 +167,7 @@ private:
   bool Serialise_InitialState(WriteSerialiser &ser, ResourceId id, MetalResourceRecord *record,
                               const MetalInitialContents *initial);
   void Create_InitialState(ResourceId id, WrappedMTLObject *live, bool hasData);
-  void Apply_InitialState(WrappedMTLObject *live, const MetalInitialContents &initial);
+  void Apply_InitialState(WrappedMTLObject *live, MetalInitialContents &initial);
   // ResourceManager interface
 
   WrappedMTLDevice *m_Device;

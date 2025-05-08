@@ -16,6 +16,12 @@
     <ClInclude Include="nvapi_wrapper.h">
       <Filter>nvapi</Filter>
     </ClInclude>
+    <ClInclude Include="nv_counter_enumerator.h" />
+    <ClInclude Include="nv_d3d11_counters.h" />
+    <ClInclude Include="nv_d3d12_counters.h" />
+    <ClInclude Include="nv_gl_counters.h" />
+    <ClInclude Include="nv_vk_counters.h" />
+    <ClInclude Include="nv_aftermath.h" />
     <ClInclude Include="official\PerfSDK\redist\include\linux-desktop-x64\nvperf_host_impl.h">
       <Filter>official\PerfSDK</Filter>
     </ClInclude>
@@ -155,5 +161,11 @@
     <ClCompile Include="nvapi_wrapper.cpp">
       <Filter>nvapi</Filter>
     </ClCompile>
+    <ClCompile Include="nv_counter_enumerator.cpp" />
+    <ClCompile Include="nv_d3d11_counters.cpp" />
+    <ClCompile Include="nv_d3d12_counters.cpp" />
+    <ClCompile Include="nv_gl_counters.cpp" />
+    <ClCompile Include="nv_vk_counters.cpp" />
+    <ClCompile Include="nv_aftermath.cpp" />
   </ItemGroup>
 </Project>

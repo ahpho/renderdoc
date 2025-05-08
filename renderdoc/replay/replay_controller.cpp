@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -1226,7 +1226,7 @@ ResultDetails ReplayController::SaveTexture(const TextureSave &saveData, const r
   {
     if(sd.destType == FileType::DDS)
     {
-      write_dds_data ddsData;
+      write_tex_data ddsData;
 
       ResourceFormat saveFmt = td.format;
       // use typeCast to inform typeless saving, otherwise it will get lost
@@ -1698,6 +1698,24 @@ ShaderDebugTrace *ReplayController::DebugThread(const rdcfixedarray<uint32_t, 3>
   return ret;
 }
 
+ShaderDebugTrace *ReplayController::DebugMeshThread(const rdcfixedarray<uint32_t, 3> &groupid,
+                                                    const rdcfixedarray<uint32_t, 3> &threadid)
+{
+  CHECK_REPLAY_THREAD();
+
+  RENDERDOC_PROFILEFUNCTION();
+
+  ShaderDebugTrace *ret = m_pDevice->DebugMeshThread(m_EventID, groupid, threadid);
+  FatalErrorCheck();
+
+  SetFrameEvent(m_EventID, true);
+
+  if(ret->debugger)
+    m_Debuggers.push_back(ret->debugger);
+
+  return ret;
+}
+
 rdcarray<ShaderDebugState> ReplayController::ContinueDebug(ShaderDebugger *debugger)
 {
   CHECK_REPLAY_THREAD();
@@ -2154,6 +2172,13 @@ void ReplayController::RemoveReplacement(ResourceId id)
   for(size_t i = 0; i < m_Outputs.size(); i++)
     if(m_Outputs[i]->GetType() != ReplayOutputType::Headless)
       m_Outputs[i]->Display();
+}
+
+void ReplayController::ClearReplayCache()
+{
+  CHECK_REPLAY_THREAD();
+
+  m_pDevice->ClearReplayCache();
 }
 
 RDResult ReplayController::CreateDevice(RDCFile *rdc, const ReplayOptions &opts)

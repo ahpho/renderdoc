@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,6 +33,7 @@
 #include "d3d12_debug.h"
 #include "d3d12_device.h"
 #include "d3d12_replay.h"
+#include "d3d12_rootsig.h"
 #include "d3d12_shader_cache.h"
 
 RDOC_CONFIG(rdcstr, D3D12_Debug_PostVSDumpDirPath, "",
@@ -2231,12 +2232,9 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
   ID3D12RootSignature *annotatedSig = NULL;
 
   {
-    ID3DBlob *blob = m_pDevice->GetShaderCache()->MakeRootSig(modsig);
-    HRESULT hr =
-        m_pDevice->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(),
-                                       __uuidof(ID3D12RootSignature), (void **)&annotatedSig);
-
-    SAFE_RELEASE(blob);
+    bytebuf blob = EncodeRootSig(m_pDevice->RootSigVersion(), modsig);
+    HRESULT hr = m_pDevice->CreateRootSignature(
+        0, blob.data(), blob.size(), __uuidof(ID3D12RootSignature), (void **)&annotatedSig);
 
     if(annotatedSig == NULL || FAILED(hr))
     {
@@ -2368,7 +2366,7 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
 
     ID3D12CommandList *l = list;
     m_pDevice->GetQueue()->ExecuteCommandLists(1, &l);
-    m_pDevice->GPUSync();
+    m_pDevice->InternalQueueWaitForIdle();
 
     GetDebugManager()->ResetDebugAlloc();
 
@@ -2416,7 +2414,7 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
     list->Close();
 
     m_pDevice->GetQueue()->ExecuteCommandLists(1, &l);
-    m_pDevice->GPUSync();
+    m_pDevice->InternalQueueWaitForIdle();
 
     GetDebugManager()->ResetDebugAlloc();
 
@@ -2557,7 +2555,7 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
 
     ID3D12CommandList *l = list;
     m_pDevice->GetQueue()->ExecuteCommandLists(1, &l);
-    m_pDevice->GPUSync();
+    m_pDevice->InternalQueueWaitForIdle();
 
     GetDebugManager()->ResetDebugAlloc();
 
@@ -2643,9 +2641,11 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
         SAFE_RELEASE(ampBuffer);
         SAFE_RELEASE(meshBuffer);
 
-        RDCERR("Meshlet returned invalid vertex count %u with declared max %u", numVerts,
-               layout.vertArrayLength);
-        ret.meshout.status = "Got corrupted mesh output data from GPU";
+        ret.meshout.status = StringFormat::Fmt(
+            "Got corrupted mesh output data from GPU.\n"
+            "Meshlet returned invalid vertex count %u with declared max %u",
+            numVerts, layout.vertArrayLength);
+        RDCERR("%s", ret.meshout.status.c_str());
         return;
       }
 
@@ -2654,9 +2654,11 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
         SAFE_RELEASE(ampBuffer);
         SAFE_RELEASE(meshBuffer);
 
-        RDCERR("Meshlet returned invalid primitive count %u with declared max %u", numPrims,
-               layout.primArrayLength);
-        ret.meshout.status = "Got corrupted mesh output data from GPU";
+        ret.meshout.status = StringFormat::Fmt(
+            "Got corrupted mesh output data from GPU.\n"
+            "Meshlet returned invalid primitive count %u with declared max %u",
+            numPrims, layout.primArrayLength);
+        RDCERR("%s", ret.meshout.status.c_str());
         return;
       }
 
@@ -2955,9 +2957,9 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
     {
       rootsig.Flags |= D3D12_ROOT_SIGNATURE_FLAG_ALLOW_STREAM_OUTPUT;
 
-      ID3DBlob *blob = m_pDevice->GetShaderCache()->MakeRootSig(rootsig);
+      bytebuf blob = EncodeRootSig(m_pDevice->RootSigVersion(), rootsig);
 
-      hr = m_pDevice->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(),
+      hr = m_pDevice->CreateRootSignature(0, blob.data(), blob.size(),
                                           __uuidof(ID3D12RootSignature), (void **)&soSig);
       if(FAILED(hr))
       {
@@ -2966,8 +2968,6 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
         RDCERR("%s", ret.vsout.status.c_str());
         return;
       }
-
-      SAFE_RELEASE(blob);
     }
   }
 
@@ -3089,7 +3089,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
     {
       if(recreate)
       {
-        m_pDevice->GPUSync();
+        m_pDevice->InternalQueueWaitForIdle();
 
         uint64_t newSize = m_SOBufferSize;
         if(!CreateSOBuffers())
@@ -3188,7 +3188,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
 
       if(recreate)
       {
-        m_pDevice->GPUSync();
+        m_pDevice->InternalQueueWaitForIdle();
 
         uint64_t newSize = m_SOBufferSize;
         if(!CreateSOBuffers())
@@ -3318,7 +3318,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
 
     ID3D12CommandList *l = list;
     m_pDevice->GetQueue()->ExecuteCommandLists(1, &l);
-    m_pDevice->GPUSync();
+    m_pDevice->InternalQueueWaitForIdle();
 
     GetDebugManager()->ResetDebugAlloc();
 
@@ -3327,7 +3327,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
     byte *byteData = NULL;
     D3D12_RANGE range = {0, (SIZE_T)m_SOBufferSize};
     hr = m_SOStagingBuffer->Map(0, &range, (void **)&byteData);
-    m_pDevice->CheckHRESULT(hr);
+    CHECK_HR(m_pDevice, hr);
     if(FAILED(hr))
     {
       RDCERR("Failed to map sobuffer HRESULT: %s", ToStr(hr).c_str());
@@ -3593,7 +3593,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
 
       ID3D12CommandList *l = list;
       m_pDevice->GetQueue()->ExecuteCommandLists(1, &l);
-      m_pDevice->GPUSync();
+      m_pDevice->InternalQueueWaitForIdle();
 
       // check that things are OK, and resize up if needed
       D3D12_RANGE range;
@@ -3602,7 +3602,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
 
       D3D12_QUERY_DATA_SO_STATISTICS *data;
       hr = m_SOStagingBuffer->Map(0, &range, (void **)&data);
-      m_pDevice->CheckHRESULT(hr);
+      CHECK_HR(m_pDevice, hr);
       if(FAILED(hr))
       {
         RDCERR("Couldn't get SO statistics data");
@@ -3704,7 +3704,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
 
           l = list;
           m_pDevice->GetQueue()->ExecuteCommandLists(1, &l);
-          m_pDevice->GPUSync();
+          m_pDevice->InternalQueueWaitForIdle();
 
           GetDebugManager()->ResetDebugAlloc();
 
@@ -3726,7 +3726,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
 
       l = list;
       m_pDevice->GetQueue()->ExecuteCommandLists(1, &l);
-      m_pDevice->GPUSync();
+      m_pDevice->InternalQueueWaitForIdle();
 
       GetDebugManager()->ResetDebugAlloc();
 
@@ -3778,7 +3778,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
 
         ID3D12CommandList *l = list;
         m_pDevice->GetQueue()->ExecuteCommandLists(1, &l);
-        m_pDevice->GPUSync();
+        m_pDevice->InternalQueueWaitForIdle();
 
         // check that things are OK, and resize up if needed
         D3D12_RANGE range;
@@ -3787,7 +3787,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
 
         D3D12_QUERY_DATA_SO_STATISTICS *data;
         hr = m_SOStagingBuffer->Map(0, &range, (void **)&data);
-        m_pDevice->CheckHRESULT(hr);
+        CHECK_HR(m_pDevice, hr);
         if(FAILED(hr))
         {
           RDCERR("Couldn't get SO statistics data");
@@ -3854,7 +3854,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
 
     ID3D12CommandList *l = list;
     m_pDevice->GetQueue()->ExecuteCommandLists(1, &l);
-    m_pDevice->GPUSync();
+    m_pDevice->InternalQueueWaitForIdle();
 
     GetDebugManager()->ResetDebugAlloc();
 
@@ -3863,7 +3863,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
     byte *byteData = NULL;
     D3D12_RANGE range = {0, (SIZE_T)m_SOBufferSize};
     hr = m_SOStagingBuffer->Map(0, &range, (void **)&byteData);
-    m_pDevice->CheckHRESULT(hr);
+    CHECK_HR(m_pDevice, hr);
     if(FAILED(hr))
     {
       RDCERR("Failed to map sobuffer HRESULT: %s", ToStr(hr).c_str());
@@ -4143,7 +4143,7 @@ MeshFormat D3D12Replay::GetPostVSBuffers(uint32_t eventId, uint32_t instID, uint
 
     ret.dispatchSize = s.dispatchSize;
 
-    if(stage == MeshDataStage::MeshOut)
+    if(stage == MeshDataStage::MeshOut || stage == MeshDataStage::Count)
     {
       ret.meshletSizes.resize(s.instData.size());
       for(size_t i = 0; i < s.instData.size(); i++)

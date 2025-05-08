@@ -10,6 +10,10 @@ set(MODULE_DEFINES
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unknown-warning-option -Wno-unused-private-field -Wno-shadow -Wno-shorten-64-to-32")
+
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 19)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-cast-function-type")
+    endif()
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX)

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 #include <map>
+#include <unordered_map>
 #include "api/replay/rdcarray.h"
 #include "spirv_common.h"
 #include "spirv_processor.h"
@@ -58,6 +59,13 @@ struct Binding
   bool operator==(const Binding &o) const { return set == o.set && binding == o.binding; }
 };
 
+struct StructMember
+{
+  Id type;
+  rdcstr name;
+  uint32_t offset;
+};
+
 template <typename SPIRVType>
 using TypeToId = std::pair<SPIRVType, Id>;
 
@@ -71,6 +79,7 @@ public:
   ~Editor();
 
   void Prepare();
+  void SetBufferStorageMode(BufferStorageMode mode) { m_StorageMode = mode; }
   void CreateEmpty(uint32_t major, uint32_t minor);
 
   Id MakeId();
@@ -90,6 +99,27 @@ public:
   {
     UnregisterOp(iter);
     iter.nopRemove();
+  }
+
+  void OffsetBindingsToMatchReservation(size_t numReservedBindings);
+  StorageClass PrepareAddedBufferAccess();
+  rdcpair<Id, Id> AddBufferVariable(rdcarray<Id> &addedGlobals, Id varType, const rdcstr &name,
+                                    uint32_t binding, uint32_t specID, uint64_t fixedAddr);
+  Id LoadBufferVariable(OperationList &ops, rdcpair<Id, Id> var);
+
+  Id FindEntryID(ShaderEntryPoint entry);
+  void AddEntryGlobals(Id entry, const rdcarray<Id> &newGlobals);
+  void ChangeEntry(Id from, Id to);
+
+  rdcpair<Id, Id> AddBuiltinInputLoad(OperationList &ops, ShaderStage stage, BuiltIn builtin,
+                                      Id type);
+  Id AddBuiltinInputLoad(OperationList &ops, rdcarray<Id> &addedGlobals, ShaderStage stage,
+                         BuiltIn builtin, Id type)
+  {
+    rdcpair<Id, Id> ret = AddBuiltinInputLoad(ops, stage, builtin, type);
+    if(ret.second != rdcspv::Id())
+      addedGlobals.push_back(ret.second);
+    return ret.first;
   }
 
   StorageClass StorageBufferClass() { return m_StorageBufferClass; }
@@ -175,10 +205,8 @@ public:
     return it->second;
   }
 
-  rdcpair<Id, Id> AddBuiltinInputLoad(OperationList &ops, ShaderStage stage, BuiltIn builtin,
-                                      Id type);
-
   Id DeclareStructType(const rdcarray<Id> &members);
+  Id DeclareStructType(const rdcstr &name, const rdcarray<StructMember> &members);
 
   // helper for AddConstant
   template <typename T>
@@ -270,7 +298,14 @@ private:
 
   std::map<BuiltIn, BuiltinInputData> builtinInputs;
 
+  // optimise for repeated U32 constants, only register once
+  std::unordered_map<uint32_t, rdcspv::Id> m_U32Consts;
+
+  BufferStorageMode m_StorageMode = BufferStorageMode::Unknown;
+
   std::map<Id, Binding> bindings;
+  rdcarray<Id> m_BufferBlockTypes;
+  rdcarray<Id> m_BlockTypes;
 
   std::map<Scalar, Id> scalarTypeToId;
   std::map<Vector, Id> vectorTypeToId;
@@ -302,6 +337,18 @@ inline Id Editor::AddConstantImmediate(bool b)
   rdcarray<uint32_t> words = {typeId.value(), MakeId().value()};
 
   return AddConstant(Operation(b ? Op::ConstantTrue : Op::ConstantFalse, words));
+}
+
+template <>
+inline Id Editor::AddConstantImmediate(uint32_t b)
+{
+  Id typeId = DeclareType(scalar<uint32_t>());
+
+  if(m_U32Consts[b] != rdcspv::Id())
+    return m_U32Consts[b];
+
+  rdcspv::Id constantId = MakeId();
+  return AddConstant(Operation(Op::Constant, {typeId.value(), constantId.value(), b}));
 }
 
 template <>

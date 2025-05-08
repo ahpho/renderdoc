@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -1392,6 +1392,31 @@ void ReplayProxy::FreeTargetResource(ResourceId id)
 }
 
 template <typename ParamSerialiser, typename ReturnSerialiser>
+void ReplayProxy::Proxied_ClearReplayCache(ParamSerialiser &paramser, ReturnSerialiser &retser)
+{
+  const ReplayProxyPacket expectedPacket = eReplayProxy_ClearReplayCache;
+  ReplayProxyPacket packet = eReplayProxy_ClearReplayCache;
+
+  {
+    BEGIN_PARAMS();
+    END_PARAMS();
+  }
+
+  {
+    REMOTE_EXECUTION();
+    if(paramser.IsReading() && !paramser.IsErrored() && !m_IsErrored)
+      m_Remote->ClearReplayCache();
+  }
+
+  SERIALISE_RETURN_VOID();
+}
+
+void ReplayProxy::ClearReplayCache()
+{
+  PROXY_FUNCTION(ClearReplayCache);
+}
+
+template <typename ParamSerialiser, typename ReturnSerialiser>
 rdcarray<ShaderEncoding> ReplayProxy::Proxied_GetTargetShaderEncodings(ParamSerialiser &paramser,
                                                                        ReturnSerialiser &retser)
 {
@@ -1682,6 +1707,44 @@ ShaderDebugTrace *ReplayProxy::DebugThread(uint32_t eventId,
                                            const rdcfixedarray<uint32_t, 3> &threadid)
 {
   PROXY_FUNCTION(DebugThread, eventId, groupid, threadid);
+}
+
+template <typename ParamSerialiser, typename ReturnSerialiser>
+ShaderDebugTrace *ReplayProxy::Proxied_DebugMeshThread(ParamSerialiser &paramser,
+                                                       ReturnSerialiser &retser, uint32_t eventId,
+                                                       const rdcfixedarray<uint32_t, 3> &groupid,
+                                                       const rdcfixedarray<uint32_t, 3> &threadid)
+{
+  const ReplayProxyPacket expectedPacket = eReplayProxy_DebugMeshThread;
+  ReplayProxyPacket packet = eReplayProxy_DebugMeshThread;
+  ShaderDebugTrace *ret;
+
+  {
+    BEGIN_PARAMS();
+    SERIALISE_ELEMENT(eventId);
+    SERIALISE_ELEMENT(groupid);
+    SERIALISE_ELEMENT(threadid);
+    END_PARAMS();
+  }
+
+  {
+    REMOTE_EXECUTION();
+    if(paramser.IsReading() && !paramser.IsErrored() && !m_IsErrored)
+      ret = m_Remote->DebugMeshThread(eventId, groupid, threadid);
+    else
+      ret = new ShaderDebugTrace;
+  }
+
+  SERIALISE_RETURN(*ret);
+
+  return ret;
+}
+
+ShaderDebugTrace *ReplayProxy::DebugMeshThread(uint32_t eventId,
+                                               const rdcfixedarray<uint32_t, 3> &groupid,
+                                               const rdcfixedarray<uint32_t, 3> &threadid)
+{
+  PROXY_FUNCTION(DebugMeshThread, eventId, groupid, threadid);
 }
 
 template <typename ParamSerialiser, typename ReturnSerialiser>
@@ -2477,7 +2540,7 @@ void ReplayProxy::RemapProxyTextureIfNeeded(TextureDescription &tex, GetTextureD
     params.remap = RemapTexture::RGBA32;
     tex.format.compCount = 4;
     tex.format.compByteWidth = 4;
-    tex.format.compType = CompType::Float;
+    params.typeCast = tex.format.compType = CompType::Float;
     tex.format.type = ResourceFormatType::Regular;
     tex.creationFlags &= ~TextureCategory::DepthTarget;
     return;
@@ -2528,8 +2591,14 @@ void ReplayProxy::RemapProxyTextureIfNeeded(TextureDescription &tex, GetTextureD
       case ResourceFormatType::R5G5B5A1:
       case ResourceFormatType::R4G4:
       case ResourceFormatType::R4G4B4A4:
-      case ResourceFormatType::ETC2: params.remap = RemapTexture::RGBA8; break;
-      case ResourceFormatType::R10G10B10A2: params.remap = RemapTexture::RGBA16; break;
+      case ResourceFormatType::ETC2:
+        params.remap = RemapTexture::RGBA8;
+        tex.format.compType = CompType::UNorm;
+        break;
+      case ResourceFormatType::R10G10B10A2:
+        params.remap = RemapTexture::RGBA16;
+        tex.format.compType = CompType::Float;
+        break;
       default:
         RDCERR("Don't know how to remap resource format type %u, falling back to RGBA32",
                tex.format.type);
@@ -2566,6 +2635,8 @@ void ReplayProxy::RemapProxyTextureIfNeeded(TextureDescription &tex, GetTextureD
       tex.format.compType = CompType::Float;
     }
   }
+
+  params.typeCast = tex.format.compType;
 
   tex.format.SetBGRAOrder(false);
   tex.format.type = ResourceFormatType::Regular;
@@ -2639,6 +2710,8 @@ void ReplayProxy::EnsureTexCached(ResourceId &texid, CompType &typeCast, const S
 
       GetTextureDataParams params = proxy.params;
 
+      if(typeCast == CompType::Typeless)
+        typeCast = params.typeCast;
       params.typeCast = typeCast;
       params.standardLayout = true;
 
@@ -2657,7 +2730,11 @@ void ReplayProxy::EnsureTexCached(ResourceId &texid, CompType &typeCast, const S
   }
 
   if(proxyit->second.params.remap != RemapTexture::NoRemap)
+  {
     typeCast = BaseRemapType(proxyit->second.params.remap, typeCast);
+    if(typeCast == CompType::Typeless)
+      typeCast = proxyit->second.params.typeCast;
+  }
 
   // change texid to the proxy texture's ID for passing to our proxy renderer
   texid = proxyit->second.id;
@@ -3117,6 +3194,7 @@ bool ReplayProxy::Tick(int type)
     }
     case eReplayProxy_ReplaceResource: ReplaceResource(ResourceId(), ResourceId()); break;
     case eReplayProxy_RemoveReplacement: RemoveReplacement(ResourceId()); break;
+    case eReplayProxy_ClearReplayCache: ClearReplayCache(); break;
     case eReplayProxy_DebugVertex: DebugVertex(0, 0, 0, 0, 0); break;
     case eReplayProxy_DebugPixel: DebugPixel(0, 0, 0, DebugPixelInputs()); break;
     case eReplayProxy_DebugThread:

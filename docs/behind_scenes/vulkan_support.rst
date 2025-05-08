@@ -36,6 +36,8 @@ RenderDoc has support for Vulkan version 1.3, as well as a number of extensions,
 * RenderDoc assumes that even if multiple GPUs are present, that only one VkDevice will be created and used.
 * RenderDoc captures will in general not be portable between different systems, only currently supporting capture and replay on the same or similar enough machines.
 
+For more information about RenderDoc's raytracing support see :doc:`raytracing`. Note that raytracing support is limited on nvidia drivers due to missing driver functionality.
+
 Android
 -------
 

@@ -4,10 +4,10 @@ set -x
 
 # Get new cmake for glslang and spirv-tools
 
-wget https://github.com/Kitware/CMake/releases/download/v3.26.2/cmake-3.26.2-linux-x86_64.tar.gz
-tar -zxvf cmake-3.26.2-linux-x86_64.tar.gz
+wget https://github.com/Kitware/CMake/releases/download/v3.27.9/cmake-3.27.9-linux-x86_64.tar.gz
+tar -zxvf cmake-3.27.9-linux-x86_64.tar.gz
 
-export PATH=$(pwd)/cmake-3.26.2-linux-x86_64/bin:$PATH
+export PATH=$(pwd)/cmake-3.27.9-linux-x86_64/bin:$PATH
 
 # Update to newer clang and libc++ for spirv-tools...
 

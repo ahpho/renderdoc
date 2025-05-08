@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -163,6 +163,7 @@ public:
   const ActionDescription *CurAction() override { return GetAction(CurEvent()); }
   const ActionDescription *GetFirstAction() override { return m_FirstAction; };
   const ActionDescription *GetLastAction() override { return m_LastAction; };
+  void ClearReplayCache() override;
   bool OpenRGPProfile(const rdcstr &filename) override;
   IRGPInterop *GetRGPInterop() override { return m_RGP; }
   const rdcarray<ActionDescription> &CurRootActions() override { return *m_Actions; }

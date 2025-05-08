@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -91,7 +91,7 @@ public slots:
   void updateFormatList();
 
 private slots:
-  void on_apply_clicked();
+  void apply_clicked();
 
 private:
   Ui::BufferFormatSpecifier *ui;

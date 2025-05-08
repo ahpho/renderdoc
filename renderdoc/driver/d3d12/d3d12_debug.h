@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -63,6 +63,7 @@ enum CBVUAVSRVSlot
 
   SHADER_DEBUG_UAV,
   SHADER_DEBUG_MSAA_UAV,
+  SHADER_DEBUG_LANEDATA_UAV,
 
   TMP_UAV,
 
@@ -200,7 +201,7 @@ public:
 
   void PrepareTextureSampling(ID3D12Resource *resource, CompType typeCast, int &resType,
                               BarrierSet &barrierSet);
-  void PrepareExecuteIndirectPatching(const GPUAddressRangeTracker &origAddresses);
+  void PrepareExecuteIndirectPatching(GPUAddressRangeTracker &origAddresses);
 
   MeshDisplayPipelines CacheMeshDisplayPipelines(const MeshFormat &primary,
                                                  const MeshFormat &secondary);
@@ -312,6 +313,6 @@ uint32_t GetFreeRegSpace(const D3D12RootSignature &sig, const uint32_t registerS
                          D3D12DescriptorType type, D3D12_SHADER_VISIBILITY visibility);
 
 void AddDebugDescriptorsToRenderState(WrappedID3D12Device *pDevice, D3D12RenderState &rs,
-                                      const rdcarray<PortableHandle> &handles,
+                                      bool compute, const rdcarray<PortableHandle> &handles,
                                       D3D12_DESCRIPTOR_HEAP_TYPE heapType, uint32_t sigElem,
                                       std::set<ResourceId> &copiedHeaps);

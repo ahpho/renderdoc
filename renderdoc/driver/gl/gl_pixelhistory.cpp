@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -165,6 +165,9 @@ const CopyFramebuffer &getCopyFramebuffer(WrappedOpenGL *driver,
   GLint depthType;
   GLuint curStencil;
   GLint stencilType;
+
+  if(colorFormat == eGL_NONE)
+    colorFormat = eGL_RGBA8;
 
   driver->glGetFramebufferAttachmentParameteriv(eGL_DRAW_FRAMEBUFFER, eGL_DEPTH_ATTACHMENT,
                                                 eGL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,
@@ -584,29 +587,36 @@ bool PixelHistorySetupResources(WrappedOpenGL *driver, GLPixelHistoryResources &
 
   // If the GLSL version is greater than or equal to 330, we can use IntBitsToFloat, otherwise we
   // need to write the float value directly.
+
+  ShaderType shaderType = IsGLES ? ShaderType::GLSLES : ShaderType::GLSL;
+
   rdcstr glslSource;
-  if(glslVersion >= 330)
+  if(glslVersion >= 330 || (IsGLES && glslVersion >= 300))
   {
-    glslSource = GenerateGLSLShader(GetEmbeddedResource(glsl_pixelhistory_primid_frag),
-                                    ShaderType::GLSL, glslVersion);
+    glslSource = GenerateGLSLShader(GetEmbeddedResource(glsl_pixelhistory_primid_frag), shaderType,
+                                    glslVersion);
   }
   else
   {
-    glslSource =
-        GenerateGLSLShader(GetEmbeddedResource(glsl_pixelhistory_primid_frag), ShaderType::GLSL,
-                           glslVersion, "#define INT_BITS_TO_FLOAT_NOT_SUPPORTED\n");
+    glslSource = GenerateGLSLShader(GetEmbeddedResource(glsl_pixelhistory_primid_frag), shaderType,
+                                    glslVersion, "#define INT_BITS_TO_FLOAT_NOT_SUPPORTED\n");
   }
   // SPIR-V shaders are always generated as desktop GL 430, for ease
   rdcstr spirvSource = GenerateGLSLShader(GetEmbeddedResource(glsl_pixelhistory_primid_frag),
                                           ShaderType::GLSPIRV, 430);
-  rdcstr msCopySource =
-      GenerateGLSLShader(GetEmbeddedResource(glsl_pixelhistory_mscopy_comp), ShaderType::GLSL, 430);
+
+  rdcstr msCopySource = GenerateGLSLShader(GetEmbeddedResource(glsl_pixelhistory_mscopy_comp),
+                                           shaderType, glslVersion);
   rdcstr msCopySourceDepth = GenerateGLSLShader(
-      GetEmbeddedResource(glsl_pixelhistory_mscopy_depth_comp), ShaderType::GLSL, 430);
-  resources.primitiveIdFragmentShaderSPIRV = CreateSPIRVShader(eGL_FRAGMENT_SHADER, spirvSource);
+      GetEmbeddedResource(glsl_pixelhistory_mscopy_depth_comp), shaderType, glslVersion);
+
+  if(HasExt[ARB_gl_spirv])
+    resources.primitiveIdFragmentShaderSPIRV = CreateSPIRVShader(eGL_FRAGMENT_SHADER, spirvSource);
+
   resources.primitiveIdFragmentShader = CreateShader(eGL_FRAGMENT_SHADER, glslSource);
   resources.msCopyComputeProgram = CreateCShaderProgram(msCopySource);
   resources.msCopyDepthComputeProgram = CreateCShaderProgram(msCopySourceDepth);
+
   return true;
 }
 

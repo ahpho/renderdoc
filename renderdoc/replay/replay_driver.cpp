@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -602,12 +602,17 @@ void PreprocessLineDirectives(rdcarray<ShaderSourceFile> &sourceFiles)
 
       if(c + 5 > end || strncmp(c, "#line", 5) != 0)
       {
-        // only actually insert the line if we've seen a #line statement. Otherwise we're just
-        // doing an identity copy. This can lead to problems e.g. if there are a few statements in
-        // a file before the #line we then create a truncated list of lines with only those and
-        // then start spitting the #line directives into other files. We still want to have the
-        // original file as-is.
+        // only consider the destination file 'modfied' (and so needing a merge later) if we've seen
+        // a #line statement. Otherwise we're just doing an identity copy so far. Without this, this
+        // can lead to problems e.g. if there are a few statements in a file before the #line we
+        // then create a truncated list of lines with only those and then start spitting the #line
+        // directives into other files. We still want to have the original file as-is so don't
+        // consider it modified. However if a #line directive targets the file it's already in we
+        // want to be sure that we have copied any existing implicit preamble to that file so it
+        // doesn't get lost when we re-merge
         if(seenLine)
+          dstFile->modified = true;
+
         {
           // resize up to account for the current line, if necessary
           dstFile->lines.resize(RDCMAX(dstLine + 1, dstFile->lines.size()));
@@ -615,12 +620,11 @@ void PreprocessLineDirectives(rdcarray<ShaderSourceFile> &sourceFiles)
           // if non-empty, append this line (to allow multiple lines on the same line
           // number to be concatenated). To avoid screwing up line numbers we have to append with
           // a comment and not a newline.
+
           if(dstFile->lines[dstLine].empty())
             dstFile->lines[dstLine] = srclines[srcLine];
           else
             dstFile->lines[dstLine] += " /* multiple #lines overlapping */ " + srclines[srcLine];
-
-          dstFile->modified = true;
         }
 
         // advance line counter
@@ -1857,3 +1861,391 @@ void DeriveNearFar(Vec4f pos, Vec4f pos0, float &nearp, float &farp, bool &found
     found = true;
   }
 }
+
+#if ENABLED(ENABLE_UNIT_TESTS)
+
+#include "catch/catch.hpp"
+
+TEST_CASE("Check PreprocessLineDirectives", "[preprocess]")
+{
+  rdcarray<ShaderSourceFile> sources;
+
+  SECTION("Identity case, one file")
+  {
+    sources.push_back({"file.hlsl", "float4 foo;"});
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "file.hlsl");
+    CHECK(sources[0].contents == "float4 foo;");
+  }
+
+  SECTION("Identity case, two files")
+  {
+    sources.push_back({"file.hlsl", "float4 foo;"});
+    sources.push_back({"file2.hlsl", "int4 bar;"});
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "file.hlsl");
+    CHECK(sources[0].contents == "float4 foo;");
+    CHECK(sources[1].filename == "file2.hlsl");
+    CHECK(sources[1].contents == "int4 bar;");
+  }
+
+  SECTION("Identity case, empty filename")
+  {
+    sources.push_back({"file.hlsl", "float4 foo;"});
+    sources.push_back({"file2.hlsl", "int4 bar;"});
+    sources.push_back({"", "struct blah {};"});
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "file.hlsl");
+    CHECK(sources[0].contents == "float4 foo;");
+    CHECK(sources[1].filename == "file2.hlsl");
+    CHECK(sources[1].contents == "int4 bar;");
+    CHECK(sources[2].filename == "");
+    CHECK(sources[2].contents == "struct blah {};");
+  }
+
+  SECTION("Line number only, identity expansion")
+  {
+    sources.push_back({"file.hlsl", R"(#line 2
+float4 foo;
+#line 4
+int4 bar;)"});
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "file.hlsl");
+    CHECK(sources[0].contents == R"(
+float4 foo;
+
+int4 bar;)");
+  }
+
+  SECTION("Line number only, forward expansion")
+  {
+    sources.push_back({"file.hlsl", R"(#line 2
+float4 foo;
+#line 10
+int4 bar;)"});
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "file.hlsl");
+    CHECK(sources[0].contents == R"(
+float4 foo;
+
+
+
+
+
+
+
+int4 bar;)");
+  }
+
+  SECTION("Line number reversal")
+  {
+    sources.push_back({"file.hlsl", R"(#line 2
+float4 foo;
+
+
+
+
+
+#line 3
+int4 bar;)"});
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "file.hlsl");
+    CHECK(sources[0].contents == R"(
+float4 foo;
+int4 bar;)");
+  }
+
+  SECTION("Line number overlap")
+  {
+    sources.push_back({"file.hlsl", R"(#line 2
+float4 foo;
+
+
+
+
+
+#line 2
+int4 bar;)"});
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "file.hlsl");
+    CHECK(sources[0].contents == R"(
+float4 foo; /* multiple #lines overlapping */ int4 bar;)");
+  }
+
+  SECTION("Line and filename, single file")
+  {
+    rdcstr merged = R"(#line 2 "file.hlsl"
+float4 foo;
+
+
+#line 10 "file.hlsl"
+int4 bar;)";
+
+    sources.push_back({"merged.hlsl", merged});
+    sources.push_back({"file.hlsl", ""});
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "merged.hlsl");
+    CHECK(sources[0].contents == merged);
+    CHECK(sources[1].filename == "file.hlsl");
+    CHECK(sources[1].contents == R"(
+float4 foo;
+
+
+
+
+
+
+
+int4 bar;)");
+  }
+
+  SECTION("Line and filename, unreferenced file")
+  {
+    rdcstr merged = R"(#line 2 "file.hlsl"
+float4 foo;
+
+
+#line 10 "unknown.hlsl"
+int4 bar;)";
+
+    sources.push_back({"merged.hlsl", merged});
+    sources.push_back({"file.hlsl", ""});
+
+    // unknown.hlsl needs to be in the sources list to be filled in, shader debug information is
+    // assumed to at least include an empty referenced filename for used files
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "merged.hlsl");
+    CHECK(sources[0].contents == merged);
+    CHECK(sources[1].filename == "file.hlsl");
+    CHECK(sources[1].contents == R"(
+float4 foo;)");
+  }
+
+  SECTION("Line and filename, multiple files")
+  {
+    rdcstr merged = R"(#line 2 "file.hlsl"
+float4 foo;
+
+
+#line 10 "file2.hlsl"
+int4 bar;
+
+
+#line 10 "file.hlsl"
+struct blah {};)";
+
+    sources.push_back({"merged.hlsl", merged});
+    sources.push_back({"file.hlsl", ""});
+    sources.push_back({"file2.hlsl", ""});
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "merged.hlsl");
+    CHECK(sources[0].contents == merged);
+    CHECK(sources[1].filename == "file.hlsl");
+    CHECK(sources[1].contents == R"(
+float4 foo;
+
+
+
+
+
+
+
+struct blah {};)");
+    CHECK(sources[2].filename == "file2.hlsl");
+    CHECK(sources[2].contents == R"(
+
+
+
+
+
+
+
+
+int4 bar;)");
+  }
+
+  SECTION("Many-to-many file expansions")
+  {
+    rdcstr merged1 = R"(#line 2 "file.hlsl"
+float4 foo;
+
+
+#line 10 "file2.hlsl"
+int4 bar;
+
+
+#line 10 "file.hlsl"
+struct blah {};)";
+
+    rdcstr merged2 = R"(#line 3 "file.hlsl"
+// this was foo
+
+
+#line 11 "file2.hlsl"
+// this was bar
+
+
+#line 11 "file.hlsl"
+// this was a struct)";
+
+    sources.push_back({"merged1.hlsl", merged1});
+    sources.push_back({"merged2.hlsl", merged2});
+    sources.push_back({"file.hlsl", ""});
+    sources.push_back({"file2.hlsl", ""});
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "merged1.hlsl");
+    CHECK(sources[0].contents == merged1);
+    CHECK(sources[1].filename == "merged2.hlsl");
+    CHECK(sources[1].contents == merged2);
+    CHECK(sources[2].filename == "file.hlsl");
+    CHECK(sources[2].contents == R"(
+float4 foo;
+// this was foo
+
+
+
+
+
+
+struct blah {};
+// this was a struct)");
+    CHECK(sources[3].filename == "file2.hlsl");
+    CHECK(sources[3].contents == R"(
+
+
+
+
+
+
+
+
+int4 bar;
+// this was bar)");
+  }
+
+  SECTION("Preamble, with only line number changes")
+  {
+    sources.push_back({"file.hlsl", R"(
+// preamble
+#line 5
+float4 foo;
+
+
+
+
+
+#line 6
+int4 bar;)"});
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "file.hlsl");
+    CHECK(sources[0].contents == R"(
+// preamble
+
+
+float4 foo;
+int4 bar;)");
+  }
+
+  SECTION("Preamble with different filenames")
+  {
+    rdcstr merged = R"(
+// merged preamble
+
+#line 2 "file.hlsl"
+float4 foo;
+
+
+#line 10 "file2.hlsl"
+int4 bar;
+
+
+#line 10 "file.hlsl"
+struct blah {};)";
+
+    sources.push_back({"merged.hlsl", merged});
+    sources.push_back({"file.hlsl", ""});
+    sources.push_back({"file2.hlsl", ""});
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "merged.hlsl");
+    CHECK(sources[0].contents == merged);
+    CHECK(sources[1].filename == "file.hlsl");
+    CHECK(sources[1].contents == R"(
+float4 foo;
+
+
+
+
+
+
+
+struct blah {};)");
+    CHECK(sources[2].filename == "file2.hlsl");
+    CHECK(sources[2].contents == R"(
+
+
+
+
+
+
+
+
+int4 bar;)");
+  }
+
+  SECTION("Preamble with self filename")
+  {
+    rdcstr merged = R"(
+// merged preamble
+
+#line 5 "merged.hlsl"
+float4 foo;
+
+
+#line 10 "merged.hlsl"
+int4 bar;)";
+
+    sources.push_back({"merged.hlsl", merged});
+
+    PreprocessLineDirectives(sources);
+
+    CHECK(sources[0].filename == "merged.hlsl");
+    CHECK(sources[0].contents == R"(
+// merged preamble
+
+
+float4 foo;
+
+
+
+
+int4 bar;)");
+  }
+}
+
+#endif

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -134,6 +134,8 @@ DECLARE_REFLECTION_STRUCT(CaptureSettings);
 
 DOCUMENT(R"(The main parent window of the application.
 
+This window is retrieved by calling :meth:`CaptureContext.GetMainWindow`.
+
 .. function:: ShortcutCallback(QWidget focusWidget)
 
   Not a member function - the signature for any ``ShortcutCallback`` callbacks.
@@ -170,6 +172,7 @@ will be invoked, if it exists.
   for a global shortcut. Note that if an existing global shortcut exists the new one will not be
   registered.
 :param ShortcutCallback callback: The function to callback when the shortcut is hit.
+  Callback function signature must match :func:`ShortcutCallback`.
 )");
   virtual void RegisterShortcut(const rdcstr &shortcut, QWidget *widget,
                                 ShortcutCallback callback) = 0;
@@ -202,12 +205,14 @@ DECLARE_REFLECTION_STRUCT(IMainWindow);
 
 DOCUMENT(R"(The event browser window.
 
+This window is retrieved by calling :meth:`CaptureContext.GetEventBrowser`.
+
 .. function:: EventFilterCallback(context, filter, params, eventId, chunk, action, name)
 
   Not a member function - the signature for any ``EventFilterCallback`` callbacks.
 
   Called for each event in a capture when performing filtering in the Event Browser. The associated
-  ``FilterParseCallback`` will be called first to parse the parameters, and is available for caching
+  :func:`FilterParseCallback` will be called first to parse the parameters, and is available for caching
   or syntax checking. The same filter name and params string will be passed to this function.
 
   :param CaptureContext context: The current capture context.
@@ -343,10 +348,13 @@ expression.
   what each filter means.
 :param EventFilterCallback filter: The callback to call for each candidate event to perform
   filtering.
+  Callback function signature must match :func:`EventFilterCallback`.
 :param FilterParseCallback parser: The callback to call when the parsing the parameters and checking
   for any errors. This can be ``None`` if no pre-parsing is required.
+  Callback function signature must match :func:`FilterParseCallback`.
 :param AutoCompleteCallback completer: The callback to call when trying to provide autocomplete
   suggestions. This can be ``None`` if no completion is desired/applicable.
+  Callback function signature must match :func:`AutoCompleteCallback`.
 :return: Whether or not the registration was successful.
 :rtype: bool
 )");
@@ -420,7 +428,10 @@ protected:
 
 DECLARE_REFLECTION_STRUCT(IEventBrowser);
 
-DOCUMENT("The API inspector window.");
+DOCUMENT(R"(The API inspector window.
+
+This window is retrieved by calling :meth:`CaptureContext.GetAPIInspector`.
+)");
 struct IAPIInspector
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`APIInspector` if PySide2 is available, or otherwise
@@ -543,7 +554,10 @@ enum class PipelineStage : int
   SampleMask,
 };
 
-DOCUMENT("The pipeline state viewer window.");
+DOCUMENT(R"(The pipeline state viewer window.
+
+This window is retrieved by calling :meth:`CaptureContext.GetPipelineViewer`.
+)");
 struct IPipelineStateViewer
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`PipelineStateViewer` if PySide2 is available, or otherwise
@@ -611,7 +625,10 @@ enum class FollowType : int
   OutputDepthResolve
 };
 
-DOCUMENT("The texture viewer window.");
+DOCUMENT(R"(The texture viewer window.
+
+This window is retrieved by calling :meth:`CaptureContext.GetTextureViewer`.
+)");
 struct ITextureViewer
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`TextureViewer` if PySide2 is available, or otherwise
@@ -757,7 +774,14 @@ protected:
 
 DECLARE_REFLECTION_STRUCT(ITextureViewer);
 
-DOCUMENT("The buffer viewer window, either a raw buffer or the geometry pipeline.");
+DOCUMENT(R"(The buffer viewer window, either a raw buffer or the geometry pipeline.
+
+This mesh viewer is retrieved by calling :meth:`CaptureContext.GetMeshPreview`.
+
+A raw buffer viewer can be opened by calling :meth:`CaptureContext.ViewBuffer`,
+:meth:`CaptureContext.ViewTextureAsBuffer`, or :meth:`CaptureContext.ViewConstantBuffer`.
+
+)");
 struct IBufferViewer
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`BufferViewer` if PySide2 is available, or otherwise
@@ -817,7 +841,10 @@ protected:
 
 DECLARE_REFLECTION_STRUCT(IBufferViewer);
 
-DOCUMENT("The Resource inspector window.");
+DOCUMENT(R"(The Resource inspector window.
+
+This window is retrieved by calling :meth:`CaptureContext.GetResourceInspector`.
+)");
 struct IResourceInspector
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`ResourceInspector` if PySide2 is available, or otherwise
@@ -855,7 +882,10 @@ protected:
 
 DECLARE_REFLECTION_STRUCT(IResourceInspector);
 
-DOCUMENT("The executable capture window.");
+DOCUMENT(R"(The executable capture window.
+
+This window is retrieved by calling :meth:`CaptureContext.GetCaptureDialog`.
+)");
 struct ICaptureDialog
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`CaptureDialog` if PySide2 is available, or otherwise
@@ -944,7 +974,10 @@ protected:
 
 DECLARE_REFLECTION_STRUCT(ICaptureDialog);
 
-DOCUMENT("The debug warnings and errors window.");
+DOCUMENT(R"(The debug warnings and errors window.
+
+This window is retrieved by calling :meth:`CaptureContext.GetDebugMessageView`.
+)");
 struct IDebugMessageView
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`DebugMessageView` if PySide2 is available, or otherwise
@@ -963,7 +996,10 @@ protected:
 
 DECLARE_REFLECTION_STRUCT(IDebugMessageView);
 
-DOCUMENT("The diagnostic log viewing window.");
+DOCUMENT(R"(The diagnostic log viewing window.
+
+This window is retrieved by calling :meth:`CaptureContext.GetDiagnosticLogView`.
+)");
 struct IDiagnosticLogView
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`DiagnosticLogView` if PySide2 is available, or otherwise
@@ -982,7 +1018,10 @@ protected:
 
 DECLARE_REFLECTION_STRUCT(IDiagnosticLogView);
 
-DOCUMENT("The capture comments window.");
+DOCUMENT(R"(The capture comments window.
+
+This window is retrieved by calling :meth:`CaptureContext.GetCommentView`.
+)");
 struct ICommentView
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`CommentView` if PySide2 is available, or otherwise
@@ -1014,7 +1053,10 @@ protected:
 
 DECLARE_REFLECTION_STRUCT(ICommentView);
 
-DOCUMENT("The statistics window.");
+DOCUMENT(R"(The statistics window.
+
+This window is retrieved by calling :meth:`CaptureContext.GetStatisticsViewer`.
+)");
 struct IStatisticsViewer
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`StatisticsViewer` if PySide2 is available, or otherwise
@@ -1031,7 +1073,10 @@ protected:
   ~IStatisticsViewer() = default;
 };
 
-DOCUMENT("The timeline bar.");
+DOCUMENT(R"(The timeline bar.
+
+This window is retrieved by calling :meth:`CaptureContext.GetTimelineBar`.
+)");
 struct ITimelineBar
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`TimelineBar` if PySide2 is available, or otherwise
@@ -1063,7 +1108,10 @@ protected:
 
 DECLARE_REFLECTION_STRUCT(IStatisticsViewer);
 
-DOCUMENT("The performance counter view window.");
+DOCUMENT(R"(The performance counter view window.
+
+This window is retrieved by calling :meth:`CaptureContext.GetPerformanceCounterViewer`.
+)");
 struct IPerformanceCounterViewer
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`PerformanceCounterViewer` if PySide2 is available, or otherwise
@@ -1085,7 +1133,10 @@ protected:
 
 DECLARE_REFLECTION_STRUCT(IPerformanceCounterViewer);
 
-DOCUMENT("The interactive python shell.");
+DOCUMENT(R"(The interactive python shell.
+
+This window is retrieved by calling :meth:`CaptureContext.GetPythonShell`.
+)");
 struct IPythonShell
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`PythonShell` if PySide2 is available, or otherwise
@@ -1130,6 +1181,9 @@ protected:
 DECLARE_REFLECTION_STRUCT(IPythonShell);
 
 DOCUMENT(R"(A shader window used for viewing, editing, or debugging.
+
+This window is retrieved by calling :meth:`CaptureContext.ViewShader`,
+:meth:`CaptureContext.EditShader`, or :meth:`CaptureContext.DebugShader`.
 
 .. function:: SaveCallback(context, viewer, encoding, flags, entry, compiled)
 
@@ -1230,7 +1284,10 @@ protected:
 
 DECLARE_REFLECTION_STRUCT(IShaderViewer);
 
-DOCUMENT("A shader message list window.");
+DOCUMENT(R"(A shader message list window.
+
+This window is retrieved by calling :meth:`CaptureContext.ViewShaderMessages`.
+)");
 struct IShaderMessageViewer
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`ShaderMessageViewer` if PySide2 is available, or otherwise
@@ -1271,7 +1328,10 @@ protected:
 
 DECLARE_REFLECTION_STRUCT(IShaderMessageViewer);
 
-DOCUMENT("A descriptor viewer window.");
+DOCUMENT(R"(A descriptor viewer window.
+
+This window is retrieved by calling :meth:`CaptureContext.ViewDescriptorStore` or :meth:`CaptureContext.ViewDescriptors`.
+)");
 struct IDescriptorViewer
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`DescriptorViewer` if PySide2 is available, or otherwise
@@ -1290,7 +1350,10 @@ protected:
 
 DECLARE_REFLECTION_STRUCT(IDescriptorViewer);
 
-DOCUMENT("A pixel history window.");
+DOCUMENT(R"(A pixel history window.
+
+This window is retrieved by calling :meth:`CaptureContext.ViewPixelHistory`.
+)");
 struct IPixelHistoryView
 {
   DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`PixelHistoryView` if PySide2 is available, or otherwise
@@ -1358,6 +1421,8 @@ DECLARE_REFLECTION_STRUCT(ICaptureViewer *);
 DOCUMENT(R"(A manager for accessing the underlying replay information that isn't already abstracted
 in UI side structures. This manager controls and serialises access to the underlying
 :class:`~renderdoc.ReplayController`, as well as handling remote server connections.
+
+This manager is retrieved by calling :meth:`CaptureContext.Replay`.
 
 .. function:: InvokeCallback(controller)
 
@@ -1468,6 +1533,7 @@ blocking fashion on the current thread.
 :param bool synchronous: If a capture is open, then ``True`` will use :meth:`BlockInvoke` to call
   the callback. Otherwise if ``False`` then :meth:`AsyncInvoke` will be used.
 :param DirectoryBrowseCallback callback: The function to callback on the replay thread.
+  Callback function signature must match :func:`DirectoryBrowseCallback`.
 )");
   virtual void GetHomeFolder(bool synchronous, DirectoryBrowseCallback callback) = 0;
 
@@ -1480,6 +1546,7 @@ blocking fashion on the current thread.
 :param bool synchronous: If a capture is open, then ``True`` will use :meth:`BlockInvoke` to call
   the callback. Otherwise if ``False`` then :meth:`AsyncInvoke` will be used.
 :param DirectoryBrowseCallback callback: The function to callback on the replay thread.
+  Callback function signature must match :func:`DirectoryBrowseCallback`.
 )");
   virtual void ListFolder(const rdcstr &path, bool synchronous, DirectoryBrowseCallback callback) = 0;
 
@@ -1524,12 +1591,14 @@ comes in, we remove any other requests in the queue before it that have the same
 
 :param str tag: The tag to identify this callback.
 :param InvokeCallback method: The function to callback on the replay thread.
+  Callback function signature must match :func:`InvokeCallback`.
 )");
   virtual void AsyncInvoke(const rdcstr &tag, InvokeCallback method) = 0;
 
   DOCUMENT(R"(Make a non-blocking invoke call onto the replay thread.
 
 :param InvokeCallback method: The function to callback on the replay thread.
+  Callback function signature must match :func:`InvokeCallback`.
 )");
   virtual void AsyncInvoke(InvokeCallback method) = 0;
 
@@ -1539,6 +1608,7 @@ comes in, we remove any other requests in the queue before it that have the same
   DOCUMENT(R"(Make a blocking invoke call onto the replay thread.
 
 :param InvokeCallback method: The function to callback on the replay thread.
+  Callback function signature must match :func:`InvokeCallback`.
 )");
   virtual void BlockInvoke(InvokeCallback method) = 0;
 
@@ -2194,6 +2264,11 @@ again, any previous connection will be closed.
 )");
   virtual bool OpenRGPProfile(const rdcstr &filename) = 0;
 
+  DOCUMENT(R"(Clear any cached data from previous replays and ensure subsequent replays fully
+re-initialise any data, including e.g. bindless feedback, printf results or mesh output data.
+)");
+  virtual void ClearReplayCache() = 0;
+
   DOCUMENT(R"(Returns the current interop handle for RGP.
 
 This may return ``None`` in several cases:
@@ -2564,8 +2639,10 @@ place if needed.
 :param renderdoc.ShaderCompileFlags flags: The flags originally used to compile the shader.
 :param ShaderViewer.SaveCallback saveCallback: The callback function to call when a save/update is
   triggered.
+  Callback function signature must match :func:`ShaderViewer.SaveCallback`.
 :param ShaderViewer.RevertCallback revertCallback: The callback function to call when the shader
   is to be reverted - either by user request or because the shader viewer was closed.
+  Callback function signature must match :func:`ShaderViewer.RevertCallback`.
 :return: The new :class:`ShaderViewer` window opened but not shown for editing.
 :rtype: ShaderViewer
 )");

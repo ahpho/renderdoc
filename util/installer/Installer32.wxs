@@ -179,17 +179,6 @@
                   <File Id='amdagsDLL' Name='amd_ags_x86.dll' DiskId='1' Source='dist/Release32/plugins/amd/ags/amd_ags_x86.dll' KeyPath='yes' />
                 </Component>
               </Directory>
-
-              <Directory Id='plugins_amd_counters' Name='counters'>
-                <Component Id='gpa_plugin' Guid='16CFF53A-CB61-49A1-8FE8-CDBB02DE29A4'>
-                  <File Id='GPUPerfAPICounters' Name='GPUPerfAPICounters.dll' DiskId='1' Source='dist/Release32/plugins/amd/counters/GPUPerfAPICounters.dll' KeyPath='yes' />
-                  <File Id='GPUPerfAPIDX11' Name='GPUPerfAPIDX11.dll' DiskId='1' Source='dist/Release32/plugins/amd/counters/GPUPerfAPIDX11.dll' />
-                  <File Id='GPUPerfAPIDX12' Name='GPUPerfAPIDX12.dll' DiskId='1' Source='dist/Release32/plugins/amd/counters/GPUPerfAPIDX12.dll' />
-                  <File Id='GPUPerfAPIDXGetAMDDeviceInfo' Name='GPUPerfAPIDXGetAMDDeviceInfo.dll' DiskId='1' Source='dist/Release32/plugins/amd/counters/GPUPerfAPIDXGetAMDDeviceInfo.dll' />
-                  <File Id='GPUPerfAPIGL' Name='GPUPerfAPIGL.dll' DiskId='1' Source='dist/Release32/plugins/amd/counters/GPUPerfAPIGL.dll' />
-                  <File Id='GPUPerfAPIVK' Name='GPUPerfAPIVK.dll' DiskId='1' Source='dist/Release32/plugins/amd/counters/GPUPerfAPIVK.dll' />
-                </Component>
-              </Directory>
             </Directory>
 
             <Directory Id='plugins_android' Name='android'>
@@ -199,6 +188,12 @@
                 <File Id='adb' Name='adb.exe' DiskId='1' Source='dist/Release32/plugins/android/adb.exe' />
                 <File Id='AdbWinApi' Name='AdbWinApi.dll' DiskId='1' Source='dist/Release32/plugins/android/AdbWinApi.dll' />
                 <File Id='AdbWinUsbApi' Name='AdbWinUsbApi.dll' DiskId='1' Source='dist/Release32/plugins/android/AdbWinUsbApi.dll' />
+              </Component>
+            </Directory>
+
+            <Directory Id='plugins_d3d12' Name='d3d12'>
+              <Component Id='d3d12_plugin' Guid='383E6D55-F140-44E3-91B5-E98EEAAB28A7'>
+                <File Id='dxcompiler' Name='dxcompiler.dll' DiskId='1' Source='dist/Release32/plugins/d3d12/dxcompiler.dll' KeyPath='yes' />
               </Component>
             </Directory>
 
@@ -335,10 +330,10 @@
     </Property>
 
     <!-- the versions are stored in DWORDs which windows installer returns as #14 etc. We need to strip the # to actually compare :( -->
-    <CustomAction Id="RemoveHash" Script="vbscript">
+    <CustomAction Id="RemoveHash" Script="jscript">
       <![CDATA[
-        Session.Property("VCRT32MAJOR") = Replace(Session.Property("VCRT32MAJOR"),"#","")
-        Session.Property("VCRT32MINOR") = Replace(Session.Property("VCRT32MINOR"),"#","")
+        Session.Property("VCRT32MAJOR") = Session.Property("VCRT32MAJOR").replace("#","")
+        Session.Property("VCRT32MINOR") = Session.Property("VCRT32MINOR").replace("#","")
         ]]>
     </CustomAction>
 
@@ -366,9 +361,9 @@
 
         <ComponentRef Id='rgp_plugin' />
         <ComponentRef Id='ags_plugin' />
-        <ComponentRef Id='gpa_plugin' />
         <ComponentRef Id='android_plugin' />
         <ComponentRef Id='spirv_plugin' />
+        <ComponentRef Id='d3d12_plugin' />
 
         <ComponentRef Id='ProgramMenuDir' />
 

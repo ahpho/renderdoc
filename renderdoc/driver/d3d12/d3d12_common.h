@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -35,7 +35,7 @@
 
 // we need to use the most-derived native interface all over the place. To make things easier when
 // new versions come out we typedef it here when we don't need the specific interface
-using ID3D12GraphicsCommandListX = ID3D12GraphicsCommandList9;
+using ID3D12GraphicsCommandListX = ID3D12GraphicsCommandList10;
 
 // replay only class for handling marker regions
 struct D3D12MarkerRegion
@@ -62,10 +62,12 @@ struct D3D12DevConfiguration
   ID3D12DeviceFactory *devfactory = NULL;
   ID3D12DeviceConfiguration *devconfig = NULL;
   ID3D12Debug *debug = NULL;
+  ID3D12DeviceRemovedExtendedDataSettings *dred = NULL;
 };
 
 bool EnableD3D12DebugLayer(D3D12DevConfiguration *devConfig,
                            PFN_D3D12_GET_DEBUG_INTERFACE getDebugInterface);
+bool EnableDRED(D3D12DevConfiguration *devConfig, PFN_D3D12_GET_DEBUG_INTERFACE getDebugInterface);
 HRESULT EnumAdapterByLuid(IDXGIFactory1 *factory, LUID luid, IDXGIAdapter **pAdapter);
 
 D3D12DevConfiguration *D3D12_PrepareReplaySDKVersion(bool untrustedCapture, UINT SDKVersion,
@@ -118,6 +120,8 @@ inline rdcstr DecodeMarkerString(UINT Metadata, const void *pData, UINT Size, UI
 
   return MarkerText;
 }
+
+#define CHECK_HR(device, hr_or_expr) device->CheckHRESULT(__FILE__, __LINE__, hr_or_expr)
 
 FloatVector DecodePIXColor(UINT64 Color);
 
@@ -345,10 +349,11 @@ public:
   }
 };
 
-class WrappedID3D12DeviceConfiguration : public ID3D12DeviceConfiguration
+class WrappedID3D12DeviceConfiguration : public ID3D12DeviceConfiguration1
 {
 private:
   ID3D12DeviceConfiguration *m_pReal = NULL;
+  ID3D12DeviceConfiguration1 *m_pReal1 = NULL;
   IUnknown *wrappedParent = NULL;
 public:
   WrappedID3D12DeviceConfiguration(IUnknown *real, IUnknown *wrapped)
@@ -358,14 +363,25 @@ public:
     if(real)
     {
       HRESULT hr = real->QueryInterface(__uuidof(ID3D12DeviceConfiguration), (void **)&m_pReal);
-      if(FAILED(hr))
+      if(SUCCEEDED(hr))
+      {
+        real->QueryInterface(__uuidof(ID3D12DeviceConfiguration1), (void **)&m_pReal1);
+      }
+      else
+      {
         SAFE_RELEASE(m_pReal);
+      }
     }
   }
 
-  ~WrappedID3D12DeviceConfiguration() { SAFE_RELEASE(m_pReal); }
+  ~WrappedID3D12DeviceConfiguration()
+  {
+    SAFE_RELEASE(m_pReal);
+    SAFE_RELEASE(m_pReal1);
+  }
 
   bool IsValid() { return m_pReal != NULL; }
+  bool IsValid1() { return m_pReal1 != NULL; }
 
   //////////////////////////////
   // Implement IUnknown
@@ -382,6 +398,12 @@ public:
     if(riid == __uuidof(ID3D12DeviceConfiguration) && m_pReal)
     {
       *ppvObject = (ID3D12DeviceConfiguration *)this;
+      AddRef();
+      return S_OK;
+    }
+    if(riid == __uuidof(ID3D12DeviceConfiguration1) && m_pReal1)
+    {
+      *ppvObject = (ID3D12DeviceConfiguration1 *)this;
       AddRef();
       return S_OK;
     }
@@ -423,6 +445,17 @@ public:
                                            REFIID riid, _COM_Outptr_ void **ppvDeserializer)
   {
     return m_pReal->CreateVersionedRootSignatureDeserializer(pBlob, Size, riid, ppvDeserializer);
+  }
+
+  //////////////////////////////
+  // Implement ID3D12DeviceConfiguration1
+
+  virtual HRESULT STDMETHODCALLTYPE CreateVersionedRootSignatureDeserializerFromSubobjectInLibrary(
+      _In_reads_bytes_(Size) const void *pLibraryBlob, SIZE_T Size,
+      LPCWSTR RootSignatureSubobjectName, REFIID riid, _COM_Outptr_ void **ppvDeserializer)
+  {
+    return m_pReal1->CreateVersionedRootSignatureDeserializerFromSubobjectInLibrary(
+        pLibraryBlob, Size, RootSignatureSubobjectName, riid, ppvDeserializer);
   }
 };
 
@@ -499,7 +532,6 @@ struct D3D12RootSignatureParameter : D3D12_ROOT_PARAMETER1
     ShaderVisibility = param.ShaderVisibility;
 
     // copy the POD ones first
-    Descriptor.Flags = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_VOLATILE;
     Descriptor.RegisterSpace = param.Descriptor.RegisterSpace;
     Descriptor.ShaderRegister = param.Descriptor.ShaderRegister;
     Constants = param.Constants;
@@ -513,8 +545,10 @@ struct D3D12RootSignatureParameter : D3D12_ROOT_PARAMETER1
         ranges[i].NumDescriptors = param.DescriptorTable.pDescriptorRanges[i].NumDescriptors;
         ranges[i].BaseShaderRegister = param.DescriptorTable.pDescriptorRanges[i].BaseShaderRegister;
         ranges[i].RegisterSpace = param.DescriptorTable.pDescriptorRanges[i].RegisterSpace;
-        ranges[i].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE |
-                          D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
+        ranges[i].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE;
+        // samplers can't have volatile data
+        if(ranges[i].RangeType != D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER)
+          ranges[i].Flags |= D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
         ranges[i].OffsetInDescriptorsFromTableStart =
             param.DescriptorTable.pDescriptorRanges[i].OffsetInDescriptorsFromTableStart;
 
@@ -530,6 +564,8 @@ struct D3D12RootSignatureParameter : D3D12_ROOT_PARAMETER1
     }
     else
     {
+      // apply default flags here
+      Descriptor.Flags = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_VOLATILE;
       numSpaces = RDCMAX(numSpaces, Descriptor.RegisterSpace + 1);
     }
   }
@@ -590,31 +626,32 @@ struct D3D12CommandSignature
 // directly as-if it were the original type, then on replay load up the resource if available.
 // Really this is only one type of serialisation, but we declare a couple of overloads to account
 // for resources being accessed through different interfaces in different functions
-#define SERIALISE_D3D_INTERFACES()                 \
-  SERIALISE_INTERFACE(ID3D12Object);               \
-  SERIALISE_INTERFACE(ID3D12DeviceChild);          \
-  SERIALISE_INTERFACE(ID3D12Pageable);             \
-  SERIALISE_INTERFACE(ID3D12CommandList);          \
-  SERIALISE_INTERFACE(ID3D12GraphicsCommandList);  \
-  SERIALISE_INTERFACE(ID3D12GraphicsCommandList1); \
-  SERIALISE_INTERFACE(ID3D12GraphicsCommandList2); \
-  SERIALISE_INTERFACE(ID3D12GraphicsCommandList3); \
-  SERIALISE_INTERFACE(ID3D12GraphicsCommandList4); \
-  SERIALISE_INTERFACE(ID3D12GraphicsCommandList5); \
-  SERIALISE_INTERFACE(ID3D12GraphicsCommandList6); \
-  SERIALISE_INTERFACE(ID3D12GraphicsCommandList7); \
-  SERIALISE_INTERFACE(ID3D12GraphicsCommandList8); \
-  SERIALISE_INTERFACE(ID3D12GraphicsCommandList9); \
-  SERIALISE_INTERFACE(ID3D12RootSignature);        \
-  SERIALISE_INTERFACE(ID3D12Resource);             \
-  SERIALISE_INTERFACE(ID3D12QueryHeap);            \
-  SERIALISE_INTERFACE(ID3D12PipelineState);        \
-  SERIALISE_INTERFACE(ID3D12Heap);                 \
-  SERIALISE_INTERFACE(ID3D12Fence);                \
-  SERIALISE_INTERFACE(ID3D12DescriptorHeap);       \
-  SERIALISE_INTERFACE(ID3D12CommandSignature);     \
-  SERIALISE_INTERFACE(ID3D12CommandQueue);         \
-  SERIALISE_INTERFACE(ID3D12CommandAllocator);     \
+#define SERIALISE_D3D_INTERFACES()                  \
+  SERIALISE_INTERFACE(ID3D12Object);                \
+  SERIALISE_INTERFACE(ID3D12DeviceChild);           \
+  SERIALISE_INTERFACE(ID3D12Pageable);              \
+  SERIALISE_INTERFACE(ID3D12CommandList);           \
+  SERIALISE_INTERFACE(ID3D12GraphicsCommandList);   \
+  SERIALISE_INTERFACE(ID3D12GraphicsCommandList1);  \
+  SERIALISE_INTERFACE(ID3D12GraphicsCommandList2);  \
+  SERIALISE_INTERFACE(ID3D12GraphicsCommandList3);  \
+  SERIALISE_INTERFACE(ID3D12GraphicsCommandList4);  \
+  SERIALISE_INTERFACE(ID3D12GraphicsCommandList5);  \
+  SERIALISE_INTERFACE(ID3D12GraphicsCommandList6);  \
+  SERIALISE_INTERFACE(ID3D12GraphicsCommandList7);  \
+  SERIALISE_INTERFACE(ID3D12GraphicsCommandList8);  \
+  SERIALISE_INTERFACE(ID3D12GraphicsCommandList9);  \
+  SERIALISE_INTERFACE(ID3D12GraphicsCommandList10); \
+  SERIALISE_INTERFACE(ID3D12RootSignature);         \
+  SERIALISE_INTERFACE(ID3D12Resource);              \
+  SERIALISE_INTERFACE(ID3D12QueryHeap);             \
+  SERIALISE_INTERFACE(ID3D12PipelineState);         \
+  SERIALISE_INTERFACE(ID3D12Heap);                  \
+  SERIALISE_INTERFACE(ID3D12Fence);                 \
+  SERIALISE_INTERFACE(ID3D12DescriptorHeap);        \
+  SERIALISE_INTERFACE(ID3D12CommandSignature);      \
+  SERIALISE_INTERFACE(ID3D12CommandQueue);          \
+  SERIALISE_INTERFACE(ID3D12CommandAllocator);      \
   SERIALISE_INTERFACE(ID3D12StateObject);
 
 #define SERIALISE_INTERFACE(iface) DECLARE_REFLECTION_STRUCT(iface *)
@@ -630,7 +667,31 @@ struct D3D12BufferLocation
   UINT64 Location;
 };
 
+// thin utility aliases of a ResourceId so that we know we're serialising an AS - distinct from
+// buffer locations above to ensure it's mapped naturally. We have dest/src as different types with
+// a common root because dest tries to draw from sideband data for its Id and source doesn't - this
+// distinction is needed since e.g. the build desc serialises two AS locations and we need to tell
+// which one should pull from sideband.
+struct D3D12ASLocation
+{
+  D3D12ASLocation() : Location(0) {}
+  D3D12ASLocation(UINT64 l) : Location(l) {}
+  operator UINT64() const { return Location; }
+  UINT64 Location;
+};
+
+struct D3D12SrcASLocation : public D3D12ASLocation
+{
+};
+
+struct D3D12DestASLocation : public D3D12ASLocation
+{
+  static const uint64_t SidebandGUID = 0x3FD533B58697ULL;
+};
+
 DECLARE_REFLECTION_STRUCT(D3D12BufferLocation);
+DECLARE_REFLECTION_STRUCT(D3D12SrcASLocation);
+DECLARE_REFLECTION_STRUCT(D3D12DestASLocation);
 
 DECLARE_REFLECTION_STRUCT(D3D12_CPU_DESCRIPTOR_HANDLE);
 DECLARE_REFLECTION_STRUCT(D3D12_GPU_DESCRIPTOR_HANDLE);
@@ -1224,5 +1285,9 @@ enum class D3D12Chunk : uint32_t
   List_SetPipelineState1,
   CreateAS,
   StateObject_SetPipelineStackSize,
+  Device_CreateHeapFromAddress1,
+  Device_CreateRootSignatureFromSubobjectInLibrary,
+  List_SetProgram,
+  List_DispatchGraph,
   Max,
 };

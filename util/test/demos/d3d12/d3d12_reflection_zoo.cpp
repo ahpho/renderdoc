@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -133,6 +133,42 @@ AppendStructuredBuffer<buf_struct> rwappend : register(u52);
 ConsumeStructuredBuffer<buf_struct> rwconsume : register(u53);
 RWStructuredBuffer<float2> rwstrbuf_f2 : register(u54);
 
+#if SM67
+struct sm67_struct
+{
+   // ensure bitfield byte offsets are calculated properly by not starting at offset 0
+   float x;
+
+   uint a : 10;
+   uint b : 10;
+   uint c : 10;
+   uint d : 2;
+
+   // calculate packing properly after a complete bitfield
+   float3 e;
+
+   uint f : 14;
+   // similarly, packing properly after an incomplete bitfield
+   float3 g;
+
+   // calculate bitfield rollover properly
+   uint h : 10;
+   uint i : 10;
+   uint j : 10;
+   uint k : 10;
+   uint l : 10;
+
+   float m;
+
+   // empty padding in bitfields and mixed types
+   uint n : 5;
+   uint : 5;
+   int o : 5;
+};
+
+RWStructuredBuffer<sm67_struct> rwstrbuf67 : register(u55);
+#endif
+
 float4 main(float4 pos : SV_Position) : SV_Target0
 {
 	float4 ret = float4(0,0,0,0);
@@ -200,6 +236,11 @@ float4 main(float4 pos : SV_Position) : SV_Target0
 #if ROV
   rov[pos.xy] = sqrt(rov[pos.xy]) + ret;
 #endif
+
+#if SM67
+  sm67_struct dummy67 = (sm67_struct)0;
+  rwstrbuf67[indices.x] = dummy67;
+#endif
 	
   rwbytebuf.Store4(indices.y, asuint(ret));
 
@@ -234,7 +275,7 @@ float4 main(float4 pos : SV_Position) : SV_Target0
     ID3DBlobPtr vs5blob = Compile(D3DFullscreenQuadVertex, "main", "vs_5_0");
     ID3DBlobPtr vs6blob = m_DXILSupport ? Compile(D3DFullscreenQuadVertex, "main", "vs_6_0") : NULL;
 
-    ID3D12PipelineStatePtr dxbc, dxil;
+    ID3D12PipelineStatePtr dxbc, sm60, sm67;
 
     D3D12_STATIC_SAMPLER_DESC samp = {
         D3D12_FILTER_MIN_MAG_MIP_POINT,
@@ -272,14 +313,20 @@ float4 main(float4 pos : SV_Position) : SV_Target0
     D3D12PSOCreator creator =
         MakePSO().RootSig(sig).RTVs({DXGI_FORMAT_R8G8B8A8_UNORM_SRGB}).VS(vs5blob);
 
-    respixel = fmt::format("#define ROV {0}\n\n{1}", opts.ROVsSupported ? 1 : 0, respixel);
+    respixel = fmt::format("#define ROV {0}\n\n{1}\n", opts.ROVsSupported ? 1 : 0, respixel);
 
     ID3DBlobPtr dxbcBlob = Compile(respixel, "main", "ps_5_1");
     dxbc = creator.VS(vs5blob).PS(dxbcBlob);
     if(m_DXILSupport)
     {
-      ID3DBlobPtr dxilBlob = Compile(respixel, "main", "ps_6_0");
-      dxil = creator.VS(vs6blob).PS(dxilBlob);
+      ID3DBlobPtr sm60Blob = Compile(respixel, "main", "ps_6_0");
+      sm60 = creator.VS(vs6blob).PS(sm60Blob);
+
+      if(m_HighestShaderModel >= D3D_SHADER_MODEL_6_7)
+      {
+        ID3DBlobPtr sm67Blob = Compile("#define SM67 1\n" + respixel, "main", "ps_6_7");
+        sm67 = creator.VS(vs6blob).PS(sm67Blob);
+      }
     }
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -575,6 +622,14 @@ float4 main(float4 pos : SV_Position) : SV_Target0
     uavDesc.Buffer.StructureByteStride = 8;
     dev->CreateUnorderedAccessView(NULL, NULL, &uavDesc, cur);
 
+    cur.ptr = start.ptr + (200 + 55) * increment;
+    uavDesc.Buffer.StructureByteStride = 52;
+    dev->CreateUnorderedAccessView(NULL, NULL, &uavDesc, cur);
+
+    cur.ptr = start.ptr + (200 + 56) * increment;
+    uavDesc.Buffer.StructureByteStride = 52;
+    dev->CreateUnorderedAccessView(NULL, NULL, &uavDesc, cur);
+
     while(Running())
     {
       ID3D12GraphicsCommandListPtr cmd = GetCommandBuffer();
@@ -605,10 +660,17 @@ float4 main(float4 pos : SV_Position) : SV_Target0
       cmd->SetPipelineState(dxbc);
       cmd->DrawInstanced(3, 1, 0, 0);
 
-      if(m_DXILSupport)
+      if(sm60)
       {
-        setMarker(cmd, "DXIL");
-        cmd->SetPipelineState(dxil);
+        setMarker(cmd, "SM6.0");
+        cmd->SetPipelineState(sm60);
+        cmd->DrawInstanced(3, 1, 0, 0);
+      }
+
+      if(sm67)
+      {
+        setMarker(cmd, "SM6.7");
+        cmd->SetPipelineState(sm67);
         cmd->DrawInstanced(3, 1, 0, 0);
       }
 

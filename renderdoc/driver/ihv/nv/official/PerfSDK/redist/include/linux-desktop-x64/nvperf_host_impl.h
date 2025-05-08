@@ -59,6 +59,10 @@
 #pragma GCC diagnostic ignored "-Wcast-function-type"
 #endif
 
+#if defined(__clang__) && defined(__GNUC__) && (__clang_major__ >= 19)
+#pragma clang diagnostic ignored "-Wcast-function-type"
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

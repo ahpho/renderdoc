@@ -27,10 +27,10 @@ class D3D12_Reflection_Zoo(rdtest.TestCase):
         rdtest.log.success("DXBC action is as expected")
 
         # Move to the DXIL action
-        action = self.find_action("DXIL")
+        action = self.find_action("SM6.0")
 
         if action is None:
-            rdtest.log.print("No DXIL action to test")
+            rdtest.log.print("No SM6.0 DXIL action to test")
             return
 
         self.controller.SetFrameEvent(action.next.eventId, False)
@@ -44,7 +44,27 @@ class D3D12_Reflection_Zoo(rdtest.TestCase):
 
         self.check_event()
 
-        rdtest.log.success("DXIL action is as expected")
+        rdtest.log.success("SM6.0 DXIL action is as expected")
+
+        # Move to the DXIL action
+        action = self.find_action("SM6.7")
+
+        if action is None:
+            rdtest.log.print("No SM6.7 DXIL action to test")
+            return
+
+        self.controller.SetFrameEvent(action.next.eventId, False)
+
+        pipe: rd.PipeState = self.controller.GetPipelineState()
+
+        disasm = self.controller.DisassembleShader(pipe.GetGraphicsPipelineObject(), pipe.GetShaderReflection(stage),
+                                                   '')
+
+        self.check('SM6.7' in disasm)
+
+        self.check_event()
+
+        rdtest.log.success("SM6.7 DXIL action is as expected")
 
     def check_event(self):
         pipe: rd.PipeState = self.controller.GetPipelineState()
@@ -89,21 +109,122 @@ class D3D12_Reflection_Zoo(rdtest.TestCase):
             self.check(type.members[0].type.rows == 1)
             self.check(type.members[0].type.columns == 1)
             self.check(type.members[0].type.elements == 1)
+            self.check(type.members[0].byteOffset == 0)
+            self.check(type.members[0].bitFieldOffset == 0)
+            self.check(type.members[0].bitFieldSize == 0)
 
             self.check(type.members[1].name == 'b')
             self.check(type.members[1].type.baseType == rd.VarType.Float)
             self.check(type.members[1].type.rows == 1)
             self.check(type.members[1].type.columns == 1)
             self.check(type.members[1].type.elements == 2)
+            self.check(type.members[1].byteOffset == 4)
+            self.check(type.members[1].bitFieldOffset == 0)
+            self.check(type.members[1].bitFieldSize == 0)
 
             self.check(type.members[2].name == 'c')
             self.check(type.members[2].type.name == 'nested')
+            self.check(type.members[2].byteOffset == 12)
+            self.check(type.members[2].bitFieldOffset == 0)
+            self.check(type.members[2].bitFieldSize == 0)
             self.check(len(type.members[2].type.members) == 1)
             self.check(type.members[2].type.members[0].name == 'x')
             self.check(type.members[2].type.members[0].type.baseType == rd.VarType.Float)
             self.check(type.members[2].type.members[0].type.rows == 2)
             self.check(type.members[2].type.members[0].type.columns == 3)
             self.check(type.members[2].type.members[0].type.RowMajor())
+            self.check(type.members[2].type.members[0].byteOffset == 0)
+            self.check(type.members[2].type.members[0].bitFieldOffset == 0)
+            self.check(type.members[2].type.members[0].bitFieldSize == 0)
+
+            return
+
+        def sm67_struct_check(type: rd.ShaderConstantType):
+            self.check(type.name == 'sm67_struct')
+            self.check(len(type.members) == 17)
+
+            # to simplify checks we only look at offsets and bitfield properties,
+            # assuming the base types are the same (except for deliberate int
+            # check_eqs on some bitfields)
+            self.check_eq(type.members[0].name, 'x')
+            self.check_eq(type.members[0].byteOffset, 0)
+
+            self.check_eq(type.members[1].name, 'a')
+            self.check_eq(type.members[1].byteOffset, 4)
+            self.check_eq(type.members[1].bitFieldOffset, 0)
+            self.check_eq(type.members[1].bitFieldSize, 10)
+
+            self.check_eq(type.members[2].name, 'b')
+            self.check_eq(type.members[2].byteOffset, 4)
+            self.check_eq(type.members[2].bitFieldOffset, 10)
+            self.check_eq(type.members[2].bitFieldSize, 10)
+
+            self.check_eq(type.members[3].name, 'c')
+            self.check_eq(type.members[3].byteOffset, 4)
+            self.check_eq(type.members[3].bitFieldOffset, 20)
+            self.check_eq(type.members[3].bitFieldSize, 10)
+
+            self.check_eq(type.members[4].name, 'd')
+            self.check_eq(type.members[4].byteOffset, 4)
+            self.check_eq(type.members[4].bitFieldOffset, 30)
+            self.check_eq(type.members[4].bitFieldSize, 2)
+
+            self.check_eq(type.members[5].name, 'e')
+            self.check_eq(type.members[5].byteOffset, 8)
+
+            self.check_eq(type.members[6].name, 'f')
+            self.check_eq(type.members[6].byteOffset, 20)
+            self.check_eq(type.members[6].bitFieldOffset, 0)
+            self.check_eq(type.members[6].bitFieldSize, 14)
+
+            self.check_eq(type.members[7].name, 'g')
+            self.check_eq(type.members[7].byteOffset, 24)
+
+            self.check_eq(type.members[8].name, 'h')
+            self.check_eq(type.members[8].byteOffset, 36)
+            self.check_eq(type.members[8].bitFieldOffset, 0)
+            self.check_eq(type.members[8].bitFieldSize, 10)
+
+            self.check_eq(type.members[9].name, 'i')
+            self.check_eq(type.members[9].byteOffset, 36)
+            self.check_eq(type.members[9].bitFieldOffset, 10)
+            self.check_eq(type.members[9].bitFieldSize, 10)
+
+            self.check_eq(type.members[10].name, 'j')
+            self.check_eq(type.members[10].byteOffset, 36)
+            self.check_eq(type.members[10].bitFieldOffset, 20)
+            self.check_eq(type.members[10].bitFieldSize, 10)
+
+            self.check_eq(type.members[11].name, 'k')
+            self.check_eq(type.members[11].byteOffset, 40)
+            self.check_eq(type.members[11].bitFieldOffset, 0)
+            self.check_eq(type.members[11].bitFieldSize, 10)
+
+            self.check_eq(type.members[12].name, 'l')
+            self.check_eq(type.members[12].byteOffset, 40)
+            self.check_eq(type.members[12].bitFieldOffset, 10)
+            self.check_eq(type.members[12].bitFieldSize, 10)
+
+            self.check_eq(type.members[13].name, 'm')
+            self.check_eq(type.members[13].byteOffset, 44)
+
+            self.check_eq(type.members[14].name, 'n')
+            self.check_eq(type.members[14].type.baseType, rd.VarType.UInt)
+            self.check_eq(type.members[14].byteOffset, 48)
+            self.check_eq(type.members[14].bitFieldOffset, 0)
+            self.check_eq(type.members[14].bitFieldSize, 5)
+
+            self.check_eq(type.members[15].name, '')
+            self.check_eq(type.members[15].type.baseType, rd.VarType.UInt)
+            self.check_eq(type.members[15].byteOffset, 48)
+            self.check_eq(type.members[15].bitFieldOffset, 5)
+            self.check_eq(type.members[15].bitFieldSize, 5)
+
+            self.check_eq(type.members[16].name, 'o')
+            self.check_eq(type.members[16].type.baseType, rd.VarType.SInt)
+            self.check_eq(type.members[16].byteOffset, 48)
+            self.check_eq(type.members[16].bitFieldOffset, 10)
+            self.check_eq(type.members[16].bitFieldSize, 5)
 
             return
 
@@ -249,11 +370,23 @@ class D3D12_Reflection_Zoo(rdtest.TestCase):
                         structVarCheck=buf_struct_check),
             'rwstrbuf_f2':
                 checker(rd.TextureType.Buffer, rd.VarType.Float, 2, 54, 'float2', isTexture=False),
+            'rwstrbuf67':
+                checker(rd.TextureType.Buffer,
+                        rd.VarType.Unknown,
+                        0,
+                        55,
+                        'sm67_struct',
+                        isTexture=False,
+                        structVarCheck=sm67_struct_check),
         }
 
         # ROVs are optional, if it wasn't found then ignore that
         if '#define ROV 0' in debugInfo.files[0].contents:
             del rw_db['rov']
+
+        # only check SM6.7 structured buffer with bitfields on SM6.7
+        if '#define SM67 1' not in debugInfo.files[0].contents:
+            del rw_db['rwstrbuf67']
 
         access = [(a.type, a.index) for a in self.controller.GetDescriptorAccess()]
 
@@ -295,7 +428,7 @@ class D3D12_Reflection_Zoo(rdtest.TestCase):
                     self.check(res.fixedBindNumber == check['register'])
                     self.check(res.bindArraySize == check['regCount'])
                 else:
-                    raise rdtest.TestFailureException('Unrecognised read-only resource {}'.format(res.name))
+                    raise rdtest.TestFailureException(f"Unrecognised {'read-only' if res_readonly else 'read-write'} resource {res.name}")
 
                 del res_db[res.name]
 

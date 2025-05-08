@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1117,6 +1117,9 @@ public:
   void FetchComputeProperties(DXBC::Reflection *reflection);
   DXBC::Reflection *GuessReflection();
 
+  void CalculateEvalSampleCache(const DXDebug::InputFetcherConfig &cfg,
+                                DXDebug::InputFetcher &fetcher) const;
+
   const rdcarray<uint32_t> &GetTokens() const { return m_ProgramWords; }
   rdcstr GetDebugStatus();
 
@@ -1126,6 +1129,7 @@ public:
   uint32_t GetMajorVersion() const { return m_Major; }
   uint32_t GetMinorVersion() const { return m_Minor; }
   bool IsShaderModel51() const { return m_Major == 5 && m_Minor == 1; }
+  DXBC::ThreadScope GetThreadScope() const { return m_Threadscope; }
   D3D_PRIMITIVE_TOPOLOGY GetOutputTopology();
   const rdcstr &GetDisassembly()
   {
@@ -1163,6 +1167,7 @@ protected:
 
   DXBC::ShaderType m_Type = DXBC::ShaderType::Max;
   uint32_t m_Major = 0, m_Minor = 0;
+  DXBC::ThreadScope m_Threadscope = DXBC::ThreadScope::Thread;
 
   rdcarray<uint32_t> m_ProgramWords;
 
@@ -1172,6 +1177,8 @@ protected:
 
   uint32_t m_NumTemps = 0;
   rdcarray<uint32_t> m_IndexTempSizes;
+  // each one is declared with byteStride, elementCount
+  rdcarray<rdcpair<uint32_t, uint32_t>> m_GroupsharedTempSizes;
 
   // most regular outputs, including system value outputs like primitive ID are given a register
   // number

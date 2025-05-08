@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,7 @@
 #pragma once
 
 #include "core/resource_manager.h"
+#include "vk_acceleration_structure.h"
 #include "vk_resources.h"
 
 class WrappedVulkan;
@@ -113,7 +114,9 @@ struct VkInitialContents
     SAFE_DELETE(sparseTables);
     SAFE_DELETE(sparseBind);
 
-    // MemoryAllocation and serialised ASes are not free'd here
+    SAFE_RELEASE(accelerationStructureInfo);
+
+    // MemoryAllocation ise not free'd here
   }
 
   // for descriptor heaps, when capturing we save the slots, when replaying we store direct writes
@@ -139,7 +142,7 @@ struct VkInitialContents
   rdcarray<AspectSparseTable> *sparseTables;
   SparseBinding *sparseBind;
 
-  bool isTLAS;    // If the contents are an AS, this determines if it is a TLAS or BLAS
+  VkAccelerationStructureInfo *accelerationStructureInfo;
 };
 
 struct VulkanResourceManagerConfiguration
@@ -319,6 +322,45 @@ public:
     return wrapped->id;
   }
 
+  template <typename realtype>
+  realtype CreateDeferredHandle()
+  {
+    // only defer non dispatchable handles
+    RDCCOMPILE_ASSERT(UnwrapHelper<realtype>::DispatchableType == 0,
+                      "Can't defer dispatchable handle");
+
+    realtype ret = (realtype)(m_DummyHandle);
+
+    Atomic::Dec64((int64_t *)&m_DummyHandle);
+
+    return ret;
+  }
+
+  void ResolveDeferredWrappers()
+  {
+    rdcarray<rdcpair<TypedRealHandle, WrappedVkRes *>> wrappers;
+    for(auto it = m_WrapperMap.begin(); it != m_WrapperMap.end();)
+    {
+      if(it->first.real.handle >= m_DummyHandle)
+      {
+        wrappers.push_back({it->first, it->second});
+        it = m_WrapperMap.erase(it);
+        continue;
+      }
+
+      ++it;
+    }
+
+    for(rdcpair<TypedRealHandle, WrappedVkRes *> &wrapper : wrappers)
+    {
+      // we can know for sure that these are non-dispatchable based on the assert above, to get the new real handle
+      WrappedVkNonDispRes *wrapped = (WrappedVkNonDispRes *)wrapper.second;
+      wrapper.first.real = wrapped->real;
+      wrapped->deferredJob = NULL;
+      AddWrapper(wrapper.second, wrapper.first);
+    }
+  }
+
   void PreFreeMemory(ResourceId id)
   {
     if(IsActiveCapturing(m_State))
@@ -469,8 +511,12 @@ private:
   bool Serialise_InitialState(WriteSerialiser &ser, ResourceId id, VkResourceRecord *record,
                               const VkInitialContents *initial);
   void Create_InitialState(ResourceId id, WrappedVkRes *live, bool hasData);
-  void Apply_InitialState(WrappedVkRes *live, const VkInitialContents &initial);
+  void Apply_InitialState(WrappedVkRes *live, VkInitialContents &initial);
   rdcarray<ResourceId> InitialContentResources();
+
+  // dummy handle to use - starting from near highest valid pointer to minimise risk of overlap with real handles
+  static const uint64_t FirstDummyHandle = UINTPTR_MAX - 1024;
+  uint64_t m_DummyHandle = FirstDummyHandle;
 
   WrappedVulkan *m_Core;
   std::unordered_map<ResourceId, MemRefs> m_MemFrameRefs;

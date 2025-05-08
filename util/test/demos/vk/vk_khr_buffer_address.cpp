@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -146,6 +146,8 @@ void main()
 
   int main()
   {
+    vmaBDA = true;
+
     // initialise, create window, create context, etc
     if(!Init())
       return 3;
@@ -165,45 +167,13 @@ void main()
 
     VkPipeline pipe = createGraphicsPipeline(pipeCreateInfo);
 
-    vkh::BufferCreateInfo bufinfo(0x100000, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR);
+    AllocatedBuffer databuf(
+        this, vkh::BufferCreateInfo(0x100000, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR),
+        VmaAllocationCreateInfo({0, VMA_MEMORY_USAGE_CPU_TO_GPU}));
 
-    VkMemoryAllocateInfo memoryAllocateInfo = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-    VkMemoryAllocateFlagsInfo memoryAllocateFlags = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO};
-
-    memoryAllocateFlags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
-    memoryAllocateInfo.pNext = &memoryAllocateFlags;
-
-    const VkPhysicalDeviceMemoryProperties *memProps = NULL;
-    vmaGetMemoryProperties(allocator, &memProps);
-
-    VkBuffer databuf;
-    vkCreateBuffer(device, bufinfo, NULL, &databuf);
-
-    VkBuffer staticBuf;
-    vkCreateBuffer(device, bufinfo, NULL, &staticBuf);
-
-    VkMemoryRequirements mrq;
-    vkGetBufferMemoryRequirements(device, databuf, &mrq);
-
-    memoryAllocateInfo.allocationSize = mrq.size;
-
-    for(uint32_t i = 0; i < memProps->memoryTypeCount; i++)
-    {
-      if((mrq.memoryTypeBits & (1u << i)) &&
-         (memProps->memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
-      {
-        memoryAllocateInfo.memoryTypeIndex = i;
-        break;
-      }
-    }
-
-    VkDeviceMemory databufMem;
-    vkAllocateMemory(device, &memoryAllocateInfo, NULL, &databufMem);
-    vkBindBufferMemory(device, databuf, databufMem, 0);
-
-    VkDeviceMemory staticBufMem;
-    vkAllocateMemory(device, &memoryAllocateInfo, NULL, &staticBufMem);
-    vkBindBufferMemory(device, staticBuf, staticBufMem, 0);
+    AllocatedBuffer staticBuf(
+        this, vkh::BufferCreateInfo(0x100000, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR),
+        VmaAllocationCreateInfo({0, VMA_MEMORY_USAGE_CPU_TO_GPU}));
 
     // north-facing primary colours triangle
     const DefaultA2V tri1[3] = {
@@ -219,14 +189,10 @@ void main()
         {Vec3f(-0.5f, -0.5f, 0.0f), Vec4f(1.0f, 1.0f, 0.4f, 1.0f), Vec2f(1.0f, 0.0f)},
     };
 
-    VkBufferDeviceAddressInfoKHR info = {VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR};
-    info.buffer = databuf;
+    // not a valid cpu pointer but useful for avoiding casting
+    byte *gpuptr = (byte *)databuf.address;
 
-    VkDeviceAddress baseAddr = vkGetBufferDeviceAddressKHR(device, &info);
-    byte *gpuptr = (byte *)baseAddr;    // not a valid cpu pointer but useful for avoiding casting
-
-    byte *cpuptr = NULL;
-    vkMapMemory(device, databufMem, 0, mrq.size, 0, (void **)&cpuptr);
+    byte *cpuptr = databuf.map();
 
     // put triangle data first
     memcpy(cpuptr, tri1, sizeof(tri1));
@@ -266,10 +232,8 @@ void main()
     drawscpu[2].tint = Vec4f(1.0f, 1.0f, 1.0f, 1.0f);
 
     // Make a static buffer of draw data
-    info.buffer = staticBuf;
-    baseAddr = vkGetBufferDeviceAddressKHR(device, &info);
-    gpuptr = (byte *)baseAddr;    // not a valid cpu pointer but useful for avoiding casting
-    vkMapMemory(device, staticBufMem, 0, mrq.size, 0, (void **)&cpuptr);
+    gpuptr = (byte *)staticBuf.address;    // not a valid cpu pointer but useful for avoiding casting
+    cpuptr = staticBuf.map();
 
     // put triangle data first
     memcpy(cpuptr, tri1, sizeof(tri1));
@@ -298,7 +262,7 @@ void main()
     staticDrawsCpu[0].scale = Vec2f(0.5f, 0.5f);
     staticDrawsCpu[0].tint = Vec4f(1.0f, 1.0f, 0.2f, 1.0f);    // tint yellow
 
-    vkUnmapMemory(device, staticBufMem);
+    staticBuf.unmap();
 
     float time = 0.0f;
 
@@ -313,17 +277,18 @@ void main()
 
       for(int i = 0; i < 2; i++)
       {
-        VkBuffer midbuf = VK_NULL_HANDLE;
-        vkCreateBuffer(device, bufinfo, NULL, &midbuf);
+        AllocatedBuffer midbuf(
+            this, vkh::BufferCreateInfo(0x100000, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR),
+            VmaAllocationCreateInfo(
+                {VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU}));
 
-        VkDeviceMemory midmem = VK_NULL_HANDLE;
-        vkAllocateMemory(device, &memoryAllocateInfo, NULL, &midmem);
-        vkBindBufferMemory(device, midbuf, midmem, 0);
+        AllocatedBuffer midbuf2(
+            this, vkh::BufferCreateInfo(0x100000, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR),
+            VmaAllocationCreateInfo(
+                {VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT, VMA_MEMORY_USAGE_GPU_ONLY}));
 
-        vkMapMemory(device, midmem, 0, mrq.size, 0, (void **)&cpuptr);
-        vkDestroyBuffer(device, midbuf, NULL);
-        vkUnmapMemory(device, midmem);
-        vkFreeMemory(device, midmem, NULL);
+        midbuf.free();
+        midbuf2.free();
       }
 
       vkCmdClearColorImage(cmd, swapimg, VK_IMAGE_LAYOUT_GENERAL,
@@ -390,9 +355,7 @@ void main()
 
     CHECK_VKR(vkDeviceWaitIdle(device));
 
-    vkDestroyBuffer(device, databuf, NULL);
-    vkUnmapMemory(device, databufMem);
-    vkFreeMemory(device, databufMem, NULL);
+    databuf.unmap();
 
     return 0;
   }

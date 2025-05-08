@@ -529,8 +529,11 @@ class VK_CBuffer_Zoo(rdtest.TestCase):
             3: lambda x: x.rows(1).cols(1).value([60.0]),
         })
 
-        # float p; with std140 vulkan packing
-        var_check.check('p').rows(1).cols(1).value([64.0])
+        # float p; with forced scalar vulkan packing due to glslang regression
+        var_check.check('p').rows(1).cols(1).value([61.0])
+
+        # float3 glslang_regression;
+        var_check.check('glslang_regression')
 
         # float4 dummy2;
         var_check.check('dummy2')
@@ -608,7 +611,10 @@ class VK_CBuffer_Zoo(rdtest.TestCase):
                                                                    197.0, 201.0])
 
         # float z;
-        var_check.check('z').rows(1).cols(1).value([204.0])
+        var_check.check('z').rows(1).cols(1).value([202.0])
+
+        # float3 glslang_regression2;
+        var_check.check('glslang_regression2')
 
         # Temporarily until SPIR-V support for degenerate HLSL matrices is determined
         var_check.check('dummy9')

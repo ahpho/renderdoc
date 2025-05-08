@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2022-2024 Baldur Karlsson
+ * Copyright (c) 2022-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -130,8 +130,8 @@ float4 DoFloatOpcode(float4 uv)
   float4 ddx_ = debugSampleDDX;
   float4 ddy_ = debugSampleDDY;
   int4 offsets = debugSampleOffsets;
-  float lod = debugSampleLodCompare;
-  float compare = debugSampleLodCompare;
+  float lod = debugSampleLod;
+  float compare = debugSampleCompare;
 
   if(opcode == DEBUG_SAMPLE_TEX_SAMPLE || opcode == DEBUG_SAMPLE_TEX_SAMPLE_BIAS ||
      opcode == DEBUG_SAMPLE_TEX_SAMPLE_GRAD)
@@ -269,7 +269,7 @@ float4 DoFloatOpcode(float4 uv)
       }
     }
   }
-  else if(opcode == DEBUG_SAMPLE_TEX_SAMPLE_CMP)
+  else if(opcode == DEBUG_SAMPLE_TEX_SAMPLE_CMP || opcode == DEBUG_SAMPLE_TEX_SAMPLE_CMP_BIAS)
   {
     switch(debugSampleTexDim)
     {
@@ -660,6 +660,48 @@ float4 DoFloatOpcode(float4 uv)
       }
     }
   }
+#if __SHADER_TARGET_MAJOR >= 6
+#if __SHADER_TARGET_MINOR >= 7
+  else if(opcode == DEBUG_SAMPLE_TEX_SAMPLE_CMP_LEVEL)    // SM6.7
+  {
+    switch(debugSampleTexDim)
+    {
+      default:
+      case DEBUG_SAMPLE_TEX1D:
+      {
+        switch(debugSampleRetType)
+        {
+          case DEBUG_SAMPLE_UNORM:
+            return t1D_unorm.SampleCmpLevel(sc, uv.xy, compare, lod, offsets.x);
+          case DEBUG_SAMPLE_SNORM:
+            return t1D_snorm.SampleCmpLevel(sc, uv.xy, compare, lod, offsets.x);
+          default: return t1D_float.SampleCmpLevel(sc, uv.xy, compare, lod, offsets.x);
+        }
+      }
+      case DEBUG_SAMPLE_TEX2D:
+      {
+        switch(debugSampleRetType)
+        {
+          case DEBUG_SAMPLE_UNORM:
+            return t2D_unorm.SampleCmpLevel(sc, uv.xyz, compare, lod, offsets.xy);
+          case DEBUG_SAMPLE_SNORM:
+            return t2D_snorm.SampleCmpLevel(sc, uv.xyz, compare, lod, offsets.xy);
+          default: return t2D_float.SampleCmpLevel(sc, uv.xyz, compare, lod, offsets.xy);
+        }
+      }
+      case DEBUG_SAMPLE_TEXCUBE:
+      {
+        switch(debugSampleRetType)
+        {
+          case DEBUG_SAMPLE_UNORM: return tCube_unorm.SampleCmpLevel(sc, uv, compare, lod);
+          case DEBUG_SAMPLE_SNORM: return tCube_snorm.SampleCmpLevel(sc, uv, compare, lod);
+          default: return tCube_float.SampleCmpLevel(sc, uv, compare, lod);
+        }
+      }
+    }
+  }
+#endif    // #if __SHADER_TARGET_MINOR >= 7
+#endif    // #if __SHADER_TARGET_MAJOR >= 6
   else
   {
     return float4(0, 0, 0, 0);
@@ -673,7 +715,7 @@ int4 DoIntOpcode(float4 uv)
   float4 ddx_ = debugSampleDDX;
   float4 ddy_ = debugSampleDDY;
   int4 offsets = debugSampleOffsets;
-  float lod = debugSampleLodCompare;
+  float lod = debugSampleLod;
 
   if(opcode == DEBUG_SAMPLE_TEX_LOAD || opcode == DEBUG_SAMPLE_TEX_LOAD_MS)
   {
@@ -738,7 +780,7 @@ uint4 DoUIntOpcode(float4 uv)
   float4 ddx_ = debugSampleDDX;
   float4 ddy_ = debugSampleDDY;
   int4 offsets = debugSampleOffsets;
-  float lod = debugSampleLodCompare;
+  float lod = debugSampleLod;
 
   if(opcode == DEBUG_SAMPLE_TEX_LOAD || opcode == DEBUG_SAMPLE_TEX_LOAD_MS)
   {

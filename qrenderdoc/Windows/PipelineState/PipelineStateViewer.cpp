@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1021,8 +1021,8 @@ IShaderViewer *PipelineStateViewer::EditDecompiledSource(const ShaderProcessingT
     if(flag.name == "@spirver")
       flags.flags.push_back(flag);
 
-  IShaderViewer *sv = EditShader(id, shaderDetails->stage, shaderDetails->debugInfo.entrySourceName,
-                                 flags, KnownShaderTool::Unknown, tool.output, files);
+  IShaderViewer *sv = EditShader(id, shaderDetails->stage, shaderDetails->entryPoint, flags,
+                                 KnownShaderTool::Unknown, tool.output, files);
 
   sv->ShowErrors(out.log);
 

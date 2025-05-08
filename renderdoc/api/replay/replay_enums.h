@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -4216,6 +4216,10 @@ a remote server.
 .. data:: CompressionFailed
 
   Compression or decompression failed.
+
+.. data:: AndroidLayerConfFailed
+
+  Debug layer configuration failed on Android.
 )");
 enum class ResultCode : uint32_t
 {
@@ -4251,6 +4255,7 @@ enum class ResultCode : uint32_t
   DataNotAvailable,
   InvalidParameter,
   CompressionFailed,
+  AndroidLayerConfFailed,
 };
 
 DECLARE_REFLECTION_ENUM(ResultCode);
@@ -4929,6 +4934,10 @@ displayed
 .. data:: Truncated
 
   This value was truncated when reading - the available range was exhausted.
+
+.. data:: SignedEnum
+
+  For enums, the base type is a signed integer allowing signed values.
 )");
 enum class ShaderVariableFlags : uint32_t
 {
@@ -4942,6 +4951,7 @@ enum class ShaderVariableFlags : uint32_t
   UNorm = 0x0040,
   SNorm = 0x0080,
   Truncated = 0x0100,
+  SignedEnum = 0x0200,
 };
 
 BITMASK_OPERATORS(ShaderVariableFlags);

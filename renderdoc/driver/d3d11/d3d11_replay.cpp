@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -30,6 +30,7 @@
 #include "driver/ihv/intel/intel_counters.h"
 #include "driver/ihv/nv/nv_counters.h"
 #include "driver/ihv/nv/nv_d3d11_counters.h"
+#include "driver/shaders/dxbc/dxbc_common.h"
 #include "maths/camera.h"
 #include "maths/formatpacking.h"
 #include "maths/matrix.h"
@@ -78,6 +79,8 @@ void D3D11Replay::Shutdown()
   m_ProxyResources.clear();
 
   m_RealState.state.Clear();
+
+  DXBC::ResetSearchDirsCache();
 
   // explicitly delete the device, as all the replay resources created will be keeping refs on it
   delete m_pDevice;
@@ -131,12 +134,14 @@ void D3D11Replay::CreateResources(IDXGIFactory *factory)
     {
       DXGI_ADAPTER_DESC desc = {};
       pDXGIAdapter->GetDesc(&desc);
+      LARGE_INTEGER version = {};
+      pDXGIAdapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &version);
 
       RDCEraseEl(m_DriverInfo);
 
       m_DriverInfo.vendor = GPUVendorFromPCIVendor(desc.VendorId);
 
-      rdcstr descString = GetDriverVersion(desc);
+      rdcstr descString = GetDriverVersion(desc, version);
       descString.resize(RDCMIN(descString.size(), ARRAY_COUNT(m_DriverInfo.version) - 1));
       memcpy(m_DriverInfo.version, descString.c_str(), descString.size());
 
@@ -2039,13 +2044,15 @@ bool D3D11Replay::GetHistogram(ResourceId texid, const Subresource &sub, CompTyp
   int srvOffset = 0;
   int intIdx = 0;
 
-  if(IsUIntFormat(details.texFmt))
+  DXGI_FORMAT fmt = GetTypedFormat(details.texFmt, typeCast);
+
+  if(IsUIntFormat(fmt))
   {
     cdata.HistogramFlags |= TEXDISPLAY_UINT_TEX;
     srvOffset = 10;
     intIdx = 1;
   }
-  if(IsIntFormat(details.texFmt))
+  if(IsIntFormat(fmt))
   {
     cdata.HistogramFlags |= TEXDISPLAY_SINT_TEX;
     srvOffset = 20;
@@ -2707,6 +2714,11 @@ void D3D11Replay::ReplaceResource(ResourceId from, ResourceId to)
 void D3D11Replay::RemoveReplacement(ResourceId id)
 {
   m_pDevice->GetResourceManager()->RemoveReplacement(id);
+  ClearPostVSCache();
+}
+
+void D3D11Replay::ClearReplayCache()
+{
   ClearPostVSCache();
 }
 

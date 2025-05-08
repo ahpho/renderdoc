@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -92,6 +92,12 @@ bool WrappedVulkan::Prepare_InitialState(WrappedVkRes *res)
     if(imageInfo.levelCount > 1)
       estimatedSize *= 2;
   }
+  else if(type == eResAccelerationStructureKHR)
+  {
+    VkResourceRecord *record = GetResourceManager()->GetResourceRecord(id);
+    if(record && record->accelerationStructureInfo)
+      estimatedSize += record->accelerationStructureInfo->memSize;
+  }
 
   uint32_t softMemoryLimit = RenderDoc::Inst().GetCaptureOptions().softMemoryLimit;
   if(softMemoryLimit > 0 && !m_PreparedNotSerialisedInitStates.empty() &&
@@ -118,8 +124,6 @@ bool WrappedVulkan::Prepare_InitialState(WrappedVkRes *res)
     {
       VkInitialContents initData = GetResourceManager()->GetInitialContents(flushId);
 
-      GetResourceManager()->SetInitialContents(flushId, VkInitialContents());
-
       uint64_t start = ser.GetWriter()->GetOffset();
       {
         uint64_t size = GetSize_InitialState(flushId, initData);
@@ -128,6 +132,11 @@ bool WrappedVulkan::Prepare_InitialState(WrappedVkRes *res)
 
         // record is not needed on vulkan
         Serialise_InitialState(ser, flushId, NULL, &initData);
+
+        // Clear the existing init contents, but retain the type
+        VkInitialContents clearedContents;
+        clearedContents.type = initData.type;
+        GetResourceManager()->SetInitialContents(flushId, clearedContents);
       }
       uint64_t end = ser.GetWriter()->GetOffset();
 
@@ -155,7 +164,7 @@ bool WrappedVulkan::Prepare_InitialState(WrappedVkRes *res)
 
     VkInitialContents initialContents(type, VkInitialContents::DescriptorSet);
 
-    if((layout.flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR) == 0)
+    if((layout.flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT) == 0)
     {
       record->descInfo->data.copy(initialContents.descriptorSlots, initialContents.numDescriptors,
                                   initialContents.inlineData, initialContents.inlineByteSize);
@@ -202,6 +211,7 @@ bool WrappedVulkan::Prepare_InitialState(WrappedVkRes *res)
     if(!state || !state->isMemoryBound)
       return true;
 
+    bool allUndef = true;
     for(auto it = state->subresourceStates.begin(); it != state->subresourceStates.end(); ++it)
     {
       if(it->state().newQueueFamilyIndex == VK_QUEUE_FAMILY_FOREIGN_EXT ||
@@ -211,6 +221,17 @@ bool WrappedVulkan::Prepare_InitialState(WrappedVkRes *res)
         // the initial contents.
         return true;
       }
+
+      const ImageSubresourceState &subState = it->state();
+      if(subState.newLayout != UNKNOWN_PREV_IMG_LAYOUT &&
+         subState.newLayout != VK_IMAGE_LAYOUT_UNDEFINED)
+        allUndef = false;
+    }
+
+    if(allUndef)
+    {
+      RDCDEBUG("Ignoring init states for %s as it never left undefined", ToStr(im->id).c_str());
+      return true;
     }
 
     VkDevice d = GetDev();
@@ -316,7 +337,7 @@ bool WrappedVulkan::Prepare_InitialState(WrappedVkRes *res)
     VkBuffer dstBuf;
 
     vkr = ObjDisp(d)->CreateBuffer(Unwrap(d), &bufInfo, NULL, &dstBuf);
-    CheckVkResult(vkr);
+    CHECK_VKR(this, vkr);
 
     VkMemoryRequirements dstBufMrq = {};
     ObjDisp(d)->GetBufferMemoryRequirements(Unwrap(d), dstBuf, &dstBufMrq);
@@ -332,7 +353,7 @@ bool WrappedVulkan::Prepare_InitialState(WrappedVkRes *res)
     }
 
     vkr = ObjDisp(d)->BindBufferMemory(Unwrap(d), dstBuf, Unwrap(readbackmem.mem), readbackmem.offs);
-    CheckVkResult(vkr);
+    CHECK_VKR(this, vkr);
 
     VkImageAspectFlags aspectFlags = FormatImageAspects(imageInfo.format);
 
@@ -536,7 +557,7 @@ bool WrappedVulkan::Prepare_InitialState(WrappedVkRes *res)
 
     bufInfo.size = datasize;
     vkr = ObjDisp(d)->CreateBuffer(Unwrap(d), &bufInfo, NULL, &dstBuf);
-    CheckVkResult(vkr);
+    CHECK_VKR(this, vkr);
 
     VkMemoryRequirements dstBufMrq = {};
     ObjDisp(d)->GetBufferMemoryRequirements(Unwrap(d), dstBuf, &dstBufMrq);
@@ -551,9 +572,9 @@ bool WrappedVulkan::Prepare_InitialState(WrappedVkRes *res)
       return false;
     }
 
-    CheckVkResult(vkr);
+    CHECK_VKR(this, vkr);
     vkr = ObjDisp(d)->BindBufferMemory(Unwrap(d), dstBuf, Unwrap(readbackmem.mem), readbackmem.offs);
-    CheckVkResult(vkr);
+    CHECK_VKR(this, vkr);
 
     VkBufferCopy region = {0, 0, datasize};
 
@@ -577,25 +598,18 @@ bool WrappedVulkan::Prepare_InitialState(WrappedVkRes *res)
   else if(type == eResAccelerationStructureKHR)
   {
     VkResourceRecord *record = GetResourceManager()->GetResourceRecord(id);
-
     if(!record->accelerationStructureInfo->accelerationStructureBuilt)
     {
       RDCDEBUG("Skipping AS %s as it has not been built", ToStr(id).c_str());
       return true;
     }
 
-    VulkanAccelerationStructureManager::ASMemory result;
-    VkAccelerationStructureKHR as = ToUnwrappedHandle<VkAccelerationStructureKHR>(res);
-    if(!GetAccelerationStructureManager()->Prepare(as, m_QueueFamilyIndices, result))
-    {
-      SET_ERROR_RESULT(m_LastCaptureError, ResultCode::OutOfMemory,
-                       "Couldn't allocate readback memory");
-      m_CaptureFailure = true;
-      return false;
-    }
-
-    VkInitialContents ic = VkInitialContents(type, result.alloc);
-    ic.isTLAS = result.isTLAS;
+    // The input buffers and metadata have all been created by this point, so we just need to
+    // assemble a VkInitialContents
+    VkInitialContents ic;
+    ic.type = type;
+    ic.accelerationStructureInfo = record->accelerationStructureInfo;
+    ic.accelerationStructureInfo->AddRef();
 
     GetResourceManager()->SetInitialContents(id, ic);
     m_PreparedNotSerialisedInitStates.push_back(id);
@@ -639,11 +653,14 @@ uint64_t WrappedVulkan::GetSize_InitialState(ResourceId id, const VkInitialConte
     // buffers only have initial states when they're sparse
     return ret;
   }
-  else if(initial.type == eResImage || initial.type == eResDeviceMemory ||
-          initial.type == eResAccelerationStructureKHR)
+  else if(initial.type == eResImage || initial.type == eResDeviceMemory)
   {
     // the size primarily comes from the buffer, the size of which we conveniently have stored.
     return ret + uint64_t(128 + initial.mem.size + WriteSerialiser::GetChunkAlignment());
+  }
+  else if(initial.type == eResAccelerationStructureKHR)
+  {
+    return GetAccelerationStructureManager()->GetSize_InitialState(id, initial);
   }
 
   RDCERR("Unhandled resource type %s", ToStr(initial.type).c_str());
@@ -1176,7 +1193,7 @@ bool WrappedVulkan::Serialise_InitialState(SerialiserType &ser, ResourceId id, V
       const DescSetLayout &layout =
           m_CreationInfo.m_DescSetLayout[m_DescriptorSetState[liveid].layout];
 
-      if(layout.flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR)
+      if(layout.flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT)
       {
         RDCERR("Push descriptor set with initial contents!");
         return true;
@@ -1514,7 +1531,7 @@ bool WrappedVulkan::Serialise_InitialState(SerialiserType &ser, ResourceId id, V
         mappedMem = initial->mem;
         vkr = ObjDisp(d)->MapMemory(Unwrap(d), Unwrap(mappedMem.mem), initial->mem.offs, size, 0,
                                     (void **)&Contents);
-        CheckVkResult(vkr);
+        CHECK_VKR(this, vkr);
 
         // invalidate the cpu cache for this memory range to avoid reading stale data
         VkMappedMemoryRange range = {
@@ -1526,7 +1543,7 @@ bool WrappedVulkan::Serialise_InitialState(SerialiserType &ser, ResourceId id, V
         };
 
         vkr = ObjDisp(d)->InvalidateMappedMemoryRanges(Unwrap(d), 1, &range);
-        CheckVkResult(vkr);
+        CHECK_VKR(this, vkr);
       }
     }
     else if(IsReplayingAndReading() && !ser.IsErrored())
@@ -1537,7 +1554,7 @@ bool WrappedVulkan::Serialise_InitialState(SerialiserType &ser, ResourceId id, V
           VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT};
 
       vkr = vkCreateBuffer(d, &bufInfo, NULL, &uploadBuf);
-      CheckVkResult(vkr);
+      CHECK_VKR(this, vkr);
 
       uploadMemory =
           AllocateMemoryForResource(uploadBuf, MemoryScope::InitialContents, MemoryType::Upload);
@@ -1546,19 +1563,19 @@ bool WrappedVulkan::Serialise_InitialState(SerialiserType &ser, ResourceId id, V
         return false;
 
       vkr = vkBindBufferMemory(d, uploadBuf, uploadMemory.mem, uploadMemory.offs);
-      CheckVkResult(vkr);
+      CHECK_VKR(this, vkr);
 
       mappedMem = uploadMemory;
 
       vkr = ObjDisp(d)->MapMemory(Unwrap(d), Unwrap(mappedMem.mem), mappedMem.offs,
                                   AlignUp(mappedMem.size, nonCoherentAtomSize), 0,
                                   (void **)&Contents);
-      CheckVkResult(vkr);
+      CHECK_VKR(this, vkr);
 
       if(!Contents)
       {
         RDCERR("Manually reporting failed memory map");
-        CheckVkResult(VK_ERROR_MEMORY_MAP_FAILED);
+        CHECK_VKR(this, VK_ERROR_MEMORY_MAP_FAILED);
         return false;
       }
 
@@ -1585,7 +1602,7 @@ bool WrappedVulkan::Serialise_InitialState(SerialiserType &ser, ResourceId id, V
         };
 
         vkr = ObjDisp(d)->FlushMappedMemoryRanges(Unwrap(d), 1, &range);
-        CheckVkResult(vkr);
+        CHECK_VKR(this, vkr);
       }
 
       ObjDisp(d)->UnmapMemory(Unwrap(d), Unwrap(mappedMem.mem));
@@ -1649,7 +1666,7 @@ bool WrappedVulkan::Serialise_InitialState(SerialiserType &ser, ResourceId id, V
           };
 
           vkr = vkCreateBuffer(d, &gpuBufInfo, NULL, &gpuBuf);
-          CheckVkResult(vkr);
+          CHECK_VKR(this, vkr);
 
           MemoryAllocation gpuUploadMemory =
               AllocateMemoryForResource(gpuBuf, MemoryScope::InitialContents, MemoryType::GPULocal);
@@ -1658,7 +1675,7 @@ bool WrappedVulkan::Serialise_InitialState(SerialiserType &ser, ResourceId id, V
             return false;
 
           vkr = vkBindBufferMemory(d, gpuBuf, gpuUploadMemory.mem, gpuUploadMemory.offs);
-          CheckVkResult(vkr);
+          CHECK_VKR(this, vkr);
 
           VkCommandBuffer cmd = GetNextCmd();
 
@@ -1669,7 +1686,7 @@ bool WrappedVulkan::Serialise_InitialState(SerialiserType &ser, ResourceId id, V
                                                 VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
 
           vkr = ObjDisp(cmd)->BeginCommandBuffer(Unwrap(cmd), &beginInfo);
-          CheckVkResult(vkr);
+          CHECK_VKR(this, vkr);
 
           VkBufferCopy bufCopy = {0, 0, ContentsSize};
           ObjDisp(cmd)->CmdCopyBuffer(Unwrap(cmd), Unwrap(uploadBuf), Unwrap(gpuBuf), 1, &bufCopy);
@@ -1689,7 +1706,7 @@ bool WrappedVulkan::Serialise_InitialState(SerialiserType &ser, ResourceId id, V
           DoPipelineBarrier(cmd, 1, &bufBarrier);
 
           vkr = ObjDisp(cmd)->EndCommandBuffer(Unwrap(cmd));
-          CheckVkResult(vkr);
+          CHECK_VKR(this, vkr);
 
           SubmitCmds();
           FlushQ();
@@ -1777,7 +1794,7 @@ void WrappedVulkan::Create_InitialState(ResourceId id, WrappedVkRes *live, bool)
   }
 }
 
-void WrappedVulkan::Apply_InitialState(WrappedVkRes *live, const VkInitialContents &initial)
+void WrappedVulkan::Apply_InitialState(WrappedVkRes *live, VkInitialContents &initial)
 {
   if(HasFatalError())
     return;
@@ -1812,8 +1829,8 @@ void WrappedVulkan::Apply_InitialState(WrappedVkRes *live, const VkInitialConten
 
       if(writes[i].descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
       {
-        VkWriteDescriptorSetInlineUniformBlock *inlineWrite =
-            (VkWriteDescriptorSetInlineUniformBlock *)FindNextStruct(
+        const VkWriteDescriptorSetInlineUniformBlock *inlineWrite =
+            (const VkWriteDescriptorSetInlineUniformBlock *)FindNextStruct(
                 &writes[i], VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK);
         memcpy(inlineData.data() + bind->offset + writes[i].dstArrayElement, inlineWrite->pData,
                inlineWrite->dataSize);
@@ -1821,8 +1838,8 @@ void WrappedVulkan::Apply_InitialState(WrappedVkRes *live, const VkInitialConten
       }
       else if(writes[i].descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
       {
-        VkWriteDescriptorSetAccelerationStructureKHR *asWrite =
-            (VkWriteDescriptorSetAccelerationStructureKHR *)FindNextStruct(
+        const VkWriteDescriptorSetAccelerationStructureKHR *asWrite =
+            (const VkWriteDescriptorSetAccelerationStructureKHR *)FindNextStruct(
                 &writes[i], VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
         RDCASSERTEQUAL(initial.numAccelerationStructures, writes[i].descriptorCount);
         memcpy(asData + bind->offset + writes[i].dstArrayElement, asWrite->pAccelerationStructures,
@@ -1847,8 +1864,8 @@ void WrappedVulkan::Apply_InitialState(WrappedVkRes *live, const VkInitialConten
         }
         else if(writes[i].descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
         {
-          VkWriteDescriptorSetAccelerationStructureKHR *asWrite =
-              (VkWriteDescriptorSetAccelerationStructureKHR *)FindNextStruct(
+          const VkWriteDescriptorSetAccelerationStructureKHR *asWrite =
+              (const VkWriteDescriptorSetAccelerationStructureKHR *)FindNextStruct(
                   &writes[i], VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
           bind[idx].SetAccelerationStructure(writes[i].descriptorType,
                                              asWrite->pAccelerationStructures[d]);

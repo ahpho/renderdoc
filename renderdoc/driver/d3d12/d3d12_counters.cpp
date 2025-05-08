@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -591,7 +591,7 @@ rdcarray<CounterResult> D3D12Replay::FetchCounters(const rdcarray<GPUCounter> &c
   HRESULT hr = m_pDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufDesc,
                                                   D3D12_RESOURCE_STATE_COPY_DEST, NULL,
                                                   __uuidof(ID3D12Resource), (void **)&readbackBuf);
-  m_pDevice->CheckHRESULT(hr);
+  CHECK_HR(m_pDevice, hr);
   if(FAILED(hr))
   {
     RDCERR("Failed to create query readback buffer HRESULT: %s", ToStr(hr).c_str());
@@ -605,7 +605,7 @@ rdcarray<CounterResult> D3D12Replay::FetchCounters(const rdcarray<GPUCounter> &c
   ID3D12QueryHeap *timerQueryHeap = NULL;
   hr = m_pDevice->CreateQueryHeap(&timerQueryDesc, __uuidof(timerQueryHeap),
                                   (void **)&timerQueryHeap);
-  m_pDevice->CheckHRESULT(hr);
+  CHECK_HR(m_pDevice, hr);
   if(FAILED(hr))
   {
     RDCERR("Failed to create timer query heap HRESULT: %s", ToStr(hr).c_str());
@@ -630,7 +630,7 @@ rdcarray<CounterResult> D3D12Replay::FetchCounters(const rdcarray<GPUCounter> &c
   ID3D12QueryHeap *pipestatsQueryHeap = NULL;
   hr = m_pDevice->CreateQueryHeap(&pipestatsQueryDesc, __uuidof(pipestatsQueryHeap),
                                   (void **)&pipestatsQueryHeap);
-  m_pDevice->CheckHRESULT(hr);
+  CHECK_HR(m_pDevice, hr);
   if(FAILED(hr))
   {
     RDCERR("Failed to create pipeline statistics query heap HRESULT: %s", ToStr(hr).c_str());
@@ -644,7 +644,7 @@ rdcarray<CounterResult> D3D12Replay::FetchCounters(const rdcarray<GPUCounter> &c
   ID3D12QueryHeap *occlusionQueryHeap = NULL;
   hr = m_pDevice->CreateQueryHeap(&occlusionQueryDesc, __uuidof(occlusionQueryHeap),
                                   (void **)&occlusionQueryHeap);
-  m_pDevice->CheckHRESULT(hr);
+  CHECK_HR(m_pDevice, hr);
   if(FAILED(hr))
   {
     RDCERR("Failed to create occlusion query heap HRESULT: %s", ToStr(hr).c_str());
@@ -706,7 +706,7 @@ rdcarray<CounterResult> D3D12Replay::FetchCounters(const rdcarray<GPUCounter> &c
 
   m_pDevice->ExecuteLists();
   m_pDevice->FlushLists();
-  m_pDevice->GPUSyncAllQueues();
+  m_pDevice->DeviceWaitForIdle();
 
   D3D12_RANGE range;
   range.Begin = 0;
@@ -714,7 +714,7 @@ rdcarray<CounterResult> D3D12Replay::FetchCounters(const rdcarray<GPUCounter> &c
 
   uint8_t *data;
   hr = readbackBuf->Map(0, &range, (void **)&data);
-  m_pDevice->CheckHRESULT(hr);
+  CHECK_HR(m_pDevice, hr);
   if(FAILED(hr))
   {
     RDCERR("Failed to read timer query heap data HRESULT: %s", ToStr(hr).c_str());

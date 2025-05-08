@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -79,6 +79,109 @@ void ClampPhysDevAPIVersion(VkPhysicalDeviceProperties *pProperties, VkPhysicalD
       // let's clamp the version just to be safe since we can't check, and this will help protect
       // against buggy applications
       pProperties->apiVersion = VK_API_VERSION_1_2;
+    }
+  }
+
+  // clamp to highest supported API version, currently vulkan 1.3, because loader no longer does this for us
+  if(pProperties->apiVersion > VK_API_VERSION_1_3)
+    pProperties->apiVersion = VK_API_VERSION_1_3;
+}
+
+void WrappedVulkan::PatchImageCreateInfo(VkImageCreateInfo *info, VkFormat *newViewFormatsTempMem)
+{
+  info->usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+
+  if(IsCaptureMode(m_State))
+  {
+    info->usage |= VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    info->usage &= ~VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+  }
+
+  if(IsYUVFormat(info->format))
+    info->flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+
+  if(info->samples != VK_SAMPLE_COUNT_1_BIT)
+  {
+    info->usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    info->flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+
+    if(IsCaptureMode(m_State))
+    {
+      if(!IsDepthOrStencilFormat(info->format))
+      {
+        if(GetDebugManager() && GetShaderCache()->IsBuffer2MSSupported())
+          info->usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+      }
+      else
+      {
+        info->usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+      }
+    }
+  }
+
+  info->flags &= ~VK_IMAGE_CREATE_SUBSAMPLED_BIT_EXT;
+
+  VkImageStencilUsageCreateInfo *separateStencilUsage =
+      (VkImageStencilUsageCreateInfo *)FindNextStruct(
+          info, VK_STRUCTURE_TYPE_IMAGE_STENCIL_USAGE_CREATE_INFO);
+  if(separateStencilUsage)
+  {
+    separateStencilUsage->stencilUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+
+    if(IsCaptureMode(m_State))
+    {
+      info->usage |= VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+      info->usage &= ~VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+    }
+
+    if(info->samples != VK_SAMPLE_COUNT_1_BIT)
+    {
+      separateStencilUsage->stencilUsage |=
+          VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    }
+  }
+
+  // similarly for the image format list for MSAA textures, add the UINT cast format we will need
+  if(info->samples != VK_SAMPLE_COUNT_1_BIT)
+  {
+    VkImageFormatListCreateInfo *formatListInfo = (VkImageFormatListCreateInfo *)FindNextStruct(
+        info, VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
+
+    if(formatListInfo)
+    {
+      uint32_t bs = (uint32_t)GetByteSize(1, 1, 1, info->format, 0);
+
+      VkFormat msaaCopyFormat = VK_FORMAT_UNDEFINED;
+      if(bs == 1)
+        msaaCopyFormat = VK_FORMAT_R8_UINT;
+      else if(bs == 2)
+        msaaCopyFormat = VK_FORMAT_R16_UINT;
+      else if(bs == 4)
+        msaaCopyFormat = VK_FORMAT_R32_UINT;
+      else if(bs == 8)
+        msaaCopyFormat = VK_FORMAT_R32G32_UINT;
+      else if(bs == 16)
+        msaaCopyFormat = VK_FORMAT_R32G32B32A32_UINT;
+
+      const VkFormat *oldFmts = formatListInfo->pViewFormats;
+      formatListInfo->pViewFormats = newViewFormatsTempMem;
+
+      bool needAdded = true;
+      uint32_t i = 0;
+      for(; i < formatListInfo->viewFormatCount; i++)
+      {
+        newViewFormatsTempMem[i] = oldFmts[i];
+        if(newViewFormatsTempMem[i] == msaaCopyFormat)
+          needAdded = false;
+      }
+
+      if(needAdded)
+      {
+        newViewFormatsTempMem[i] = msaaCopyFormat;
+        formatListInfo->viewFormatCount++;
+      }
+
+      newViewFormatsTempMem += formatListInfo->viewFormatCount;
     }
   }
 }
@@ -230,10 +333,6 @@ void WrappedVulkan::vkGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevic
 {
   ObjDisp(physicalDevice)->GetPhysicalDeviceProperties(Unwrap(physicalDevice), pProperties);
 
-  MakeFakeUUID();
-
-  memcpy(pProperties->pipelineCacheUUID, fakeRenderDocUUID, VK_UUID_SIZE);
-
   ClampPhysDevAPIVersion(pProperties, physicalDevice);
 }
 
@@ -332,10 +431,12 @@ void WrappedVulkan::vkGetDeviceBufferMemoryRequirements(VkDevice device,
   VkBufferCreateInfo *info = (VkBufferCreateInfo *)unwrappedInfo->pCreateInfo;
 
   // patch the create info the same as we would for vkCreateBuffer
-  info->usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-  info->usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+  uint64_t usage = GetBufferUsageFlags(info);
+  usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+  usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+  SetBufferUsageFlags(info, usage);
 
-  if(IsCaptureMode(m_State) && (info->usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT))
+  if(IsCaptureMode(m_State) && (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT))
     info->flags |= VK_BUFFER_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
 
   ObjDisp(device)->GetDeviceBufferMemoryRequirements(Unwrap(device), unwrappedInfo,
@@ -402,100 +503,7 @@ void WrappedVulkan::vkGetDeviceImageMemoryRequirements(VkDevice device,
 
   VkImageCreateInfo *info = (VkImageCreateInfo *)unwrappedInfo->pCreateInfo;
 
-  info->usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-
-  if(IsCaptureMode(m_State))
-  {
-    info->usage |= VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    info->usage &= ~VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
-  }
-
-  if(IsYUVFormat(info->format))
-    info->flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
-
-  if(info->samples != VK_SAMPLE_COUNT_1_BIT)
-  {
-    info->usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    info->flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
-
-    if(IsCaptureMode(m_State))
-    {
-      if(!IsDepthOrStencilFormat(info->format))
-      {
-        if(GetDebugManager() && GetShaderCache()->IsBuffer2MSSupported())
-          info->usage |= VK_IMAGE_USAGE_STORAGE_BIT;
-      }
-      else
-      {
-        info->usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-      }
-    }
-  }
-
-  info->flags &= ~VK_IMAGE_CREATE_SUBSAMPLED_BIT_EXT;
-
-  VkImageStencilUsageCreateInfo *separateStencilUsage =
-      (VkImageStencilUsageCreateInfo *)FindNextStruct(
-          info, VK_STRUCTURE_TYPE_IMAGE_STENCIL_USAGE_CREATE_INFO);
-  if(separateStencilUsage)
-  {
-    separateStencilUsage->stencilUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-
-    if(IsCaptureMode(m_State))
-    {
-      info->usage |= VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-      info->usage &= ~VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
-    }
-
-    if(info->samples != VK_SAMPLE_COUNT_1_BIT)
-    {
-      separateStencilUsage->stencilUsage |=
-          VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    }
-  }
-
-  // similarly for the image format list for MSAA textures, add the UINT cast format we will need
-  if(info->samples != VK_SAMPLE_COUNT_1_BIT)
-  {
-    VkImageFormatListCreateInfo *formatListInfo = (VkImageFormatListCreateInfo *)FindNextStruct(
-        info, VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
-
-    if(formatListInfo)
-    {
-      uint32_t bs = (uint32_t)GetByteSize(1, 1, 1, info->format, 0);
-
-      VkFormat msaaCopyFormat = VK_FORMAT_UNDEFINED;
-      if(bs == 1)
-        msaaCopyFormat = VK_FORMAT_R8_UINT;
-      else if(bs == 2)
-        msaaCopyFormat = VK_FORMAT_R16_UINT;
-      else if(bs == 4)
-        msaaCopyFormat = VK_FORMAT_R32_UINT;
-      else if(bs == 8)
-        msaaCopyFormat = VK_FORMAT_R32G32_UINT;
-      else if(bs == 16)
-        msaaCopyFormat = VK_FORMAT_R32G32B32A32_UINT;
-
-      const VkFormat *oldFmts = formatListInfo->pViewFormats;
-      VkFormat *newFmts = (VkFormat *)tempMem;
-      formatListInfo->pViewFormats = newFmts;
-
-      bool needAdded = true;
-      uint32_t i = 0;
-      for(; i < formatListInfo->viewFormatCount; i++)
-      {
-        newFmts[i] = oldFmts[i];
-        if(newFmts[i] == msaaCopyFormat)
-          needAdded = false;
-      }
-
-      if(needAdded)
-      {
-        newFmts[i] = msaaCopyFormat;
-        formatListInfo->viewFormatCount++;
-      }
-    }
-  }
+  PatchImageCreateInfo(info, (VkFormat *)tempMem);
 
   ObjDisp(device)->GetDeviceImageMemoryRequirements(Unwrap(device), unwrappedInfo,
                                                     pMemoryRequirements);
@@ -635,49 +643,8 @@ void WrappedVulkan::vkGetRenderAreaGranularity(VkDevice device, VkRenderPass ren
 VkResult WrappedVulkan::vkGetPipelineCacheData(VkDevice device, VkPipelineCache pipelineCache,
                                                size_t *pDataSize, void *pData)
 {
-  // required header and 4 NULL bytes
-  size_t totalSize = sizeof(VkPipelineCacheHeaderVersionOne) + 4;
-
-  if(pDataSize && !pData)
-    *pDataSize = totalSize;
-
-  if(pDataSize && pData)
-  {
-    if(*pDataSize < totalSize)
-    {
-      memset(pData, 0, *pDataSize);
-      return VK_INCOMPLETE;
-    }
-
-    VkPipelineCacheHeaderVersionOne *header = (VkPipelineCacheHeaderVersionOne *)pData;
-
-    RDCCOMPILE_ASSERT(sizeof(VkPipelineCacheHeaderVersionOne) == 16 + VK_UUID_SIZE,
-                      "Pipeline cache header size is wrong");
-
-    header->headerSize = sizeof(VkPipelineCacheHeaderVersionOne);
-    header->headerVersion = VK_PIPELINE_CACHE_HEADER_VERSION_ONE;
-    // just in case the user expects a valid vendorID/deviceID, write the real one
-    // MULTIDEVICE need to get the right physical device for this device
-    header->vendorID = m_PhysicalDeviceData.props.vendorID;
-    header->deviceID = m_PhysicalDeviceData.props.deviceID;
-
-    MakeFakeUUID();
-
-    memcpy(header->pipelineCacheUUID, fakeRenderDocUUID, VK_UUID_SIZE);
-
-    RDCCOMPILE_ASSERT(VK_UUID_SIZE == 16, "VK_UUID_SIZE has changed");
-
-    // empty bytes
-    uint32_t *ptr = (uint32_t *)(header + 1);
-    *ptr = 0;
-  }
-
-  // we don't want the application to use pipeline caches at all, and especially
-  // don't want to return any data for future use. We thus return a technically
-  // valid but empty pipeline cache. Our UUID changes every run so in theory the
-  // application should never provide an old cache, but just in case we will nop
-  // it out in create pipeline cache
-  return VK_SUCCESS;
+  return ObjDisp(device)->GetPipelineCacheData(Unwrap(device), Unwrap(pipelineCache), pDataSize,
+                                               pData);
 }
 
 VkResult WrappedVulkan::vkMergePipelineCaches(VkDevice device, VkPipelineCache destCache,
@@ -685,7 +652,16 @@ VkResult WrappedVulkan::vkMergePipelineCaches(VkDevice device, VkPipelineCache d
                                               const VkPipelineCache *pSrcCaches)
 {
   // do nothing, our pipeline caches are always dummies
-  return VK_SUCCESS;
+  rdcarray<VkPipelineCache> unwrappedPipelineCaches;
+
+  unwrappedPipelineCaches.reserve(srcCacheCount);
+  for(uint32_t cacheIndex = 0; cacheIndex < srcCacheCount; cacheIndex++)
+  {
+    unwrappedPipelineCaches.push_back(Unwrap(pSrcCaches[cacheIndex]));
+  }
+
+  return ObjDisp(device)->MergePipelineCaches(Unwrap(device), Unwrap(destCache), srcCacheCount,
+                                              unwrappedPipelineCaches.data());
 }
 
 VkResult WrappedVulkan::vkGetPhysicalDeviceExternalImageFormatPropertiesNV(
@@ -802,6 +778,24 @@ void WrappedVulkan::vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice
     }
   }
 
+  // Vulkan 1.2 also promoted the old core extension query. This would have been invalid to use
+  // before since we would have hidden the extension itself, but on vulkan 1.2 it is valid so we
+  // intercept it unconditionally
+  VkPhysicalDeviceBufferDeviceAddressFeatures *bda =
+      (VkPhysicalDeviceBufferDeviceAddressFeatures *)FindNextStruct(
+          pFeatures, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES);
+
+  if(bda)
+  {
+    if(bda->bufferDeviceAddressCaptureReplay == VK_FALSE)
+    {
+      RDCWARN(
+          "VkPhysicalDeviceBufferDeviceAddressFeatures::bufferDeviceAddressCaptureReplay is false, "
+          "can't support capture of bufferDeviceAddress");
+      bda->bufferDeviceAddress = bda->bufferDeviceAddressMultiDevice = VK_FALSE;
+    }
+  }
+
   // we don't want to report support for mesh shaders + multiview
   VkPhysicalDeviceMeshShaderFeaturesEXT *mesh =
       (VkPhysicalDeviceMeshShaderFeaturesEXT *)FindNextStruct(
@@ -860,8 +854,9 @@ void WrappedVulkan::vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice
 
   if(accStruct && accStruct->accelerationStructureHostCommands)
   {
-    RDCWARN("Disabling support for acceleration structure host commands");
+    RDCWARN("Disabling support for acceleration structure host commands and indirect builds");
     accStruct->accelerationStructureHostCommands = VK_FALSE;
+    accStruct->accelerationStructureIndirectBuild = VK_FALSE;
   }
 }
 
@@ -869,10 +864,6 @@ void WrappedVulkan::vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevi
                                                    VkPhysicalDeviceProperties2 *pProperties)
 {
   ObjDisp(physicalDevice)->GetPhysicalDeviceProperties2(Unwrap(physicalDevice), pProperties);
-
-  MakeFakeUUID();
-
-  memcpy(pProperties->properties.pipelineCacheUUID, fakeRenderDocUUID, VK_UUID_SIZE);
 
   ClampPhysDevAPIVersion(&pProperties->properties, physicalDevice);
 
@@ -883,6 +874,8 @@ void WrappedVulkan::vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevi
 
   if(shadObj)
   {
+    MakeFakeUUID();
+
     memcpy(shadObj->shaderBinaryUUID, fakeRenderDocUUID, VK_UUID_SIZE);
   }
 }
@@ -1290,4 +1283,52 @@ VkDeviceSize WrappedVulkan::vkGetRayTracingShaderGroupStackSizeKHR(
 {
   return ObjDisp(device)->GetRayTracingShaderGroupStackSizeKHR(Unwrap(device), Unwrap(pipeline),
                                                                group, groupShader);
+}
+
+void WrappedVulkan::vkGetDeviceImageSubresourceLayoutKHR(VkDevice device,
+                                                         const VkDeviceImageSubresourceInfo *pInfo,
+                                                         VkSubresourceLayout2 *pLayout)
+{
+  size_t tempMemSize = GetNextPatchSize(pInfo);
+
+  // reserve space for a patched view format list if necessary
+  if(pInfo->pCreateInfo->samples != VK_SAMPLE_COUNT_1_BIT)
+  {
+    const VkImageFormatListCreateInfo *formatListInfo =
+        (const VkImageFormatListCreateInfo *)FindNextStruct(
+            pInfo->pCreateInfo, VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
+
+    if(formatListInfo)
+      tempMemSize += sizeof(VkFormat) * (formatListInfo->viewFormatCount + 1);
+  }
+
+  byte *tempMem = GetTempMemory(tempMemSize);
+  VkDeviceImageSubresourceInfo *unwrappedInfo = UnwrapStructAndChain(m_State, tempMem, pInfo);
+
+  PatchImageCreateInfo((VkImageCreateInfo *)unwrappedInfo->pCreateInfo, (VkFormat *)tempMem);
+
+  ObjDisp(device)->GetDeviceImageSubresourceLayoutKHR(Unwrap(device), unwrappedInfo, pLayout);
+}
+
+void WrappedVulkan::vkGetImageSubresourceLayout2KHR(VkDevice device, VkImage image,
+                                                    const VkImageSubresource2 *pSubresource,
+                                                    VkSubresourceLayout2 *pLayout)
+{
+  ObjDisp(device)->GetImageSubresourceLayout2KHR(Unwrap(device), Unwrap(image), pSubresource,
+                                                 pLayout);
+}
+
+void WrappedVulkan::vkGetRenderingAreaGranularityKHR(VkDevice device,
+                                                     const VkRenderingAreaInfo *pRenderingAreaInfo,
+                                                     VkExtent2D *pGranularity)
+{
+  ObjDisp(device)->GetRenderingAreaGranularityKHR(Unwrap(device), pRenderingAreaInfo, pGranularity);
+}
+
+void WrappedVulkan::vkGetImageSubresourceLayout2EXT(VkDevice device, VkImage image,
+                                                    const VkImageSubresource2 *pSubresource,
+                                                    VkSubresourceLayout2 *pLayout)
+{
+  ObjDisp(device)->GetImageSubresourceLayout2EXT(Unwrap(device), Unwrap(image), pSubresource,
+                                                 pLayout);
 }

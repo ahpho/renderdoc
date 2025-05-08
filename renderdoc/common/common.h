@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -292,6 +292,12 @@ template <typename T, typename A>
 inline T AlignUpPtr(T x, A a)
 {
   return (T)AlignUp<uintptr_t>((uintptr_t)x, (uintptr_t)a);
+}
+
+template <typename T>
+T AlignToMultiple(T value, T multiple)
+{
+  return ((value + multiple - 1) / multiple) * multiple | 0;
 }
 
 #define MAKE_FOURCC(a, b, c, d) \

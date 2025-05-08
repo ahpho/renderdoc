@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -78,7 +78,9 @@ enum class ShaderStage
   tesseval,
   geom,
   frag,
-  comp
+  comp,
+  mesh,
+  task,
 };
 
 bool InternalSpvCompiler();
@@ -333,6 +335,7 @@ std::string strlower(const std::string &str);
 std::string strupper(const std::string &str);
 std::string trim(const std::string &str);
 
+void SetDebugLogEnabled(bool enabled);
 void DebugPrint(const char *fmt, ...);
 
 #define TEST_ASSERT(cond, fmt, ...)                                                                 \
@@ -407,6 +410,7 @@ enum class TextureType
   BC5,
   BC6,
   BC7,
+  A8,
 };
 
 static const uint32_t texWidth = 8;

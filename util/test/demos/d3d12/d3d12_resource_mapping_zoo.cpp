@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2024 Baldur Karlsson
+ * Copyright (c) 2020-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,7 @@
 RD_TEST(D3D12_Resource_Mapping_Zoo, D3D12GraphicsTest)
 {
   static constexpr const char *Description =
-      "Tests various resource types and mappings with both Shader Model 5 and 5.1 to ensure"
+      "Tests various resource types and mappings with both Shader Model 5, 5.1 and 6.0 to ensure"
       "correct parsing and debugging behavior.";
 
   std::string pixel_5_0 = R"EOSHADER(
@@ -53,7 +53,7 @@ float4 main() : SV_Target0
   std::string pixel_5_1 = R"EOSHADER(
 
 Texture2D res1 : register(t6);
-Texture2D res2 : register(t7);
+Texture2D res2[2] : register(t7);
 
 RWTexture2D<float> res1uav : register(u0);
 
@@ -73,9 +73,11 @@ ConstantBuffer<Foo> bar[4][3] : register(b4);
 float4 main() : SV_Target0
 {
   float4 color = bar[1][2].col;
+  uint ZERO = (uint)floor(color.x / (color.x + 10.0f));
+  uint ONE = ZERO + 1;
   color += (float4)test + float4(0.1f, 0.0f, 0.0f, 0.0f);
   float4 uavVal = res1uav[uint2(1, 1)];
-  return color + res1[uint2(0, 0)] + res2[uint2(0, 0)] + uavVal;
+  return color + res1[uint2(0, 0)] + res2[ONE][uint2(0, 0)] + uavVal;
 }
 
 )EOSHADER";
@@ -239,7 +241,7 @@ float4 main(float4 pos : SV_Position) : SV_Target0
     // Descriptor table entries:
     // 0-12: CB array
     // 30-33: SRV array
-    // 56-57: SRVs containing stepped unorm data
+    // 56-58: SRVs containing stepped unorm data
 
     AlignedCB cbufferarray[4][3];
     for(uint32_t x = 0; x < 4; ++x)
@@ -258,6 +260,10 @@ float4 main(float4 pos : SV_Position) : SV_Target0
         MakeTexture(DXGI_FORMAT_R8G8B8A8_UNORM, 2, 2).Mips(1).InitialState(D3D12_RESOURCE_STATE_COPY_DEST);
     D3D12ViewCreator srvRes2 = MakeSRV(res2);
     srvRes2.CreateGPU(57);
+    ID3D12ResourcePtr res3 =
+        MakeTexture(DXGI_FORMAT_R8G8B8A8_SNORM, 2, 2).Mips(1).InitialState(D3D12_RESOURCE_STATE_COPY_DEST);
+    D3D12ViewCreator srvRes3 = MakeSRV(res3);
+    srvRes3.CreateGPU(58);
     MakeUAV(res1).CreateGPU(20);
 
     // Create a few unused SRVs so that a bindless descriptor table has a lot of things to report
@@ -284,12 +290,17 @@ float4 main(float4 pos : SV_Position) : SV_Target0
 
     // In UNORM, 1/10, 2/10, 3/10, 4/10 for the first row, then reverse for the second row
     byte res1Data[16] = {26, 51, 77, 102, 26, 51, 77, 102, 102, 77, 51, 26, 102, 77, 51, 26};
-    UploadTexture(uploadBuf, res1, res1Data, 8);
+    UploadTexture(uploadBuf, res1, res1Data, 4);
 
     // In UNORM, 5/10, 6/10, 7/10, 8/10
     byte res2Data[16] = {128, 153, 179, 204, 128, 153, 179, 204,
                          128, 153, 179, 204, 128, 153, 179, 204};
-    UploadTexture(uploadBuf, res2, res2Data, 8);
+    UploadTexture(uploadBuf, res2, res2Data, 4);
+
+    // In SNORM, 8/10, 7/10, 6/10, 5/10
+    byte res3Data[16] = {204, 179, 153, 128, 204, 179, 153, 128,
+                         204, 179, 153, 128, 204, 179, 153, 128};
+    UploadTexture(uploadBuf, res3, res3Data, 4);
 
     // Test the same resource mappings both with explicitly specified resources,
     // and a bindless style table param
@@ -314,7 +325,7 @@ float4 main(float4 pos : SV_Position) : SV_Target0
     });
     ID3D12RootSignaturePtr sig_resourceAccess = MakeSig({
         tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 0, 1, 56),
-        tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 1, 1, 57),
+        tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 1, 2, 57),
         tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, UINT_MAX, 30),
         tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 0, 1, 56),
         tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 1, 1, 57),
@@ -354,6 +365,100 @@ float4 main(float4 pos : SV_Position) : SV_Target0
                                                     .PS(psblob_resourceAccess)
                                                     .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
 
+    bool supportSM60 = (m_HighestShaderModel >= D3D_SHADER_MODEL_6_0) && m_DXILSupport;
+    bool supportSM66 = (m_HighestShaderModel >= D3D_SHADER_MODEL_6_6) && m_DXILSupport;
+
+    ID3D12PipelineStatePtr pso_6_0;
+    ID3D12PipelineStatePtr pso2_6_0;
+    ID3D12PipelineStatePtr pso_6_0_resArray;
+    ID3D12PipelineStatePtr pso_6_0_bindless;
+    ID3D12PipelineStatePtr pso_6_0_resourceAccess;
+    if(supportSM60)
+    {
+      ID3DBlobPtr vs_6_0_blob = Compile(D3DDefaultVertex, "main", "vs_6_0");
+      ID3DBlobPtr ps_6_0_blob = Compile(pixel_5_0, "main", "ps_6_0");
+      ID3DBlobPtr ps_6_0_blob2 = Compile(pixel_5_1, "main", "ps_6_0");
+      ID3DBlobPtr ps_6_0_blob_resArray = Compile(pixel_resArray, "main", "ps_6_0");
+      ID3DBlobPtr ps_6_0_blob_bindless = Compile(pixel_bindless, "main", "ps_6_0");
+      ID3DBlobPtr ps_6_0_blob_resourceAccess = Compile(pixel_resourceAccess, "main", "ps_6_0");
+
+      pso_6_0 = MakePSO()
+                    .RootSig(sig_5_0)
+                    .InputLayout()
+                    .VS(vs_6_0_blob)
+                    .PS(ps_6_0_blob)
+                    .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+      pso2_6_0 = MakePSO()
+                     .RootSig(sig_5_1)
+                     .InputLayout()
+                     .VS(vs_6_0_blob)
+                     .PS(ps_6_0_blob2)
+                     .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+      pso_6_0_resArray = MakePSO()
+                             .RootSig(sig_resArray)
+                             .InputLayout()
+                             .VS(vs_6_0_blob)
+                             .PS(ps_6_0_blob_resArray)
+                             .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+      pso_6_0_bindless = MakePSO()
+                             .RootSig(sig_bindless)
+                             .InputLayout()
+                             .VS(vs_6_0_blob)
+                             .PS(ps_6_0_blob_bindless)
+                             .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+      pso_6_0_resourceAccess = MakePSO()
+                                   .RootSig(sig_resourceAccess)
+                                   .InputLayout()
+                                   .VS(vs_6_0_blob)
+                                   .PS(ps_6_0_blob_resourceAccess)
+                                   .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+    }
+
+    ID3D12PipelineStatePtr pso_6_6;
+    ID3D12PipelineStatePtr pso2_6_6;
+    ID3D12PipelineStatePtr pso_6_6_resArray;
+    ID3D12PipelineStatePtr pso_6_6_bindless;
+    ID3D12PipelineStatePtr pso_6_6_resourceAccess;
+    if(supportSM66)
+    {
+      ID3DBlobPtr vs_6_6_blob = Compile(D3DDefaultVertex, "main", "vs_6_6");
+      ID3DBlobPtr ps_6_6_blob = Compile(pixel_5_0, "main", "ps_6_6");
+      ID3DBlobPtr ps_6_6_blob2 = Compile(pixel_5_1, "main", "ps_6_6");
+      ID3DBlobPtr ps_6_6_blob_resArray = Compile(pixel_resArray, "main", "ps_6_6");
+      ID3DBlobPtr ps_6_6_blob_bindless = Compile(pixel_bindless, "main", "ps_6_6");
+      ID3DBlobPtr ps_6_6_blob_resourceAccess = Compile(pixel_resourceAccess, "main", "ps_6_6");
+
+      pso_6_6 = MakePSO()
+                    .RootSig(sig_5_0)
+                    .InputLayout()
+                    .VS(vs_6_6_blob)
+                    .PS(ps_6_6_blob)
+                    .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+      pso2_6_6 = MakePSO()
+                     .RootSig(sig_5_1)
+                     .InputLayout()
+                     .VS(vs_6_6_blob)
+                     .PS(ps_6_6_blob2)
+                     .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+      pso_6_6_resArray = MakePSO()
+                             .RootSig(sig_resArray)
+                             .InputLayout()
+                             .VS(vs_6_6_blob)
+                             .PS(ps_6_6_blob_resArray)
+                             .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+      pso_6_6_bindless = MakePSO()
+                             .RootSig(sig_bindless)
+                             .InputLayout()
+                             .VS(vs_6_6_blob)
+                             .PS(ps_6_6_blob_bindless)
+                             .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+      pso_6_6_resourceAccess = MakePSO()
+                                   .RootSig(sig_resourceAccess)
+                                   .InputLayout()
+                                   .VS(vs_6_6_blob)
+                                   .PS(ps_6_6_blob_resourceAccess)
+                                   .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+    }
     ResourceBarrier(vb, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
     ResourceBarrier(cb, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
     ResourceBarrier(cbArray, D3D12_RESOURCE_STATE_COMMON,
@@ -432,9 +537,129 @@ float4 main(float4 pos : SV_Position) : SV_Target0
       cmd->SetGraphicsRootDescriptorTable(3, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
       cmd->SetGraphicsRootDescriptorTable(4, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
       cmd->SetGraphicsRootConstantBufferView(5, cb->GetGPUVirtualAddress());
-      cmd->SetGraphicsRootConstantBufferView(6, cb->GetGPUVirtualAddress() + sizeof(AlignedCB));
+      cmd->SetGraphicsRootConstantBufferView(6, cbArray->GetGPUVirtualAddress() + sizeof(AlignedCB));
       cmd->SetGraphicsRootDescriptorTable(7, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
       cmd->DrawInstanced(3, 1, 0, 0);
+
+      if(supportSM60)
+      {
+        setMarker(cmd, "SM6.0");
+        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+        IASetVertexBuffer(cmd, vb, sizeof(DefaultA2V), 0);
+        cmd->SetPipelineState(pso_6_0);
+        cmd->SetGraphicsRootSignature(sig_5_0);
+        cmd->SetDescriptorHeaps(1, &m_CBVUAVSRV.GetInterfacePtr());
+        cmd->SetGraphicsRootConstantBufferView(0, cb->GetGPUVirtualAddress());
+        cmd->SetGraphicsRootDescriptorTable(1, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(2, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+
+        RSSetViewport(cmd, {0.0f, 0.0f, (float)screenWidth, (float)screenHeight, 0.0f, 1.0f});
+        RSSetScissorRect(cmd, {0, 0, screenWidth, screenHeight});
+
+        cmd->DrawInstanced(3, 1, 0, 0);
+
+        setMarker(cmd, "SM6.0 Table");
+        cmd->SetPipelineState(pso2_6_0);
+        cmd->SetGraphicsRootSignature(sig_5_1);
+        cmd->SetDescriptorHeaps(1, &m_CBVUAVSRV.GetInterfacePtr());
+        cmd->SetGraphicsRootConstantBufferView(0, cb->GetGPUVirtualAddress());
+        cmd->SetGraphicsRootDescriptorTable(1, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(2, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(3, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->DrawInstanced(3, 1, 0, 0);
+
+        setMarker(cmd, "SM6.0 ResArray");
+        cmd->SetPipelineState(pso_6_0_resArray);
+        cmd->SetGraphicsRootSignature(sig_resArray);
+        cmd->SetDescriptorHeaps(1, &m_CBVUAVSRV.GetInterfacePtr());
+        cmd->SetGraphicsRootConstantBufferView(0, cb->GetGPUVirtualAddress());
+        cmd->SetGraphicsRootDescriptorTable(1, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->DrawInstanced(3, 1, 0, 0);
+
+        setMarker(cmd, "SM6.0 Bindless");
+        cmd->SetPipelineState(pso_6_0_bindless);
+        cmd->SetGraphicsRootSignature(sig_bindless);
+        cmd->SetDescriptorHeaps(1, &m_CBVUAVSRV.GetInterfacePtr());
+        cmd->SetGraphicsRootConstantBufferView(0, cb->GetGPUVirtualAddress());
+        cmd->SetGraphicsRootDescriptorTable(1, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->DrawInstanced(3, 1, 0, 0);
+
+        setMarker(cmd, "SM6.0 ResourceAccess");
+        cmd->SetPipelineState(pso_6_0_resourceAccess);
+        cmd->SetGraphicsRootSignature(sig_resourceAccess);
+        cmd->SetDescriptorHeaps(1, &m_CBVUAVSRV.GetInterfacePtr());
+        cmd->SetGraphicsRootDescriptorTable(0, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(1, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(2, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(3, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(4, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootConstantBufferView(5, cb->GetGPUVirtualAddress());
+        cmd->SetGraphicsRootConstantBufferView(6,
+                                               cbArray->GetGPUVirtualAddress() + sizeof(AlignedCB));
+        cmd->SetGraphicsRootDescriptorTable(7, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->DrawInstanced(3, 1, 0, 0);
+      }
+
+      if(supportSM66)
+      {
+        setMarker(cmd, "SM6.6");
+        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+        IASetVertexBuffer(cmd, vb, sizeof(DefaultA2V), 0);
+        cmd->SetPipelineState(pso_6_6);
+        cmd->SetGraphicsRootSignature(sig_5_0);
+        cmd->SetDescriptorHeaps(1, &m_CBVUAVSRV.GetInterfacePtr());
+        cmd->SetGraphicsRootConstantBufferView(0, cb->GetGPUVirtualAddress());
+        cmd->SetGraphicsRootDescriptorTable(1, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(2, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+
+        RSSetViewport(cmd, {0.0f, 0.0f, (float)screenWidth, (float)screenHeight, 0.0f, 1.0f});
+        RSSetScissorRect(cmd, {0, 0, screenWidth, screenHeight});
+
+        cmd->DrawInstanced(3, 1, 0, 0);
+
+        setMarker(cmd, "SM6.6 Table");
+        cmd->SetPipelineState(pso2_6_6);
+        cmd->SetGraphicsRootSignature(sig_5_1);
+        cmd->SetDescriptorHeaps(1, &m_CBVUAVSRV.GetInterfacePtr());
+        cmd->SetGraphicsRootConstantBufferView(0, cb->GetGPUVirtualAddress());
+        cmd->SetGraphicsRootDescriptorTable(1, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(2, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(3, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->DrawInstanced(3, 1, 0, 0);
+
+        setMarker(cmd, "SM6.6 ResArray");
+        cmd->SetPipelineState(pso_6_6_resArray);
+        cmd->SetGraphicsRootSignature(sig_resArray);
+        cmd->SetDescriptorHeaps(1, &m_CBVUAVSRV.GetInterfacePtr());
+        cmd->SetGraphicsRootConstantBufferView(0, cb->GetGPUVirtualAddress());
+        cmd->SetGraphicsRootDescriptorTable(1, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->DrawInstanced(3, 1, 0, 0);
+
+        setMarker(cmd, "SM6.6 Bindless");
+        cmd->SetPipelineState(pso_6_6_bindless);
+        cmd->SetGraphicsRootSignature(sig_bindless);
+        cmd->SetDescriptorHeaps(1, &m_CBVUAVSRV.GetInterfacePtr());
+        cmd->SetGraphicsRootConstantBufferView(0, cb->GetGPUVirtualAddress());
+        cmd->SetGraphicsRootDescriptorTable(1, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->DrawInstanced(3, 1, 0, 0);
+
+        setMarker(cmd, "SM6.6 ResourceAccess");
+        cmd->SetPipelineState(pso_6_6_resourceAccess);
+        cmd->SetGraphicsRootSignature(sig_resourceAccess);
+        cmd->SetDescriptorHeaps(1, &m_CBVUAVSRV.GetInterfacePtr());
+        cmd->SetGraphicsRootDescriptorTable(0, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(1, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(2, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(3, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootDescriptorTable(4, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetGraphicsRootConstantBufferView(5, cb->GetGPUVirtualAddress());
+        cmd->SetGraphicsRootConstantBufferView(6,
+                                               cbArray->GetGPUVirtualAddress() + sizeof(AlignedCB));
+        cmd->SetGraphicsRootDescriptorTable(7, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->DrawInstanced(3, 1, 0, 0);
+      }
 
       FinishUsingBackbuffer(cmd, D3D12_RESOURCE_STATE_RENDER_TARGET);
 

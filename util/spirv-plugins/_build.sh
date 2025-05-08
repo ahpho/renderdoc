@@ -20,7 +20,7 @@ else
 	export CC=clang CXX=clang++ CFLAGS="-fPIC -fvisibility=hidden -stdlib=libc++" LDFLAGS="-nostdlib++ -Wl,--start-group /usr/lib/libc++.a /usr/lib/libc++fs.a /usr/lib/libc++abi.a -lpthread"
 	export CXXFLAGS="${CFLAGS}"
 
-	export PATH=$(pwd)/cmake-3.26.2-linux-x86_64/bin:$PATH
+	export PATH=$(pwd)/$(ls -d cmake* | grep -v tar.gz | sort -n | tail -n 1)/bin:$PATH
 fi
 
 ##### SPIRV-Cross

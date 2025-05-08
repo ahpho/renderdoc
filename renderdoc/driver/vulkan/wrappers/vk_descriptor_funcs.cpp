@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -88,7 +88,7 @@ VkDescriptorUpdateTemplateCreateInfo WrappedVulkan::UnwrapInfo(
 {
   VkDescriptorUpdateTemplateCreateInfo ret = *info;
 
-  if(ret.templateType == VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS_KHR)
+  if(ret.templateType == VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS)
     ret.pipelineLayout = Unwrap(ret.pipelineLayout);
   if(ret.templateType == VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET)
     ret.descriptorSetLayout = Unwrap(ret.descriptorSetLayout);
@@ -505,8 +505,8 @@ bool WrappedVulkan::Serialise_vkAllocateDescriptorSets(SerialiserType &ser, VkDe
       if(!m_CreationInfo.m_DescSetLayout[layoutId].bindings.empty() &&
          m_CreationInfo.m_DescSetLayout[layoutId].bindings.back().variableSize)
       {
-        VkDescriptorSetVariableDescriptorCountAllocateInfo *variableAlloc =
-            (VkDescriptorSetVariableDescriptorCountAllocateInfo *)FindNextStruct(
+        const VkDescriptorSetVariableDescriptorCountAllocateInfo *variableAlloc =
+            (const VkDescriptorSetVariableDescriptorCountAllocateInfo *)FindNextStruct(
                 &AllocateInfo,
                 VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO);
 
@@ -552,8 +552,8 @@ VkResult WrappedVulkan::vkAllocateDescriptorSets(VkDevice device,
   if(ret != VK_SUCCESS)
     return ret;
 
-  VkDescriptorSetVariableDescriptorCountAllocateInfo *variableAlloc =
-      (VkDescriptorSetVariableDescriptorCountAllocateInfo *)FindNextStruct(
+  const VkDescriptorSetVariableDescriptorCountAllocateInfo *variableAlloc =
+      (const VkDescriptorSetVariableDescriptorCountAllocateInfo *)FindNextStruct(
           pAllocateInfo, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO);
 
   VkDescriptorSetAllocateInfo mutableInfo = *pAllocateInfo;
@@ -642,7 +642,7 @@ VkResult WrappedVulkan::vkAllocateDescriptorSets(VkDevice device,
 
         // only mark descriptor set as dirty if it's not a push descriptor layout
         if((layoutRecord->descInfo->layout->flags &
-            VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR) == 0)
+            VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT) == 0)
         {
           GetResourceManager()->MarkDirtyResource(id);
         }
@@ -938,15 +938,15 @@ void WrappedVulkan::ReplayDescriptorSetWrite(VkDevice device, const VkWriteDescr
       }
       else if(writeDesc.descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
       {
-        VkWriteDescriptorSetInlineUniformBlock *inlineWrite =
-            (VkWriteDescriptorSetInlineUniformBlock *)FindNextStruct(
+        const VkWriteDescriptorSetInlineUniformBlock *inlineWrite =
+            (const VkWriteDescriptorSetInlineUniformBlock *)FindNextStruct(
                 &writeDesc, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK);
         memcpy(inlineData.data() + (*bind)->offset + writeDesc.dstArrayElement, inlineWrite->pData,
                inlineWrite->dataSize);
       }
       else
       {
-        VkWriteDescriptorSetAccelerationStructureKHR *asDesc = NULL;
+        const VkWriteDescriptorSetAccelerationStructureKHR *asDesc = NULL;
 
         for(uint32_t d = 0; d < writeDesc.descriptorCount; d++, curIdx++)
         {
@@ -969,7 +969,7 @@ void WrappedVulkan::ReplayDescriptorSetWrite(VkDevice device, const VkWriteDescr
           if(writeDesc.descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
           {
             if(!asDesc)
-              asDesc = (VkWriteDescriptorSetAccelerationStructureKHR *)FindNextStruct(
+              asDesc = (const VkWriteDescriptorSetAccelerationStructureKHR *)FindNextStruct(
                   &writeDesc, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
 
             (*bind)[curIdx].SetAccelerationStructure(writeDesc.descriptorType,
@@ -1217,12 +1217,13 @@ void WrappedVulkan::vkUpdateDescriptorSets(VkDevice device, uint32_t writeCount,
       }
       else if(pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
       {
-        VkWriteDescriptorSetAccelerationStructureKHR *asWrite =
-            (VkWriteDescriptorSetAccelerationStructureKHR *)FindNextStruct(
+        const VkWriteDescriptorSetAccelerationStructureKHR *asRead =
+            (const VkWriteDescriptorSetAccelerationStructureKHR *)FindNextStruct(
                 &pDescriptorWrites[i],
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
-        asWrite = (VkWriteDescriptorSetAccelerationStructureKHR *)memcpy(
-            nextASDescriptors, asWrite, sizeof(VkWriteDescriptorSetAccelerationStructureKHR));
+        VkWriteDescriptorSetAccelerationStructureKHR *asWrite =
+            (VkWriteDescriptorSetAccelerationStructureKHR *)memcpy(
+                nextASDescriptors, asRead, sizeof(VkWriteDescriptorSetAccelerationStructureKHR));
 
         VkAccelerationStructureKHR *base = unwrappedASs;
         for(uint32_t j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
@@ -1303,8 +1304,8 @@ void WrappedVulkan::vkUpdateDescriptorSets(VkDevice device, uint32_t writeCount,
 
         if(pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
         {
-          VkWriteDescriptorSetAccelerationStructureKHR *asWrite =
-              (VkWriteDescriptorSetAccelerationStructureKHR *)FindNextStruct(
+          const VkWriteDescriptorSetAccelerationStructureKHR *asWrite =
+              (const VkWriteDescriptorSetAccelerationStructureKHR *)FindNextStruct(
                   &pDescriptorWrites[i],
                   VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
           for(uint32_t j = 0; j < pDescriptorWrites[i].descriptorCount; j++)
@@ -1425,8 +1426,8 @@ void WrappedVulkan::vkUpdateDescriptorSets(VkDevice device, uint32_t writeCount,
         }
         else if(descWrite.descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
         {
-          VkWriteDescriptorSetInlineUniformBlock *inlineWrite =
-              (VkWriteDescriptorSetInlineUniformBlock *)FindNextStruct(
+          const VkWriteDescriptorSetInlineUniformBlock *inlineWrite =
+              (const VkWriteDescriptorSetInlineUniformBlock *)FindNextStruct(
                   &descWrite, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK);
           memcpy(inlineData.data() + (*binding)->offset + descWrite.dstArrayElement,
                  inlineWrite->pData, inlineWrite->dataSize);
@@ -1436,8 +1437,8 @@ void WrappedVulkan::vkUpdateDescriptorSets(VkDevice device, uint32_t writeCount,
         }
         else if(descWrite.descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
         {
-          VkWriteDescriptorSetAccelerationStructureKHR *asWrite =
-              (VkWriteDescriptorSetAccelerationStructureKHR *)FindNextStruct(
+          const VkWriteDescriptorSetAccelerationStructureKHR *asWrite =
+              (const VkWriteDescriptorSetAccelerationStructureKHR *)FindNextStruct(
                   &descWrite, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR);
           bind.SetAccelerationStructure(descWrite.descriptorType,
                                         asWrite->pAccelerationStructures[d]);
@@ -1600,7 +1601,7 @@ VkResult WrappedVulkan::vkCreateDescriptorUpdateTemplate(
       VkResourceRecord *record = GetResourceManager()->AddResourceRecord(*pDescriptorUpdateTemplate);
       record->AddChunk(chunk);
 
-      if(unwrapped.templateType == VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS_KHR)
+      if(unwrapped.templateType == VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS)
         record->AddParent(GetRecord(pCreateInfo->pipelineLayout));
       else if(unwrapped.templateType == VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET)
         record->AddParent(GetRecord(pCreateInfo->descriptorSetLayout));

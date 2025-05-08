@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -31,6 +31,7 @@
 #include "common/threading.h"
 #include "core/settings.h"
 #include "hooks/hooks.h"
+#include "jpeg-compressor/jpge.h"
 #include "maths/formatpacking.h"
 #include "replay/replay_driver.h"
 #include "serialise/rdcfile.h"
@@ -51,10 +52,21 @@ extern "C" const rdcstr VulkanLayerJSONBasename = STRINGIZE(RDOC_BASE_NAME);
 RDOC_DEBUG_CONFIG(bool, Capture_Debug_SnapshotDiagnosticLog, false,
                   "Snapshot the diagnostic log at capture time and embed in the capture.");
 
+RDOC_CONFIG(bool, Capture_IncludeExtendedThumbnail, false,
+            "Save the thumbnail unresized and losslessly encoded during capture.");
+
+RDOC_CONFIG(bool, Replay_Debug_PrintChunkTimings, false, "Print stats of chunk processing times");
+
+RDOC_CONFIG(bool, Replay_Debug_SingleThreadedCompilation, false,
+            "Compile all shaders and PSOs single-threaded.");
+
 // this is declared centrally so it can be shared with any backend - the name is a misnomer but kept
 // for backwards compatibility reasons.
 RDOC_CONFIG(rdcarray<rdcstr>, DXBC_Debug_SearchDirPaths, {},
-            "Paths to search for separated shader debug PDBs.");
+            "Paths to search for separated shader debug PDBs, including all types of paths.");
+RDOC_CONFIG(rdcarray<rdcstr>, Replay_Shader_LimitedSearchDirPaths, {},
+            "Companion array to DXBC.Debug.SearchDirPaths - listing paths which should not be "
+            "searched exhaustively but only used for simple lookups.");
 
 void LogReplayOptions(const ReplayOptions &opts)
 {
@@ -681,6 +693,10 @@ void RenderDoc::InitialiseReplay(GlobalEnvironment env, const rdcarray<rdcstr> &
                   "atioglxx.dll",
                   "ControlLib.dll",
                   "ControlLib32.dll",
+                  "igd10iumd32.dll",
+                  "igd10iumd64.dll",
+                  "igd12umd32.dll",
+                  "igd12umd64.dll",
                   "igc32.dll",
                   "igc64.dll",
                   "igvk32.dll",
@@ -1485,7 +1501,7 @@ void RenderDoc::ResamplePixels(const FramePixels &in, RDCThumb &out)
   }
 }
 
-void RenderDoc::EncodePixelsPNG(const RDCThumb &in, RDCThumb &out)
+void RenderDoc::EncodeThumbPixels(const RDCThumb &in, RDCThumb &out)
 {
   if(in.width == 0 || in.height == 0)
   {
@@ -1504,13 +1520,33 @@ void RenderDoc::EncodePixelsPNG(const RDCThumb &in, RDCThumb &out)
     }
   };
 
-  WriteCallbackData callbackData;
-  stbi_write_png_to_func(&WriteCallbackData::writeData, &callbackData, in.width, in.height, 3,
-                         in.pixels.data(), 0);
-  out.width = in.width;
-  out.height = in.height;
-  out.pixels.swap(callbackData.buffer);
-  out.format = FileType::PNG;
+  if(out.format == FileType::PNG)
+  {
+    WriteCallbackData callbackData;
+    stbi_write_png_to_func(&WriteCallbackData::writeData, &callbackData, in.width, in.height, 3,
+                           in.pixels.data(), 0);
+    out.width = in.width;
+    out.height = in.height;
+    out.pixels.swap(callbackData.buffer);
+  }
+  else
+  {
+    // should be JPG if not PNG
+    RDCASSERTEQUAL(out.format, FileType::JPG);
+
+    out.width = in.width;
+    out.height = in.height;
+    out.format = FileType::JPG;
+
+    const int comp = 3;
+    int len = in.width * in.height * comp;
+    out.pixels.resize(len);
+    jpge::params p;
+    p.m_quality = 90;
+    jpge::compress_image_to_jpeg_file_in_memory(out.pixels.data(), len, in.width, in.height, comp,
+                                                in.pixels.data(), p);
+    out.pixels.resize(len);
+  }
 }
 
 RDCFile *RenderDoc::CreateRDC(RDCDriver driver, uint32_t frameNum, const FramePixels &fp)
@@ -1548,15 +1584,21 @@ RDCFile *RenderDoc::CreateRDC(RDCDriver driver, uint32_t frameNum, const FramePi
     }
   }
 
-  RDCThumb outRaw, outPng;
+  RDCThumb outRaw, outThumb;
   if(fp.data)
   {
     // point sample info into raw buffer
     ResamplePixels(fp, outRaw);
-    EncodePixelsPNG(outRaw, outPng);
+
+    if(Capture_IncludeExtendedThumbnail())
+      outThumb.format = FileType::PNG;
+    else
+      outThumb.format = FileType::JPG;
+
+    EncodeThumbPixels(outRaw, outThumb);
   }
 
-  ret->SetData(driver, ToStr(driver).c_str(), OSUtility::GetMachineIdent(), &outPng, m_TimeBase,
+  ret->SetData(driver, ToStr(driver).c_str(), OSUtility::GetMachineIdent(), &outThumb, m_TimeBase,
                m_TimeFrequency);
 
   if(m_CurrentLogFile.size() < 28)

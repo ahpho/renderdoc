@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -136,7 +136,8 @@ private:
                       const QString &hiddenCombinedSampler, bool includeSampleLocations = false,
                       bool includeOffsets = false);
 
-  bool setViewDetails(RDTreeWidgetItem *node, const Descriptor &descriptor, BufferDescription *buf);
+  bool setViewDetails(RDTreeWidgetItem *node, const Descriptor &descriptor, BufferDescription *buf,
+                      uint32_t dynamicOffset);
 
   bool showNode(bool usedSlot, bool filledSlot);
 

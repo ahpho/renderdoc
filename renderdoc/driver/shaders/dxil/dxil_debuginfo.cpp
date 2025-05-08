@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2024 Baldur Karlsson
+ * Copyright (c) 2020-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -282,7 +282,129 @@ bool Program::ParseDebugMetaRecord(MetadataList &metadata, const LLVMBC::BlockOr
   return true;
 };
 
-rdcstr Program::GetDebugVarName(const DIBase *d)
+const Metadata *Program::GetDebugScopeParent(const DIBase *d) const
+{
+  if(d->type == DIBase::Subprogram)
+    return d->As<DISubprogram>()->scope;
+  else if(d->type == DIBase::LexicalBlock)
+    return d->As<DILexicalBlock>()->scope;
+  else if(d->type == DIBase::CompositeType)
+    return d->As<DICompositeType>()->file;
+
+  return NULL;
+}
+
+uint64_t Program::GetDebugScopeLine(const DIBase *d) const
+{
+  if(d->type == DIBase::Subprogram)
+    return d->As<DISubprogram>()->line;
+  else if(d->type == DIBase::LexicalBlock)
+    return d->As<DILexicalBlock>()->line;
+  else if(d->type == DIBase::File)
+    return 0;
+
+  RDCERR("Unexpected type %s in GetDebugScopeLine", ToStr(d->type).c_str());
+  return UINT64_MAX;
+}
+
+rdcstr Program::GetDebugScopeFilePath(const DIBase *d) const
+{
+  const DIBase *dwarf = d;
+  const Metadata *fileMD = NULL;
+  while(dwarf)
+  {
+    const Metadata *scope = NULL;
+    const Metadata *newFileMD = NULL;
+    switch(dwarf->type)
+    {
+      case DIBase::CompileUnit: fileMD = dwarf->As<DICompileUnit>()->file; break;
+      case DIBase::DerivedType:
+        scope = dwarf->As<DIDerivedType>()->scope;
+        newFileMD = dwarf->As<DIDerivedType>()->file;
+        break;
+      case DIBase::CompositeType:
+        scope = dwarf->As<DICompositeType>()->scope;
+        newFileMD = dwarf->As<DICompositeType>()->file;
+        break;
+      case DIBase::Subprogram:
+        scope = dwarf->As<DISubprogram>()->scope;
+        newFileMD = dwarf->As<DISubprogram>()->file;
+        break;
+      case DIBase::GlobalVariable:
+        scope = dwarf->As<DIGlobalVariable>()->scope;
+        newFileMD = dwarf->As<DIGlobalVariable>()->file;
+        break;
+      case DIBase::LocalVariable:
+        scope = dwarf->As<DILocalVariable>()->scope;
+        newFileMD = dwarf->As<DILocalVariable>()->file;
+        break;
+      case DIBase::LexicalBlock:
+        scope = dwarf->As<DILexicalBlock>()->scope;
+        newFileMD = dwarf->As<DILexicalBlock>()->file;
+        break;
+      case DIBase::Namespace:
+        scope = dwarf->As<DINamespace>()->scope;
+        newFileMD = dwarf->As<DINamespace>()->file;
+        break;
+      case DIBase::ImportedEntity: scope = dwarf->As<DIImportedEntity>()->scope; break;
+      case DIBase::BasicType: break;
+      case DIBase::TemplateTypeParameter: break;
+      case DIBase::TemplateValueParameter: break;
+      case DIBase::SubroutineType: break;
+      case DIBase::Expression: break;
+      case DIBase::Subrange: break;
+      case DIBase::Enum: break;
+      case DIBase::File: break;
+    }
+    if(newFileMD)
+      fileMD = newFileMD;
+
+    if(!scope)
+      break;
+    dwarf = scope->dwarf;
+  };
+  if(!dwarf)
+    return "???";
+
+  rdcstr file;
+  rdcstr dir;
+  if(dwarf->type == DIBase::File)
+  {
+    const DIFile *f = dwarf->As<DIFile>();
+    if(f->dir)
+      dir = f->dir->str;
+    file = f->file->str;
+  }
+  else if(fileMD)
+  {
+    if(fileMD->children.size() > 0)
+    {
+      if(fileMD->children[0])
+        file = fileMD->children[0]->str;
+      else
+        file = "???";
+
+      if((fileMD->children.size() > 1) && fileMD->children[1])
+        dir = fileMD->children[1]->str;
+    }
+    else
+    {
+      file = "???";
+    }
+  }
+  else
+  {
+    file = "???";
+  }
+
+  rdcstr filePath;
+  if(!dir.empty())
+    filePath = dir + "/";
+  filePath += file;
+  return filePath;
+}
+
+rdcstr Program::GetDebugVarName(const DIBase *d) const
 {
   if(d->type == DIBase::LocalVariable)
     return *d->As<DILocalVariable>()->name;
@@ -291,13 +413,21 @@ rdcstr Program::GetDebugVarName(const DIBase *d)
   return "???";
 }
 
-rdcstr Program::GetFunctionScopeName(const DIBase *d)
+rdcstr Program::GetFunctionScopeName(const DIBase *d) const
 {
+  if(d->type == DIBase::Subprogram)
+  {
+    const rdcstr *name = d->As<DISubprogram>()->name;
+    return name ? *name : "";
+  }
+
   const Metadata *scope = NULL;
   if(d->type == DIBase::LocalVariable)
     scope = d->As<DILocalVariable>()->scope;
-  if(d->type == DIBase::GlobalVariable)
+  else if(d->type == DIBase::GlobalVariable)
     scope = d->As<DIGlobalVariable>()->scope;
+  else if(d->type == DIBase::LexicalBlock)
+    scope = d->As<DILexicalBlock>()->scope;
 
   while(scope && scope->dwarf)
   {

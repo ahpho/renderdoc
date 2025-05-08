@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1134,3 +1134,21 @@ public:
   operator QVariant() const { return QVariant(QString::fromUtf8(c_str(), (int32_t)size())); }
 #endif
 };
+
+// add a std::hash overload so rdcstr can be used in hashmaps
+#ifdef RENDERDOC_EXPORTS
+
+#include <functional>
+
+// from string_utils.h
+uint32_t strhash(const char *str);
+
+namespace std
+{
+template <>
+struct hash<rdcstr>
+{
+  std::size_t operator()(const rdcstr &s) const { return strhash(s.c_str()); }
+};
+}
+#endif

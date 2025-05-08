@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -143,6 +143,10 @@ class VulkanHook : LibraryHook
     Process::RegisterEnvironmentModification(
         EnvironmentModification(EnvMod::Set, EnvSep::NoSep, "DISABLE_GAMEPP_LAYER", "1"));
 
+    // buggy wegame cross overlay
+    Process::RegisterEnvironmentModification(EnvironmentModification(
+        EnvMod::Set, EnvSep::NoSep, "DISABLE_VK_LAYER_TENCENT_wegame_cross_overlay_1", "1"));
+
     // mesa device select layer crashes when it calls GPDP2 inside vkCreateInstance, which fails on
     // the current loader.
     Process::RegisterEnvironmentModification(
@@ -153,6 +157,12 @@ class VulkanHook : LibraryHook
 
     Process::RegisterEnvironmentModification(EnvironmentModification(
         EnvMod::Set, EnvSep::NoSep, "VK_LAYER_bandicam_helper_DEBUG_1", "1"));
+
+    Process::RegisterEnvironmentModification(
+        EnvironmentModification(EnvMod::Set, EnvSep::NoSep, "DISABLE_VK_LAYER_reshade_1", "1"));
+
+    Process::RegisterEnvironmentModification(
+        EnvironmentModification(EnvMod::Set, EnvSep::NoSep, "DISABLE_VK_LAYER_GPUOpen_GRS", "1"));
 
     // fpsmon not only has a buggy layer but it also picks an absurdly generic disable environment
     // variable :(. Hopefully no other program picks this, or if it does then it's probably not a

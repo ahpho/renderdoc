@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -178,6 +178,7 @@ public:
   void ReplaceResource(ResourceId from, ResourceId to);
   void RemoveReplacement(ResourceId id);
   void FreeTargetResource(ResourceId id);
+  void ClearReplayCache();
 
   FrameDescription GetFrameInfo();
   const SDFile &GetStructuredFile();
@@ -214,6 +215,8 @@ public:
   ShaderDebugTrace *DebugPixel(uint32_t x, uint32_t y, const DebugPixelInputs &inputs);
   ShaderDebugTrace *DebugThread(const rdcfixedarray<uint32_t, 3> &groupid,
                                 const rdcfixedarray<uint32_t, 3> &threadid);
+  ShaderDebugTrace *DebugMeshThread(const rdcfixedarray<uint32_t, 3> &groupid,
+                                    const rdcfixedarray<uint32_t, 3> &threadid);
   rdcarray<ShaderDebugState> ContinueDebug(ShaderDebugger *debugger);
   void FreeTrace(ShaderDebugTrace *trace);
 

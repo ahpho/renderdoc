@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -301,18 +301,6 @@ void PersistantConfig::applyValues(const QVariantMap &values)
 
         for(int i = 0; i < searchPaths.size(); i++)
           debug->AddAndOwnChild(makeSDString("$el"_lit, searchPaths[i]));
-      }
-
-      if(settings.contains(lit("d3d12ShaderDebugging")))
-      {
-        RENDERDOC_SetConfigSetting("D3D12_ShaderDebugging")->data.basic.b =
-            settings[lit("d3d12ShaderDebugging")].toBool();
-      }
-
-      if(settings.contains(lit("vulkanShaderDebugging")))
-      {
-        RENDERDOC_SetConfigSetting("Vulkan_ShaderDebugging")->data.basic.b =
-            settings[lit("vulkanShaderDebugging")].toBool();
       }
 
       saveConfig = true;
@@ -705,7 +693,7 @@ ShaderProcessingTool::ShaderProcessingTool(const QVariant &var)
 rdcstr ShaderProcessingTool::DefaultArguments() const
 {
   if(tool == KnownShaderTool::SPIRV_Cross)
-    return "--vulkan-semantics --entry {entry_point} --stage {glsl_stage4}";
+    return "--vulkan-semantics --entry {entry_point} --stage {glsl_stage4} --version 460";
   else if(tool == KnownShaderTool::SPIRV_Cross_OpenGL)
     return "--entry {entry_point} --stage {glsl_stage4}";
   else if(tool == KnownShaderTool::spirv_dis || tool == KnownShaderTool::spirv_dis_OpenGL)

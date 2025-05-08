@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -107,14 +107,14 @@ void VulkanReplay::CreateTexImageView(VkImage liveIm, const VulkanCreationInfo::
 
       // create as wrapped
       vkr = m_pDriver->vkCreateImageView(dev, &viewInfo, NULL, &views.views[i]);
-      CheckVkResult(vkr);
+      CHECK_VKR(m_pDriver, vkr);
     }
   }
   else
   {
     // create first view
     vkr = m_pDriver->vkCreateImageView(dev, &viewInfo, NULL, &views.views[0]);
-    CheckVkResult(vkr);
+    CHECK_VKR(m_pDriver, vkr);
     NameVulkanObject(views.views[0], StringFormat::Fmt("CreateTexImageView view 0 %s",
                                                        ToStr(GetResID(liveIm)).c_str()));
 
@@ -124,7 +124,7 @@ void VulkanReplay::CreateTexImageView(VkImage liveIm, const VulkanCreationInfo::
       viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
 
       vkr = m_pDriver->vkCreateImageView(dev, &viewInfo, NULL, &views.views[1]);
-      CheckVkResult(vkr);
+      CHECK_VKR(m_pDriver, vkr);
       NameVulkanObject(views.views[1], StringFormat::Fmt("CreateTexImageView view 1 %s",
                                                          ToStr(GetResID(liveIm)).c_str()));
     }

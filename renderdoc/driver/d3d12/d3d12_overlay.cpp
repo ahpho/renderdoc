@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -41,6 +41,7 @@
 #include "d3d12_debug.h"
 #include "d3d12_device.h"
 #include "d3d12_replay.h"
+#include "d3d12_rootsig.h"
 #include "d3d12_shader_cache.h"
 
 #include "data/hlsl/hlsl_cbuffers.h"
@@ -116,13 +117,11 @@ struct D3D12QuadOverdrawCallback : public D3D12ActionCallback
 
       cache.sigElem = uint32_t(modsig.Parameters.size() - 1);
 
-      ID3DBlob *root = m_pDevice->GetShaderCache()->MakeRootSig(modsig);
+      bytebuf root = EncodeRootSig(m_pDevice->RootSigVersion(), modsig);
 
-      hr = m_pDevice->CreateRootSignature(0, root->GetBufferPointer(), root->GetBufferSize(),
+      hr = m_pDevice->CreateRootSignature(0, root.data(), root.size(),
                                           __uuidof(ID3D12RootSignature), (void **)&cache.sig);
       RDCASSERTEQUAL(hr, S_OK);
-
-      SAFE_RELEASE(root);
 
       WrappedID3D12PipelineState *origPSO =
           m_pDevice->GetResourceManager()->GetCurrentAs<WrappedID3D12PipelineState>(rs.pipe);
@@ -201,8 +200,9 @@ struct D3D12QuadOverdrawCallback : public D3D12ActionCallback
                                                        Unwrap(m_MSDepth));
     }
 
-    AddDebugDescriptorsToRenderState(m_pDevice, rs, {m_UAV}, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-                                     cache.sigElem, m_CopiedHeaps);
+    AddDebugDescriptorsToRenderState(m_pDevice, rs, false, {m_UAV},
+                                     D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, cache.sigElem,
+                                     m_CopiedHeaps);
 
     // as we're changing the root signature, we need to reapply all elements,
     // so just apply all state
@@ -350,10 +350,8 @@ void D3D12Replay::PatchQuadWritePS(D3D12_EXPANDED_PIPELINE_STATE_STREAM_DESC &pi
   if(pipeDesc.MS.BytecodeLength > 0)
     rastFeeding = &pipeDesc.MS;
 
-  uint32_t hash[4];
-  DXBC::DXBCContainer::GetHash(hash, rastFeeding->pShaderBytecode, rastFeeding->BytecodeLength);
-
-  rdcfixedarray<uint32_t, 4> key = hash;
+  rdcfixedarray<uint32_t, 4> key;
+  DXBC::DXBCContainer::GetHash(key, false, rastFeeding->pShaderBytecode, rastFeeding->BytecodeLength);
 
   bytebuf &patchedPs = m_PatchedPSCache[key];
 

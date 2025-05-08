@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -34,6 +34,7 @@ namespace Ui
 class BufferViewer;
 }
 
+class ComputeDebugSelector;
 class RDSpinBox64;
 class QItemSelection;
 class QMenu;
@@ -164,12 +165,16 @@ private slots:
   void updateExportActionNames();
   void exportData(const BufferExport &params);
   void debugVertex();
+  void debugMeshThread();
+  void meshDebugSelector_beginDebug(const rdcfixedarray<uint32_t, 3> &group,
+                                    const rdcfixedarray<uint32_t, 3> &thread);
   void fixedVars_contextMenu(const QPoint &pos);
 
 private:
   bool eventFilter(QObject *watched, QEvent *event) override;
   Ui::BufferViewer *ui;
   ICaptureContext &m_Ctx;
+  ComputeDebugSelector *m_MeshDebugSelector;
 
   IReplayOutput *m_Output;
 
@@ -323,6 +328,7 @@ private:
   QAction *m_ExportCSV = NULL;
   QAction *m_ExportBytes = NULL;
   QAction *m_DebugVert = NULL;
+  QAction *m_DebugMeshThread = NULL;
   QAction *m_FilterMesh = NULL;
   QAction *m_RemoveFilter = NULL;
   QAction *m_GotoTask = NULL;

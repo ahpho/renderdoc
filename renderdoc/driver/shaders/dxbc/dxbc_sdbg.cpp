@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -121,11 +121,6 @@ void SDBGChunk::GetCallstack(size_t instruction, uintptr_t offset, rdcarray<rdcs
   {
     callstack = {m_Entry};
   }
-}
-
-bool SDBGChunk::HasSourceMapping() const
-{
-  return false;
 }
 
 void SDBGChunk::GetLocals(const DXBC::DXBCContainer *dxbc, size_t instruction, uintptr_t offset,

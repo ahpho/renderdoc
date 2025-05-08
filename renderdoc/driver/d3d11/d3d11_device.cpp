@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -25,6 +25,7 @@
 
 #include "d3d11_device.h"
 #include "core/core.h"
+#include "core/settings.h"
 #include "driver/dxgi/dxgi_wrapped.h"
 #include "jpeg-compressor/jpge.h"
 #include "maths/formatpacking.h"
@@ -37,6 +38,8 @@
 #include "d3d11_replay.h"
 #include "d3d11_resources.h"
 #include "d3d11_shader_cache.h"
+
+RDOC_EXTERN_CONFIG(bool, Replay_Debug_PrintChunkTimings);
 
 WRAPPED_POOL_INST(WrappedID3D11Device);
 
@@ -149,11 +152,13 @@ WrappedID3D11Device::WrappedID3D11Device(ID3D11Device *realDevice, D3D11InitPara
         {
           DXGI_ADAPTER_DESC desc = {};
           pDXGIAdapter->GetDesc(&desc);
+          LARGE_INTEGER version = {};
+          pDXGIAdapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &version);
 
           m_InitParams.AdapterDesc = desc;
 
           GPUVendor vendor = GPUVendorFromPCIVendor(desc.VendorId);
-          rdcstr descString = GetDriverVersion(desc);
+          rdcstr descString = GetDriverVersion(desc, version);
 
           RDCLOG("New D3D11 device created: %s / %s", ToStr(vendor).c_str(), descString.c_str());
 
@@ -1519,19 +1524,28 @@ RDResult WrappedID3D11Device::ReadLogInitialisation(RDCFile *rdc, bool storeStru
     }
   }
 
+  const bool develMode =
 #if ENABLED(RDOC_DEVEL)
-  for(auto it = chunkInfos.begin(); it != chunkInfos.end(); ++it)
-  {
-    double dcount = double(it->second.count);
-
-    RDCDEBUG(
-        "% 5d chunks - Time: %9.3fms total/%9.3fms avg - Size: %8.3fMB total/%7.3fMB avg - %s (%u)",
-        it->second.count, it->second.total, it->second.total / dcount,
-        double(it->second.totalsize) / (1024.0 * 1024.0),
-        double(it->second.totalsize) / (dcount * 1024.0 * 1024.0),
-        GetChunkName((uint32_t)it->first).c_str(), uint32_t(it->first));
-  }
+      true;
+#else
+      false;
 #endif
+
+  if(Replay_Debug_PrintChunkTimings() || develMode)
+  {
+    for(auto it = chunkInfos.begin(); it != chunkInfos.end(); ++it)
+    {
+      double dcount = double(it->second.count);
+
+      RDCLOG(
+          "| % 5d chunks - Time: %9.3fms total/%9.3fms avg - Size: %8.3fMB total/%7.3fMB avg - %s "
+          "(%u)",
+          it->second.count, it->second.total, it->second.total / dcount,
+          double(it->second.totalsize) / (1024.0 * 1024.0),
+          double(it->second.totalsize) / (dcount * 1024.0 * 1024.0),
+          GetChunkName((uint32_t)it->first).c_str(), uint32_t(it->first));
+    }
+  }
 
   GetReplay()->WriteFrameRecord().frameInfo.uncompressedFileSize =
       rdc->GetSectionProperties(sectionIdx).uncompressedSize;

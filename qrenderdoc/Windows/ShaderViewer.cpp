@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -45,25 +45,66 @@
 #include "toolwindowmanager/ToolWindowManagerArea.h"
 #include "ui_ShaderViewer.h"
 
+static bool ResourceReferencesMatch(const ShaderVariable &a, const ShaderVariable &b)
+{
+  if(a.IsDirectAccess() == b.IsDirectAccess())
+  {
+    if(a.IsDirectAccess())
+    {
+      if(a.GetDirectAccess() == b.GetDirectAccess())
+        return true;
+    }
+    else
+    {
+      if(a.GetBindIndex() == b.GetBindIndex())
+        return true;
+    }
+  }
+  return false;
+}
+
 struct AccessedResourceTag
 {
   AccessedResourceTag() : type(VarType::Unknown), step(0)
   {
-    bind.category = DescriptorCategory::Unknown;
+    category = DescriptorCategory::Unknown;
   }
   AccessedResourceTag(uint32_t s) : type(VarType::Unknown), step(s)
   {
-    bind.category = DescriptorCategory::Unknown;
+    category = DescriptorCategory::Unknown;
   }
-  AccessedResourceTag(ShaderBindIndex bp, VarType t) : bind(bp), type(t), step(0) {}
+  AccessedResourceTag(ShaderBindIndex bp, VarType t)
+      : resRef(bp), type(t), step(0), category(bp.category)
+  {
+  }
+  AccessedResourceTag(ShaderDirectAccess acc, VarType t)
+      : resRef(acc), type(t), step(0), category(acc.category)
+  {
+  }
   AccessedResourceTag(ShaderVariable var) : step(0), type(var.type)
   {
     if(var.type == VarType::ReadOnlyResource || var.type == VarType::ReadWriteResource)
-      bind = var.GetBindIndex();
+    {
+      if(var.IsDirectAccess())
+      {
+        resRef.directAccess = true;
+        resRef.access = var.GetDirectAccess();
+        category = resRef.access.category;
+      }
+      else
+      {
+        resRef.directAccess = false;
+        resRef.bind = var.GetBindIndex();
+        category = resRef.bind.category;
+      }
+    }
     else
-      bind.category = DescriptorCategory::Unknown;
+    {
+      category = DescriptorCategory::Unknown;
+    }
   }
-  ShaderBindIndex bind;
+  ResourceReference resRef;
+  DescriptorCategory category;
   VarType type;
   uint32_t step;
 };
@@ -614,6 +655,11 @@ void ShaderViewer::debugShader(const ShaderReflection *shader, ResourceId pipeli
     ui->watch->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     ui->watch->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     ui->watch->header()->setSectionResizeMode(3, QHeaderView::Interactive);
+
+    // registers last as it can be quite long (easier to do here than modify all the node creation)
+    ui->sourceVars->header()->moveSection(1, 3);
+    ui->constants->header()->moveSection(1, 3);
+    ui->watch->header()->moveSection(1, 3);
 
     ui->watch->header()->resizeSection(0, 80);
 
@@ -1971,9 +2017,9 @@ void ShaderViewer::accessedResources_contextMenu(const QPoint &pos)
     contextMenu.addAction(&nextAccess);
 
     QObject::connect(&prevAccess, &QAction::triggered,
-                     [this, tag] { runToResourceAccess(false, tag.type, tag.bind); });
+                     [this, tag] { runToResourceAccess(false, tag.type, tag.resRef); });
     QObject::connect(&nextAccess, &QAction::triggered,
-                     [this, tag] { runToResourceAccess(true, tag.type, tag.bind); });
+                     [this, tag] { runToResourceAccess(true, tag.type, tag.resRef); });
 
     RDDialog::show(&contextMenu, w->viewport()->mapToGlobal(pos));
   }
@@ -2522,7 +2568,7 @@ void ShaderViewer::runTo(const rdcarray<uint32_t> &runToInstructions, bool forwa
   updateDebugState();
 }
 
-void ShaderViewer::runToResourceAccess(bool forward, VarType type, const ShaderBindIndex &resource)
+void ShaderViewer::runToResourceAccess(bool forward, VarType type, const ResourceReference &resRef)
 {
   if(!m_Trace || m_States.empty())
     return;
@@ -2550,10 +2596,19 @@ void ShaderViewer::runToResourceAccess(bool forward, VarType type, const ShaderB
     bool foundResource = false;
     for(const ShaderVariableChange &c : GetCurrentState().changes)
     {
-      if(c.after.type == type && c.after.GetBindIndex() == resource)
+      if((c.after.type == type) && (c.after.IsDirectAccess() == resRef.directAccess))
       {
-        foundResource = true;
-        break;
+        if(resRef.directAccess)
+        {
+          if(c.after.GetDirectAccess() == resRef.access)
+            foundResource = true;
+          break;
+        }
+        else if(c.after.GetBindIndex() == resRef.bind)
+        {
+          foundResource = true;
+          break;
+        }
       }
     }
 
@@ -2672,7 +2727,7 @@ void ShaderViewer::applyForwardsChange()
         bool found = false;
         for(size_t i = 0; i < m_AccessedResources.size(); i++)
         {
-          if(c.after.GetBindIndex() == m_AccessedResources[i].resource.GetBindIndex())
+          if(ResourceReferencesMatch(c.after, m_AccessedResources[i].resource))
           {
             found = true;
             if(m_AccessedResources[i].steps.indexOf(m_CurrentStateIdx) < 0)
@@ -2702,8 +2757,6 @@ QString ShaderViewer::stringRep(const ShaderVariable &var, uint32_t row)
   if(type == VarType::ReadOnlyResource || type == VarType::ReadWriteResource ||
      type == VarType::Sampler)
   {
-    ShaderBindIndex varBind = var.GetBindIndex();
-
     rdcarray<UsedDescriptor> resList;
 
     if(type == VarType::ReadOnlyResource)
@@ -2713,7 +2766,18 @@ QString ShaderViewer::stringRep(const ShaderVariable &var, uint32_t row)
     else if(type == VarType::Sampler)
       resList = m_Ctx.CurPipelineState().GetSamplers(m_Stage);
 
-    int32_t bindIdx = resList.indexOf(varBind);
+    ShaderBindIndex varBind;
+    int32_t bindIdx = -1;
+    if(var.IsDirectAccess())
+    {
+      ShaderDirectAccess access = var.GetDirectAccess();
+      bindIdx = resList.indexOf(access);
+    }
+    else
+    {
+      varBind = var.GetBindIndex();
+      bindIdx = resList.indexOf(varBind);
+    }
 
     if(bindIdx < 0)
       return QString();
@@ -2721,8 +2785,47 @@ QString ShaderViewer::stringRep(const ShaderVariable &var, uint32_t row)
     const UsedDescriptor &res = resList[bindIdx];
 
     if(type == VarType::Sampler)
-      return samplerRep(m_ShaderDetails->samplers[varBind.index], varBind.arrayElement,
-                        res.descriptor.resource);
+    {
+      if(!var.IsDirectAccess())
+      {
+        return samplerRep(m_ShaderDetails->samplers[varBind.index], varBind.arrayElement,
+                          res.descriptor.resource);
+      }
+      else
+      {
+        ShaderDirectAccess access = res.access;
+        if(access.descriptorStore != ResourceId())
+        {
+          auto it = m_LogicalBindNames.find(access);
+          if(it == m_LogicalBindNames.end())
+          {
+            m_Ctx.Replay().AsyncInvoke([access, this](IReplayController *r) {
+              rdcarray<DescriptorRange> ranges;
+              ranges.resize(1);
+              ranges[0].count = 1;
+              ranges[0].descriptorSize = access.byteSize;
+              ranges[0].offset = access.byteOffset;
+
+              rdcarray<DescriptorLogicalLocation> locations =
+                  r->GetDescriptorLocations(access.descriptorStore, ranges);
+              if(locations.size() > 0)
+              {
+                rdcstr logicalBindName = locations[0].logicalBindName;
+                GUIInvoke::call(this, [access, logicalBindName, this]() {
+                  m_LogicalBindNames[access] = logicalBindName;
+                  updateDebugState();
+                });
+              }
+            });
+          }
+          else
+          {
+            return it->second;
+          }
+        }
+        return QString();
+      }
+    }
     return ToQStr(res.descriptor.resource);
   }
 
@@ -2871,7 +2974,6 @@ void ShaderViewer::combineStructures(RDTreeWidgetItem *root, int skipPrefixLengt
 
     VariableTag tag;
     tag.absoluteRefPath = prefix;
-    parent->setTag(QVariant::fromValue(tag));
 
     // add all the children (stripping the prefix from their name)
     for(RDTreeWidgetItem *item : matches)
@@ -2884,7 +2986,14 @@ void ShaderViewer::combineStructures(RDTreeWidgetItem *root, int skipPrefixLengt
         parent->setBackground(item->background());
       if(item->foreground().color().isValid())
         parent->setForeground(item->foreground());
+
+      VariableTag childTag = item->tag().value<VariableTag>();
+
+      // take max updateID when combining
+      tag.updateID = qMax(tag.updateID, childTag.updateID);
     }
+
+    parent->setTag(QVariant::fromValue(tag));
 
     // recurse and combine members of this object if a struct
     if(!isLeafArray)
@@ -2985,49 +3094,55 @@ QString ShaderViewer::getRegNames(const RDTreeWidgetItem *item, uint32_t swizzle
 
     if(mapping.type == VarType::Sampler)
     {
-      ShaderBindIndex bind = reg->GetBindIndex();
+      if(!reg->IsDirectAccess())
+      {
+        ShaderBindIndex bind = reg->GetBindIndex();
 
-      if(bind.category != DescriptorCategory::Sampler)
-        return QString();
+        if(bind.category != DescriptorCategory::Sampler)
+          return QString();
 
-      if(bind.index >= m_ShaderDetails->samplers.size())
-        return QString();
+        if(bind.index >= m_ShaderDetails->samplers.size())
+          return QString();
 
-      const ShaderSampler &samp = m_ShaderDetails->samplers[bind.index];
+        const ShaderSampler &samp = m_ShaderDetails->samplers[bind.index];
 
-      if(samp.bindArraySize == ~0U)
-        return ret + lit("[unbounded]");
+        if(samp.bindArraySize == ~0U)
+          return ret + lit("[unbounded]");
 
-      if(samp.bindArraySize > 1 && child != ~0U)
-        return QFormatStr("%1[%2]").arg(ret).arg(child);
+        if(samp.bindArraySize > 1 && child != ~0U)
+          return QFormatStr("%1[%2]").arg(ret).arg(child);
+      }
 
       return ret;
     }
     else if(mapping.type == VarType::ReadOnlyResource || mapping.type == VarType::ReadWriteResource)
     {
-      ShaderBindIndex bind = reg->GetBindIndex();
+      if(!reg->IsDirectAccess())
+      {
+        ShaderBindIndex bind = reg->GetBindIndex();
 
-      if((mapping.type == VarType::ReadOnlyResource &&
-          bind.category != DescriptorCategory::ReadOnlyResource) ||
-         (mapping.type == VarType::ReadWriteResource &&
-          bind.category != DescriptorCategory::ReadWriteResource))
-        return QString();
+        if((mapping.type == VarType::ReadOnlyResource &&
+            bind.category != DescriptorCategory::ReadOnlyResource) ||
+           (mapping.type == VarType::ReadWriteResource &&
+            bind.category != DescriptorCategory::ReadWriteResource))
+          return QString();
 
-      if((mapping.type == VarType::ReadOnlyResource &&
-          bind.index >= m_ShaderDetails->readOnlyResources.size()) ||
-         (mapping.type == VarType::ReadWriteResource &&
-          bind.index >= m_ShaderDetails->readWriteResources.size()))
-        return QString();
+        if((mapping.type == VarType::ReadOnlyResource &&
+            bind.index >= m_ShaderDetails->readOnlyResources.size()) ||
+           (mapping.type == VarType::ReadWriteResource &&
+            bind.index >= m_ShaderDetails->readWriteResources.size()))
+          return QString();
 
-      const ShaderResource &res = mapping.type == VarType::ReadOnlyResource
-                                      ? m_ShaderDetails->readOnlyResources[bind.index]
-                                      : m_ShaderDetails->readWriteResources[bind.index];
+        const ShaderResource &res = mapping.type == VarType::ReadOnlyResource
+                                        ? m_ShaderDetails->readOnlyResources[bind.index]
+                                        : m_ShaderDetails->readWriteResources[bind.index];
 
-      if(res.bindArraySize == ~0U)
-        return ret + lit("[unbounded]");
+        if(res.bindArraySize == ~0U)
+          return ret + lit("[unbounded]");
 
-      if(res.bindArraySize > 1 && child != ~0U)
-        return QFormatStr("%1[%2]").arg(ret).arg(child);
+        if(res.bindArraySize > 1 && child != ~0U)
+          return QFormatStr("%1[%2]").arg(ret).arg(child);
+      }
 
       return ret;
     }
@@ -3905,6 +4020,9 @@ void ShaderViewer::updateDebugState()
       if(varsMapped.contains(ro.name))
         continue;
 
+      if(ro.IsDirectAccess())
+        continue;
+
       const rdcarray<UsedDescriptor> &resList = m_ReadOnlyResources;
 
       // find all descriptors in this bind's array
@@ -3967,6 +4085,9 @@ void ShaderViewer::updateDebugState()
       const ShaderVariable &rw = m_Trace->readWriteResources[i];
 
       if(varsMapped.contains(rw.name))
+        continue;
+
+      if(rw.IsDirectAccess())
         continue;
 
       const rdcarray<UsedDescriptor> &resList = m_ReadWriteResources;
@@ -4033,6 +4154,9 @@ void ShaderViewer::updateDebugState()
       if(varsMapped.contains(s.name))
         continue;
 
+      if(s.IsDirectAccess())
+        continue;
+
       // find all descriptors in this bind's array
       ShaderBindIndex bind = s.GetBindIndex();
       bind.arrayElement = 0;
@@ -4085,6 +4209,9 @@ void ShaderViewer::updateDebugState()
         ui->constants->addTopLevelItem(node);
       }
     }
+
+    ui->constants->header()->resizeSection(
+        3, qMax(ui->constants->header()->sectionSize(3), ui->constants->sizeHintForColumn(3)));
   }
 
   {
@@ -4151,6 +4278,9 @@ void ShaderViewer::updateDebugState()
 
     for(RDTreeWidgetItem *n : nodes)
       ui->sourceVars->addTopLevelItem(n);
+
+    ui->sourceVars->header()->resizeSection(
+        3, qMax(ui->sourceVars->header()->sectionSize(3), ui->sourceVars->sizeHintForColumn(3)));
 
     ui->sourceVars->endUpdate();
 
@@ -4439,15 +4569,15 @@ bool ShaderViewer::updateWatchVariable(RDTreeWidgetItem *watchItem, const RDTree
         if(i == 0)
         {
           swatchColor = QColor(0, 0, 0, 255);
-          swatchColor.setRedF(f);
+          swatchColor.setRedF(ConvertLinearToSRGB(f));
         }
         else if(i == 1)
         {
-          swatchColor.setGreenF(f);
+          swatchColor.setGreenF(ConvertLinearToSRGB(f));
         }
         else
         {
-          swatchColor.setBlueF(f);
+          swatchColor.setBlueF(ConvertLinearToSRGB(f));
         }
       }
     }
@@ -4488,23 +4618,7 @@ bool ShaderViewer::updateWatchVariable(RDTreeWidgetItem *watchItem, const RDTree
   }
   else
   {
-    int h = ui->watch->fontMetrics().height();
-    QPixmap pm(1, 1);
-    pm.fill(swatchColor);
-    pm = pm.scaled(QSize(h, h));
-
-    {
-      QPainter painter(&pm);
-
-      QPen pen(ui->watch->palette().foreground(), 1.0);
-      painter.setPen(pen);
-      painter.drawLine(QPoint(0, 0), QPoint(h - 1, 0));
-      painter.drawLine(QPoint(h - 1, 0), QPoint(h - 1, h - 1));
-      painter.drawLine(QPoint(h - 1, h - 1), QPoint(0, h - 1));
-      painter.drawLine(QPoint(0, h - 1), QPoint(0, 0));
-    }
-
-    watchItem->setIcon(3, QIcon(pm));
+    watchItem->setIcon(3, MakeSwatchIcon(ui->watch, swatchColor));
   }
 
   watchItem->setText(3, val);
@@ -4579,6 +4693,9 @@ void ShaderViewer::updateWatchVariables()
     item->setTag(QVariant::fromValue(tag));
   }
 
+  ui->watch->header()->resizeSection(
+      3, qMax(ui->watch->header()->sectionSize(3), ui->watch->sizeHintForColumn(3)));
+
   ui->watch->endUpdate();
 
   ui->watch->applyExpansion(expansion, 0);
@@ -4620,7 +4737,8 @@ RDTreeWidgetItem *ShaderViewer::makeSourceVariableNode(const ShaderVariable &var
   tag.absoluteRefPath = baseTag.absoluteRefPath + sep + var.name;
   tag.expanded = true;
   tag.modified = HasChanged(baseTag.absoluteRefPath + sep + var.name);
-  tag.updateID = CalcUpdateID(tag.updateID, baseTag.absoluteRefPath + sep + var.name);
+  tag.updateID = CalcUpdateID(tag.updateID, debugVarPath);
+  tag.updateID = CalcUpdateID(tag.updateID, debugName);
 
   for(const ShaderVariable &child : var.members)
   {
@@ -4707,6 +4825,9 @@ RDTreeWidgetItem *ShaderViewer::makeSourceVariableNode(const SourceVariableMappi
 
         rdcarray<UsedDescriptor> samplers = m_Ctx.CurPipelineState().GetSamplers(m_Stage);
 
+        if(reg->IsDirectAccess())
+          continue;
+
         ShaderBindIndex bind = reg->GetBindIndex();
         int32_t bindIdx = samplers.indexOf(bind);
 
@@ -4749,6 +4870,9 @@ RDTreeWidgetItem *ShaderViewer::makeSourceVariableNode(const SourceVariableMappi
         const ShaderVariable *reg = GetDebugVariable(r);
 
         if(reg == NULL)
+          continue;
+
+        if(reg->IsDirectAccess())
           continue;
 
         typeName = isReadOnlyResource ? lit("Resource") : lit("RW Resource");
@@ -4936,30 +5060,58 @@ RDTreeWidgetItem *ShaderViewer::makeDebugVariableNode(const ShaderVariable &v, r
 RDTreeWidgetItem *ShaderViewer::makeAccessedResourceNode(const ShaderVariable &v)
 {
   ShaderBindIndex bp = v.GetBindIndex();
+  ShaderDirectAccess acc = v.GetDirectAccess();
   ResourceId resId;
   QString typeName;
   if(v.type == VarType::ReadOnlyResource)
   {
-    if(bp.category != DescriptorCategory::ReadOnlyResource)
-      qCritical() << "Mismatch between variable type and descriptor category";
+    DescriptorCategory category = DescriptorCategory::Unknown;
+    int32_t bindIdx = -1;
     typeName = lit("Resource");
-    int32_t bindIdx = m_ReadOnlyResources.indexOf(bp);
+    if(!v.IsDirectAccess())
+    {
+      category = bp.category;
+      bindIdx = m_ReadOnlyResources.indexOf(bp);
+    }
+    else
+    {
+      category = acc.category;
+      bindIdx = m_ReadOnlyResources.indexOf(acc);
+    }
+    if(category != DescriptorCategory::ReadOnlyResource)
+      qCritical() << "Mismatch between variable type and descriptor category";
     if(bindIdx >= 0)
       resId = m_ReadOnlyResources[bindIdx].descriptor.resource;
   }
   else if(v.type == VarType::ReadWriteResource)
   {
-    if(bp.category != DescriptorCategory::ReadWriteResource)
-      qCritical() << "Mismatch between variable type and descriptor category";
+    DescriptorCategory category = DescriptorCategory::Unknown;
+    int32_t bindIdx = -1;
     typeName = lit("RW Resource");
-    int32_t bindIdx = m_ReadWriteResources.indexOf(bp);
+    if(!v.IsDirectAccess())
+    {
+      category = bp.category;
+      bindIdx = m_ReadWriteResources.indexOf(bp);
+    }
+    else
+    {
+      category = acc.category;
+      bindIdx = m_ReadWriteResources.indexOf(acc);
+    }
+    if(category != DescriptorCategory::ReadWriteResource)
+      qCritical() << "Mismatch between variable type and descriptor category";
     if(bindIdx >= 0)
       resId = m_ReadWriteResources[bindIdx].descriptor.resource;
   }
 
   RDTreeWidgetItem *node = new RDTreeWidgetItem({v.name, typeName, ToQStr(resId)});
   if(resId != ResourceId())
-    node->setTag(QVariant::fromValue(AccessedResourceTag(bp, v.type)));
+  {
+    if(!v.IsDirectAccess())
+      node->setTag(QVariant::fromValue(AccessedResourceTag(bp, v.type)));
+    else
+      node->setTag(QVariant::fromValue(AccessedResourceTag(acc, v.type)));
+  }
   if(HasChanged(v.name))
     node->setForegroundColor(QColor(Qt::red));
 
@@ -6533,7 +6685,8 @@ void ShaderViewer::performReplace()
 
   FindReplace::SearchContext context = m_FindReplace->context();
 
-  QString findHash = QFormatStr("%1%2%3").arg(find).arg(flags).arg((int)context);
+  bool down = m_FindReplace->direction() == FindReplace::Down;
+  QString findHash = QFormatStr("%1%2%3%4").arg(find).arg(flags).arg((int)context).arg(down);
 
   // if we didn't have a valid previous find, just do a find and bail
   if(findHash != m_FindState.hash)

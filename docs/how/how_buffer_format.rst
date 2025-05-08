@@ -126,6 +126,13 @@ On APIs where GPU pointers can reside within memory, such as Vulkan, pointers ca
 
   MyStructName *pointer;
 
+It is also possible to declare pointers to basic types without a struct, which will be treated as tightly packed.
+
+.. code:: c++
+
+  float *pointer;
+  int2 *otherPointer;
+
 Packing and layout rules
 ------------------------
 
@@ -166,6 +173,7 @@ The buffer format supports annotations on declarations to specify special proper
 Struct definitions support the following annotations:
 
 * ``[[size(number)]]`` or ``[[byte_size(number)]]`` - Forces the struct to be padded up to a given size even if the contents don't require it.
+* ``[[align(number)]]`` or ``[[alignment(number)]]`` - Overrides a struct's natural alignment (the largest alignment of any member). Can be used in edge cases where buffer definitions are tightly packed and misaligned, e.g. with D3D12 indirect arguments.
 * ``[[single]]`` or ``[[fixed]]`` - Forces the struct to be considered as a fixed SoA definition, even if in context the buffer viewer may default to AoS. See :ref:`the below section <aos-soa>` for more details. Structs with this annotation **may not** be declared as a variable, and should instead be the implicit final struct in a definition.
 
 Variable declarations support the following annotations:

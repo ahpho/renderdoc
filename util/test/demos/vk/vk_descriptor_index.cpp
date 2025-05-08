@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -372,7 +372,8 @@ void main()
                 {
                     4,
                     VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                    UINT32_MAX,
+                    1000000,    // this must still be under the maxDescriptorSet* counts even though
+                                // we'll trim this massively on allocation
                     VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT,
                 },
             })

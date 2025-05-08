@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1605,7 +1605,7 @@ void D3D11PipelineStateViewer::setState()
     rdcarray<Descriptor> outputs = m_Ctx.CurPipelineState().GetOutputTargets();
     for(uint32_t i = 0; i < outputs.size(); i++)
     {
-      addResourceRow(D3D11ViewTag(D3D11ViewTag::OMTarget, i, outputs[i]), NULL, true,
+      addResourceRow(D3D11ViewTag(D3D11ViewTag::OMTarget, i, outputs[i]), NULL, false,
                      ui->targetOutputs);
 
       if(outputs[i].resource != ResourceId())
@@ -2277,9 +2277,12 @@ void D3D11PipelineStateViewer::cbuffer_itemActivated(RDTreeWidgetItem *item, int
   uint32_t reg = tag.value<uint32_t>();
 
   uint32_t index = ~0U;
-  for(uint32_t i = 0; i < stage->reflection->constantBlocks.size(); i++)
-    if(stage->reflection->constantBlocks[i].fixedBindNumber == reg)
-      index = i;
+  if(stage->reflection)
+  {
+    for(uint32_t i = 0; i < stage->reflection->constantBlocks.size(); i++)
+      if(stage->reflection->constantBlocks[i].fixedBindNumber == reg)
+        index = i;
+  }
 
   if(index == ~0U)
   {

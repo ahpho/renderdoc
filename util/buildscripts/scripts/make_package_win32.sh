@@ -12,6 +12,8 @@ if [ ! -d "${REPO_ROOT}"/x64/Release ] || [ ! -d "${REPO_ROOT}"/Win32/Release ];
 	exit 1;
 fi
 
+rm -rf "${REPO_ROOT}"/package
+
 pushd "${REPO_ROOT}"
 
 # clean any old files lying around and make new structure
@@ -47,12 +49,22 @@ if [ -d plugins-win64 ]; then
 	cp -R plugins-win64/ dist/Release64/plugins
 else
 	echo "WARNING: x64 plugins missing, download and extract https://renderdoc.org/plugins.zip in root";
+
+	if [[ "$STRICT" == "yes" ]]; then
+		echo "Strict mode: Failed to locate plugins.";
+		exit 1;
+	fi
 fi;
 
 if [ -d plugins-win32 ]; then
 	cp -R plugins-win32/ dist/Release32/plugins
 else
 	echo "WARNING: x86 plugins missing, download and extract https://renderdoc.org/plugins.zip in root";
+
+	if [[ "$STRICT" == "yes" ]]; then
+		echo "Strict mode: Failed to locate plugins.";
+		exit 1;
+	fi
 fi
 
 # Delete new VS2015 incremental pdb files, these are just build artifacts
@@ -66,6 +78,11 @@ if ls build-android-* > /dev/null; then
 	find build-android-* -iname 'org.renderdoc.renderdoccmd.*.apk' -exec cp '{}' dist/Release64/plugins/android ';'
 else
 	echo "WARNING: No android builds found, expected build-android-arm32 and build-android-arm64";
+
+	if [[ "$STRICT" == "yes" ]]; then
+		echo "Strict mode: Failed to locate Android build.";
+		exit 1;
+	fi
 fi
 
 # Copy in android adb and patching requirements
@@ -76,6 +93,11 @@ else
 	echo "         These files must be in plugins-android/ in the root and";
 	echo "         MUST be built locally from an AOSP checkout, not from a";
 	echo "         distributed android SDK due to licensing concerns.";
+
+	if [[ "$STRICT" == "yes" ]]; then
+		echo "Strict mode: Failed to locate Android support files.";
+		exit 1;
+	fi
 fi
 
 if [ -d dist/Release64/plugins/android ]; then
@@ -111,14 +133,27 @@ export WSLENV=$WSLENV:RENDERDOC_VERSION
 "$WIX/bin/candle.exe" -o dist/Installer32.wixobj util/installer/Installer32.wxs
 "$WIX/bin/light.exe" -ext WixUIExtension -sw1076 -loc util/installer/customtext.wxl -o dist/Installer32.msi dist/Installer32.wixobj
 
+if [[ "$STRICT" == "yes" ]]; then
+	if [ ! -f "${REPO_ROOT}"/dist/Installer32.msi ] ; then
+		echo "Failed to build 32-bit installer.";
+		exit 1;
+	fi
+fi
+
 "$WIX/bin/candle.exe" -o dist/Installer64.wixobj util/installer/Installer64.wxs
 "$WIX/bin/light.exe" -ext WixUIExtension -sw1076 -loc util/installer/customtext.wxl -o dist/Installer64.msi dist/Installer64.wixobj
+
+if [[ "$STRICT" == "yes" ]]; then
+	if [ ! -f "${REPO_ROOT}"/dist/Installer64.msi ] ; then
+		echo "Failed to build 64-bit installer.";
+		exit 1;
+	fi
+fi
 
 rm -f dist/*.wixobj dist/*.wixpdb
 
 popd # $REPO_ROOT
 
-rm -rf "${REPO_ROOT}"/package
 mkdir "${REPO_ROOT}"/package
 pushd "${REPO_ROOT}"/package
 

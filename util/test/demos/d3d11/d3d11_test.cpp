@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -520,6 +520,16 @@ void D3D11GraphicsTest::ClearRenderTargetView(ID3D11RenderTargetView *rt, Vec4f 
   ctx->ClearRenderTargetView(rt, &col.x);
 }
 
+void D3D11GraphicsTest::ClearUnorderedAccessView(ID3D11UnorderedAccessView *uav, Vec4f col)
+{
+  ctx->ClearUnorderedAccessViewFloat(uav, &col.x);
+}
+
+void D3D11GraphicsTest::ClearUnorderedAccessView(ID3D11UnorderedAccessView *uav, Vec4u col)
+{
+  ctx->ClearUnorderedAccessViewUint(uav, &col.x);
+}
+
 void D3D11GraphicsTest::RSSetViewport(D3D11_VIEWPORT view)
 {
   ctx->RSSetViewports(1, &view);
@@ -632,7 +642,7 @@ ID3DBlobPtr D3D11GraphicsTest::Compile(std::string src, std::string entry, std::
   if(skipoptimise)
     flags |= D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_OPTIMIZATION_LEVEL0;
   else
-    flags |= D3DCOMPILE_OPTIMIZATION_LEVEL0;
+    flags |= D3DCOMPILE_OPTIMIZATION_LEVEL1;
 
   HRESULT hr = dyn_D3DCompile(src.c_str(), src.length(), "", NULL, NULL, entry.c_str(),
                               profile.c_str(), flags, 0, &blob, &error);

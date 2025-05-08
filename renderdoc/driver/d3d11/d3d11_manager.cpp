@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -96,8 +96,7 @@ void D3D11ResourceManager::Create_InitialState(ResourceId id, ID3D11DeviceChild 
   m_Device->Create_InitialState(id, live, hasData);
 }
 
-void D3D11ResourceManager::Apply_InitialState(ID3D11DeviceChild *live,
-                                              const D3D11InitialContents &data)
+void D3D11ResourceManager::Apply_InitialState(ID3D11DeviceChild *live, D3D11InitialContents &data)
 {
   m_Device->Apply_InitialState(live, data);
 }

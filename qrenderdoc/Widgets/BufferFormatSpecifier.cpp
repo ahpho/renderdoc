@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,7 @@
 #include "BufferFormatSpecifier.h"
 #include <QFontDatabase>
 #include <QKeyEvent>
+#include <QPushButton>
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QTextCursor>
@@ -111,10 +112,13 @@ BufferFormatSpecifier::BufferFormatSpecifier(QWidget *parent)
   formatText->setMarginWidthN(2, 0);
 
   QFrame *formatContainer = new QFrame(this);
-  QVBoxLayout *layout = new QVBoxLayout;
-  layout->setContentsMargins(2, 2, 2, 2);
-  layout->addWidget(formatText);
-  formatContainer->setLayout(layout);
+  {
+    QVBoxLayout *layout = new QVBoxLayout;
+    layout->setContentsMargins(2, 2, 2, 2);
+    layout->addWidget(formatText);
+
+    formatContainer->setLayout(layout);
+  }
 
   QPalette pal = formatContainer->palette();
   pal.setColor(QPalette::Window, pal.color(QPalette::Base));
@@ -131,15 +135,41 @@ BufferFormatSpecifier::BufferFormatSpecifier(QWidget *parent)
                        formatText->annotationClearAll();
                    });
 
-  QHBoxLayout *hbox = new QHBoxLayout();
-  hbox->setSpacing(0);
-  hbox->setContentsMargins(2, 2, 2, 2);
+  QWidget *formatAndApply = new QWidget(this);
+  {
+    QVBoxLayout *layout = new QVBoxLayout;
+    layout->setContentsMargins(0, 0, 0, 0);
+    formatAndApply->setLayout(layout);
+  }
+
+  formatAndApply->layout()->addWidget(formatContainer);
+
+  {
+    QPushButton *apply = new QPushButton(tr("Apply"), this);
+    QObject::connect(apply, &QPushButton::clicked, this, &BufferFormatSpecifier::apply_clicked);
+
+    QHBoxLayout *hbox = new QHBoxLayout();
+    hbox->setSpacing(0);
+    hbox->setContentsMargins(0, 0, 0, 0);
+    hbox->addWidget(apply);
+    hbox->addSpacerItem(new QSpacerItem(40, 20, QSizePolicy::Expanding, QSizePolicy::Minimum));
+
+    QWidget *applyFrame = new QWidget(this);
+    applyFrame->setLayout(hbox);
+
+    formatAndApply->layout()->addWidget(applyFrame);
+  }
 
   QWidget *helpOrFormat = new QWidget(this);
-  helpOrFormat->setLayout(hbox);
+  {
+    QHBoxLayout *hbox = new QHBoxLayout();
+    hbox->setSpacing(0);
+    hbox->setContentsMargins(2, 2, 2, 2);
+    helpOrFormat->setLayout(hbox);
 
-  hbox->insertWidget(0, formatContainer);
-  hbox->insertWidget(1, ui->helpText);
+    hbox->insertWidget(0, formatAndApply);
+    hbox->insertWidget(1, ui->helpText);
+  }
 
   m_Splitter = new RDSplitter(Qt::Horizontal, this);
   m_Splitter->setHandleWidth(12);
@@ -178,7 +208,7 @@ void BufferFormatSpecifier::setAutoFormat(QString autoFormat)
 
   formatText->emptyUndoBuffer();
 
-  on_apply_clicked();
+  apply_clicked();
 }
 
 void BufferFormatSpecifier::setContext(ICaptureContext *ctx)
@@ -192,7 +222,7 @@ void BufferFormatSpecifier::setContext(ICaptureContext *ctx)
                    &BufferFormatSpecifier::updateFormatList);
 
   m_Ctx->GetMainWindow()->RegisterShortcut(QKeySequence(QKeySequence::Refresh).toString(), this,
-                                           [this](QWidget *) { on_apply_clicked(); });
+                                           [this](QWidget *) { apply_clicked(); });
 
   updateFormatList();
 }
@@ -368,7 +398,7 @@ void BufferFormatSpecifier::on_savedList_itemSelectionChanged()
 void BufferFormatSpecifier::on_showHelp_toggled(bool help)
 {
   ui->helpText->setVisible(help);
-  formatText->parentWidget()->setVisible(!help);
+  formatText->parentWidget()->parentWidget()->setVisible(!help);
 
   if(help)
     ui->verticalLayout->invalidate();
@@ -447,7 +477,7 @@ void BufferFormatSpecifier::on_delDef_clicked()
   globalFormatList->setFormat(name, QString());
 }
 
-void BufferFormatSpecifier::on_apply_clicked()
+void BufferFormatSpecifier::apply_clicked()
 {
   setErrors({});
   emit processFormat(QString::fromUtf8(formatText->getText(formatText->textLength() + 1)));

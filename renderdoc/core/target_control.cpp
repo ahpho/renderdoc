@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -1139,7 +1139,6 @@ extern "C" RENDERDOC_API ITargetControl *RENDERDOC_CC RENDERDOC_CreateTargetCont
     if(idx > 0)
     {
       host = deviceID.substr(0, idx);
-      port = atoi(deviceID.substr(idx + 1).c_str()) & 0xffff;
     }
   }
 

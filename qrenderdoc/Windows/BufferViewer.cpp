@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -39,6 +39,7 @@
 #include "Code/QRDUtils.h"
 #include "Code/Resources.h"
 #include "Widgets/CollapseGroupBox.h"
+#include "Widgets/ComputeDebugSelector.h"
 #include "Widgets/Extended/RDLabel.h"
 #include "Widgets/Extended/RDSplitter.h"
 #include "Windows/Dialogs/AxisMappingDialog.h"
@@ -1074,7 +1075,8 @@ public:
                 double g = list.size() > 1 ? qBound(0.0, list[1].toDouble(), 1.0) : 0.0;
                 double b = list.size() > 2 ? qBound(0.0, list[2].toDouble(), 1.0) : 0.0;
 
-                rgb = QColor::fromRgbF(r, g, b);
+                rgb = QColor::fromRgbF(ConvertLinearToSRGB(float(r)), ConvertLinearToSRGB(float(g)),
+                                       ConvertLinearToSRGB(float(b)));
               }
               else if(vt == QMetaType::Float)
               {
@@ -1082,7 +1084,8 @@ public:
                 float g = list.size() > 1 ? qBound(0.0f, list[1].toFloat(), 1.0f) : 0.0;
                 float b = list.size() > 2 ? qBound(0.0f, list[2].toFloat(), 1.0f) : 0.0;
 
-                rgb = QColor::fromRgbF(r, g, b);
+                rgb = QColor::fromRgbF(ConvertLinearToSRGB(float(r)), ConvertLinearToSRGB(float(g)),
+                                       ConvertLinearToSRGB(float(b)));
               }
               else if(vt == QMetaType::UInt || vt == QMetaType::UShort || vt == QMetaType::UChar)
               {
@@ -1090,6 +1093,8 @@ public:
                 uint g = list.size() > 1 ? qBound(0U, list[1].toUInt(), 255U) : 0.0;
                 uint b = list.size() > 2 ? qBound(0U, list[2].toUInt(), 255U) : 0.0;
 
+                // we leave this as assuming it's in sRGB space since most commonly this will be an
+                // 8-bit texture being viewed as a buffer
                 rgb = QColor::fromRgb(r, g, b);
               }
               else if(vt == QMetaType::Int || vt == QMetaType::Short || vt == QMetaType::SChar)
@@ -2361,6 +2366,18 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
   m_ModelOut1 = new BufferItemModel(ui->out1Table, false, meshview, this);
   m_ModelOut2 = new BufferItemModel(ui->out2Table, false, meshview, this);
 
+  if(meshview)
+  {
+    ui->inTable->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    ui->inTable->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    ui->out1Table->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    ui->out1Table->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    ui->out2Table->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    ui->out2Table->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+  }
+
+  m_MeshDebugSelector = new ComputeDebugSelector(this);
+
   // we keep the old UI names for serialised layouts compatibility
   QString containerNames[] = {
       lit("vsinData"),
@@ -2440,6 +2457,9 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
   m_DebugVert = new QAction(tr("&Debug this Vertex"), this);
   m_DebugVert->setIcon(Icons::wrench());
 
+  m_DebugMeshThread = new QAction(tr("&Debug Mesh Thread"), this);
+  m_DebugMeshThread->setIcon(Icons::wrench());
+
   m_FilterMesh = new QAction(tr("&Filter to this Meshlet"), this);
   m_FilterMesh->setIcon(Icons::filter());
 
@@ -2458,6 +2478,7 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
   QObject::connect(m_ExportBytes, &QAction::triggered,
                    [this] { exportData(BufferExport(BufferExport::RawBytes)); });
   QObject::connect(m_DebugVert, &QAction::triggered, this, &BufferViewer::debugVertex);
+  QObject::connect(m_DebugMeshThread, &QAction::triggered, this, &BufferViewer::debugMeshThread);
   QObject::connect(m_RemoveFilter, &QAction::triggered,
                    [this]() { SetMeshFilter(MeshFilter::None); });
   QObject::connect(m_FilterMesh, &QAction::triggered, [this]() {
@@ -2557,6 +2578,7 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
 
   ui->fovGuess->setValue(90.0);
 
+  ui->controlType->setCurrentIndex(0);
   on_controlType_currentIndexChanged(0);
 
   QObject::connect(ui->inTable->selectionModel(), &QItemSelectionModel::selectionChanged, this,
@@ -2623,6 +2645,9 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
   // event filter to pick up tooltip events
   ui->fixedVars->setTooltipElidedItems(false);
   ui->fixedVars->installEventFilter(this);
+
+  QObject::connect(m_MeshDebugSelector, &ComputeDebugSelector::beginDebug, this,
+                   &BufferViewer::meshDebugSelector_beginDebug);
 
   Reset();
 
@@ -3093,6 +3118,37 @@ void BufferViewer::stageRowMenu(MeshDataStage stage, QMenu *menu, const QPoint &
       menu->addAction(m_RemoveFilter);
       menu->addAction(m_FilterMesh);
       menu->addAction(m_GotoTask);
+
+      const ShaderReflection *shaderDetails =
+          m_Ctx.CurPipelineState().GetShaderReflection(ShaderStage::Mesh);
+
+      m_DebugMeshThread->setEnabled(false);
+
+      if(!m_Ctx.APIProps().shaderDebugging)
+      {
+        m_DebugMeshThread->setToolTip(tr("This API does not support shader debugging"));
+      }
+      else if(!m_Ctx.CurAction() ||
+              !(m_Ctx.CurAction()->flags & (ActionFlags::Drawcall | ActionFlags::MeshDispatch)))
+      {
+        m_DebugMeshThread->setToolTip(tr("No draw call selected"));
+      }
+      else if(!shaderDetails)
+      {
+        m_DebugMeshThread->setToolTip(tr("No mesh shader bound"));
+      }
+      else if(!shaderDetails->debugInfo.debuggable)
+      {
+        m_DebugMeshThread->setToolTip(
+            tr("This shader doesn't support debugging: %1").arg(shaderDetails->debugInfo.debugStatus));
+      }
+      else
+      {
+        m_DebugMeshThread->setEnabled(true);
+        m_DebugMeshThread->setToolTip(QString());
+      }
+      menu->addAction(m_DebugMeshThread);
+
       menu->addSeparator();
 
       m_GotoTask->setEnabled(m_Ctx.CurPipelineState().GetShaderReflection(ShaderStage::Task));
@@ -3445,6 +3501,8 @@ void BufferViewer::OnEventChanged(uint32_t eventId)
         bufdata->postOut1 = r->GetPostVSData(0, bufdata->inConfig.curView, MeshDataStage::TaskOut);
         bufdata->postOut2 = r->GetPostVSData(0, bufdata->inConfig.curView, MeshDataStage::MeshOut);
 
+        const uint32_t vertsPerPrim = RENDERDOC_NumVerticesPerPrimitive(bufdata->postOut2.topology);
+
         // apply mesh/task filtering to mesh data here, which will also propagate to preview
         if(m_FilteredMeshGroup != ~0U)
         {
@@ -3465,6 +3523,9 @@ void BufferViewer::OnEventChanged(uint32_t eventId)
               bufdata->postOut2.numIndices = numIndices;
               bufdata->postOut2.meshletSizes = {meshletSize};
               bufdata->postOut2.indexByteOffset += indexCount * bufdata->postOut2.indexByteStride;
+
+              bufdata->postOut2.perPrimitiveOffset +=
+                  (indexCount / vertsPerPrim) * bufdata->postOut2.perPrimitiveStride;
             }
             indexCount += numIndices;
             vertexCount += meshletSize.numVertices;
@@ -3511,6 +3572,9 @@ void BufferViewer::OnEventChanged(uint32_t eventId)
                   bufdata->postOut2.meshletOffset = meshletCounter;
                   bufdata->out2Config.taskOrMeshletOffset = meshletCounter;
                   bufdata->postOut2.indexByteOffset += indexCount * bufdata->postOut2.indexByteStride;
+
+                  bufdata->postOut2.perPrimitiveOffset +=
+                      (indexCount / vertsPerPrim) * bufdata->postOut2.perPrimitiveStride;
                 }
                 indexCount += indicesInMeshlet;
                 vertexCount += bufdata->postOut2.meshletSizes[i].numVertices;
@@ -4199,6 +4263,27 @@ void BufferViewer::UI_AddFixedVariables(RDTreeWidgetItem *root, uint32_t baseOff
 
     RDTreeWidgetItem *n =
         new RDTreeWidgetItem({v.name, VarString(v, c), offsetStr, TypeString(v, c)});
+
+    // display colour swatch for floats with RGB display
+    if((v.flags & ShaderVariableFlags::RGBDisplay) && VarTypeCompType(v.type) == CompType::Float &&
+       v.rows == 1 && v.columns >= 1 && v.members.empty())
+    {
+      QColor swatchColor(0, 0, 0, 255);
+      float rgb[3] = {0.0f, 0.0f, 0.0f};
+      for(uint8_t col = 0; col < v.columns && col < 4; col++)
+      {
+        float fval = 0.0f;
+        if(v.type == VarType::Float)
+          fval = v.value.f32v[col];
+        else if(v.type == VarType::Double)
+          fval = float(v.value.f64v[col]);
+        else if(v.type == VarType::Half)
+          fval = float(v.value.f16v[col]);
+        rgb[col] = ConvertLinearToSRGB(fval);
+      }
+      swatchColor.setRgbF(rgb[0], rgb[1], rgb[2], 1.0f);
+      n->setIcon(1, MakeSwatchIcon(ui->fixedVars, swatchColor));
+    }
 
     n->setTag(QVariant::fromValue(FixedVarTag(v.name, baseOffset + c.byteOffset)));
 
@@ -6417,7 +6502,19 @@ void BufferViewer::exportData(const BufferExport &params)
           {
             for(int col = 0; col < model->columnCount(); col++)
             {
-              s << model->data(model->index(row, col), Qt::DisplayRole).toString();
+              QList<QString> lines =
+                  model->data(model->index(row, col), Qt::DisplayRole).toString().split(lit("\n"));
+              bool quote = (lines.count() > 1);
+              if(quote)
+                s << "\"";
+              for(int l = 0; l < lines.count(); l++)
+              {
+                s << lines[l].trimmed();
+                if(l + 1 < lines.size())
+                  s << "\n";
+              }
+              if(quote)
+                s << "\"";
 
               if(col + 1 < model->columnCount())
                 s << ", ";
@@ -6437,13 +6534,13 @@ void BufferViewer::exportData(const BufferExport &params)
 
             // it's fine to block invoke, because this is on the export thread
             m_Ctx.Replay().BlockInvoke(
-                [buff, &s, &config, byteOffset, chunkSize](IReplayController *r) {
+                [buff, &s, &config, byteOffset, chunkSize](IReplayController *controller) {
                   // cache column data for the inner loop
                   QVector<CachedElData> cache;
 
                   BufferData bufferData;
 
-                  bufferData.storage = r->GetBufferData(buff, byteOffset, chunkSize);
+                  bufferData.storage = controller->GetBufferData(buff, byteOffset, chunkSize);
                   bufferData.stride = config.buffers[0]->stride;
 
                   size_t numRows =
@@ -6476,21 +6573,46 @@ void BufferViewer::exportData(const BufferExport &params)
                         // since some formats are packed and can't be read individually
                         QVariantList list = GetVariants(prop->format, *el, data, end);
 
-                        for(int v = 0; v < list.count(); v++)
+                        if(el->type.rows > 1)
                         {
-                          s << interpretVariant(list[v], *el, *prop);
+                          for(int c = 0; c < el->type.columns; c++)
+                          {
+                            s << "\"";
+                            for(int r = 0; r < el->type.rows; r++)
+                            {
+                              if(list.empty())
+                              {
+                                s << "---";
+                              }
+                              else
+                              {
+                                int el_idx = r * el->type.columns + c;
+                                s << interpretVariant(list[el_idx], *el, *prop).trimmed();
+                              }
 
-                          if(v + 1 < list.count())
-                            s << ", ";
+                              if(r + 1 < el->type.rows)
+                                s << "\n";
+                            }
+                            s << "\", ";
+                          }
                         }
-
-                        if(list.empty())
+                        else if(list.empty())
                         {
                           for(int v = 0; v < d.numColumns; v++)
                           {
                             s << "---";
 
                             if(v + 1 < d.numColumns)
+                              s << ", ";
+                          }
+                        }
+                        else
+                        {
+                          for(int v = 0; v < list.count(); v++)
+                          {
+                            s << interpretVariant(list[v], *el, *prop);
+
+                            if(v + 1 < list.count())
                               s << ", ";
                           }
                         }
@@ -6626,6 +6748,135 @@ void BufferViewer::debugVertex()
 
   // viewer takes ownership of the trace
   IShaderViewer *s = m_Ctx.DebugShader(shaderDetails, pipeline, trace, debugContext);
+
+  m_Ctx.AddDockWindow(s->Widget(), DockReference::AddTo, this);
+}
+
+void BufferViewer::debugMeshThread()
+{
+  if(!m_Ctx.IsCaptureLoaded())
+    return;
+
+  const ActionDescription *action = m_Ctx.CurAction();
+  if(!action)
+    return;
+
+  if(!m_CurView)
+    return;
+
+  QModelIndex idx = m_CurView->selectionModel()->currentIndex();
+
+  if(!idx.isValid())
+  {
+    GUIInvoke::call(this, [this]() {
+      RDDialog::critical(this, tr("Error debugging"),
+                         tr("Error debugging meshlet - make sure a valid meshlet is selected"));
+    });
+    return;
+  }
+
+  uint32_t taskIndex = 0, meshletIndex = 0;
+  GetIndicesForMeshRow((uint32_t)idx.row(), taskIndex, meshletIndex);
+
+  const ShaderReflection *shaderDetails =
+      m_Ctx.CurPipelineState().GetShaderReflection(ShaderStage::Mesh);
+
+  if(!shaderDetails)
+    return;
+
+  rdcfixedarray<uint32_t, 3> threadGroupSize = action->dispatchThreadsDimension[0] == 0
+                                                   ? shaderDetails->dispatchThreadsDimension
+                                                   : action->dispatchThreadsDimension;
+  m_MeshDebugSelector->SetThreadBounds(action->dispatchDimension, threadGroupSize);
+
+  // Calculate 3d group id from 1d meshlet index and dispatch dimensions
+  // Imagine 8x2x4 with idx 60
+  // 8x2 = 16
+  // 8x2x4 = 64
+  // 60 % x = 4
+  // 60 % (x * y) = 12 / x = 1
+  // 60 / (x * y) = 3
+  // index 60 is id (4,1,3)
+  // 4 + (8 * 1) + (16 * 3) = 60
+  uint32_t xDim = action->dispatchDimension[0];
+  uint32_t yDim = action->dispatchDimension[1];
+  uint32_t zDim = action->dispatchDimension[2];
+  rdcfixedarray<uint32_t, 3> meshletGroup = {
+      meshletIndex % xDim,
+      (meshletIndex % (xDim * yDim)) / xDim,
+      meshletIndex / (xDim * yDim),
+  };
+  m_MeshDebugSelector->SetDefaultDispatch(meshletGroup, {0, 0, 0});
+
+  RDDialog::show(m_MeshDebugSelector);
+}
+
+void BufferViewer::meshDebugSelector_beginDebug(const rdcfixedarray<uint32_t, 3> &group,
+                                                const rdcfixedarray<uint32_t, 3> &thread)
+{
+  const ActionDescription *action = m_Ctx.CurAction();
+
+  if(!action)
+    return;
+
+  const ShaderReflection *shaderDetails =
+      m_Ctx.CurPipelineState().GetShaderReflection(ShaderStage::Mesh);
+
+  if(!shaderDetails)
+    return;
+
+  struct threadSelect
+  {
+    rdcfixedarray<uint32_t, 3> g;
+    rdcfixedarray<uint32_t, 3> t;
+  } debugThread = {
+      // g[]
+      {group[0], group[1], group[2]},
+      // t[]
+      {thread[0], thread[1], thread[2]},
+  };
+
+  bool done = false;
+  ShaderDebugTrace *trace = NULL;
+
+  m_Ctx.Replay().AsyncInvoke([&trace, &done, debugThread](IReplayController *r) {
+    trace = r->DebugMeshThread(debugThread.g, debugThread.t);
+
+    if(trace->debugger == NULL)
+    {
+      r->FreeTrace(trace);
+      trace = NULL;
+    }
+
+    done = true;
+  });
+
+  QString debugContext = lit("Mesh Group [%1,%2,%3] Thread [%4,%5,%6]")
+                             .arg(group[0])
+                             .arg(group[1])
+                             .arg(group[2])
+                             .arg(thread[0])
+                             .arg(thread[1])
+                             .arg(thread[2]);
+
+  // wait a short while before displaying the progress dialog (which won't show if we're already
+  // done by the time we reach it)
+  for(int i = 0; !done && i < 100; i++)
+    QThread::msleep(5);
+
+  ShowProgressDialog(this, tr("Debugging %1").arg(debugContext), [&done]() { return done; });
+
+  if(!trace)
+  {
+    RDDialog::critical(
+        this, tr("Error debugging"),
+        tr("Error debugging thread - make sure a valid group and thread is selected"));
+    return;
+  }
+
+  // viewer takes ownership of the trace
+  IShaderViewer *s = m_Ctx.DebugShader(
+      shaderDetails, m_Ctx.CurPipelineState().GetComputePipelineObject(), trace, debugContext);
 
   m_Ctx.AddDockWindow(s->Widget(), DockReference::AddTo, this);
 }

@@ -214,6 +214,21 @@ VA_IGNORE_REST_OF_FILE
   $1.assign(*$input);
 }
 
+%typemap(ret) const ActionDescription * {
+  // for ActionDescription pointers don't apply parent tracking, since these are preserved
+  // in other ways and the linked-list nature of walking them can produce absurdly long
+  // parent chains
+  if (SwigPyObject_Check($result))
+  {
+    SwigPyObject *sobj = (SwigPyObject *)$result;
+    if(sobj->parent)
+    {
+      sobj->parent = NULL;
+      Py_DECREF($self);
+    }
+  }
+}
+
 SIMPLE_TYPEMAPS(rdcstr)
 SIMPLE_TYPEMAPS(rdcinflexiblestr)
 SIMPLE_TYPEMAPS(rdcdatetime)

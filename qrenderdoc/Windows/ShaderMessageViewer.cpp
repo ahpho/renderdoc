@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -265,6 +265,10 @@ ShaderMessageViewer::ShaderMessageViewer(ICaptureContext &ctx, ShaderStageMask s
           inputs.primitive = msg.location.pixel.primitive;
           inputs.view = msg.location.pixel.view;
           trace = r->DebugPixel(msg.location.pixel.x, msg.location.pixel.y, inputs);
+        }
+        else if(msg.stage == ShaderStage::Mesh)
+        {
+          trace = r->DebugMeshThread(msg.location.mesh.meshGroup, msg.location.mesh.thread);
         }
 
         if(trace && trace->debugger == NULL)
@@ -617,7 +621,7 @@ void ShaderMessageViewer::OnCaptureClosed()
 void ShaderMessageViewer::OnEventChanged(uint32_t eventId)
 {
   ResourceId shaders[NumShaderStages];
-  bool editsChanged = false;
+  bool needRefresh = false;
   QString staleReason;
 
   for(ShaderStage s : values<ShaderStage>())
@@ -628,13 +632,24 @@ void ShaderMessageViewer::OnEventChanged(uint32_t eventId)
     // either an edit has been applied, updated, or removed if these don't match
     if(shaders[idx] != m_ReplacedShaders[idx])
     {
-      editsChanged = true;
-      staleReason += QFormatStr(", %1").arg(ToQStr(s, m_API));
+      needRefresh = true;
+      if(staleReason.isEmpty())
+        staleReason = tr("there are edits to shaders typed ");
+      else
+        staleReason += lit(", ");
+      staleReason += QFormatStr("%1").arg(ToQStr(s, m_API));
     }
   }
 
+  if(!needRefresh && m_ResourceCacheID != m_Ctx.ResourceNameCacheID())
+  {
+    staleReason = tr("The replay information is out of date");
+    m_ResourceCacheID = m_Ctx.ResourceNameCacheID();
+    needRefresh = true;
+  }
+
   // if the edits haven't changed, just skip
-  if(!editsChanged)
+  if(!needRefresh)
     return;
 
   // if it's the current event we can update with the latest
@@ -652,15 +667,12 @@ void ShaderMessageViewer::OnEventChanged(uint32_t eventId)
   }
   else
   {
-    staleReason.remove(0, 2);
-
     // otherwise we can't - just update the stale status
     ui->staleStatus->show();
-    ui->staleStatus->setText(
-        tr("Messages are stale because edits to %1 shaders have changed since they were fetched.\n"
-           "Select the event @%2 to refresh.")
-            .arg(staleReason)
-            .arg(m_EID));
+    ui->staleStatus->setText(tr("Messages are stale because %1 since the messages were fetched.\n"
+                                "Select the event @%2 to refresh.")
+                                 .arg(staleReason)
+                                 .arg(m_EID));
 
     ui->messages->beginUpdate();
 

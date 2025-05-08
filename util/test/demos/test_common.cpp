@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -158,8 +158,18 @@ static FILE *logFile = NULL;
 #include <android/log.h>
 #endif
 
+static bool debugLogEnabled = true;
+
+void SetDebugLogEnabled(bool enabled)
+{
+  debugLogEnabled = enabled;
+}
+
 void DebugPrint(const char *fmt, ...)
 {
+  if(!debugLogEnabled)
+    return;
+
   va_list args;
   va_start(args, fmt);
 
@@ -310,6 +320,8 @@ std::vector<uint32_t> CompileShaderToSpv(const std::string &source_text, SPIRVTa
       case ShaderStage::tesseval: shader_kind = shaderc_tess_evaluation_shader; break;
       case ShaderStage::geom: shader_kind = shaderc_geometry_shader; break;
       case ShaderStage::comp: shader_kind = shaderc_compute_shader; break;
+      case ShaderStage::mesh: shader_kind = shaderc_mesh_shader; break;
+      case ShaderStage::task: shader_kind = shaderc_task_shader; break;
     }
 
     if(target == SPIRVTarget::opengl)
@@ -398,6 +410,8 @@ std::vector<uint32_t> CompileShaderToSpv(const std::string &source_text, SPIRVTa
         case ShaderStage::tesseval: command_line += " -fshader-stage=tesseval"; break;
         case ShaderStage::geom: command_line += " -fshader-stage=geom"; break;
         case ShaderStage::comp: command_line += " -fshader-stage=comp"; break;
+        case ShaderStage::mesh: command_line += " -fshader-stage=mesh"; break;
+        case ShaderStage::task: command_line += " -fshader-stage=task"; break;
       }
     }
     else
@@ -443,6 +457,8 @@ std::vector<uint32_t> CompileShaderToSpv(const std::string &source_text, SPIRVTa
       case ShaderStage::tesseval: command_line += " -S tesseval"; break;
       case ShaderStage::geom: command_line += " -S geom"; break;
       case ShaderStage::comp: command_line += " -S comp"; break;
+      case ShaderStage::mesh: command_line += " -S mesh"; break;
+      case ShaderStage::task: command_line += " -S task"; break;
     }
 
     if(target == SPIRVTarget::opengl)
@@ -475,7 +491,7 @@ std::vector<uint32_t> CompileShaderToSpv(const std::string &source_text, SPIRVTa
     return ret;
   }
 
-  msleep(100);
+  msleep(400);
 
   int code = pclose(pipe);
 

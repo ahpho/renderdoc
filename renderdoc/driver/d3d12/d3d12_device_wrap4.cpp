@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -96,7 +96,7 @@ HRESULT WrappedID3D12Device::CreateCommandList1(UINT nodeMask, D3D12_COMMAND_LIS
      riid != __uuidof(ID3D12GraphicsCommandList3) && riid != __uuidof(ID3D12GraphicsCommandList4) &&
      riid != __uuidof(ID3D12GraphicsCommandList5) && riid != __uuidof(ID3D12GraphicsCommandList6) &&
      riid != __uuidof(ID3D12GraphicsCommandList7) && riid != __uuidof(ID3D12GraphicsCommandList8) &&
-     riid != __uuidof(ID3D12GraphicsCommandList9))
+     riid != __uuidof(ID3D12GraphicsCommandList9) && riid != __uuidof(ID3D12GraphicsCommandList10))
     return E_NOINTERFACE;
 
   void *realptr = NULL;
@@ -128,6 +128,8 @@ HRESULT WrappedID3D12Device::CreateCommandList1(UINT nodeMask, D3D12_COMMAND_LIS
     real = (ID3D12GraphicsCommandList8 *)realptr;
   else if(riid == __uuidof(ID3D12GraphicsCommandList9))
     real = (ID3D12GraphicsCommandList9 *)realptr;
+  else if(riid == __uuidof(ID3D12GraphicsCommandList10))
+    real = (ID3D12GraphicsCommandList10 *)realptr;
 
   if(SUCCEEDED(ret))
   {
@@ -183,6 +185,8 @@ HRESULT WrappedID3D12Device::CreateCommandList1(UINT nodeMask, D3D12_COMMAND_LIS
       *ppCommandList = (ID3D12GraphicsCommandList8 *)wrapped;
     else if(riid == __uuidof(ID3D12GraphicsCommandList9))
       *ppCommandList = (ID3D12GraphicsCommandList9 *)wrapped;
+    else if(riid == __uuidof(ID3D12GraphicsCommandList10))
+      *ppCommandList = (ID3D12GraphicsCommandList10 *)wrapped;
     else if(riid == __uuidof(ID3D12CommandList))
       *ppCommandList = (ID3D12CommandList *)wrapped;
     else
@@ -190,7 +194,7 @@ HRESULT WrappedID3D12Device::CreateCommandList1(UINT nodeMask, D3D12_COMMAND_LIS
   }
   else
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
   }
 
   return ret;
@@ -336,7 +340,7 @@ HRESULT WrappedID3D12Device::CreateHeap1(const D3D12_HEAP_DESC *pDesc,
   }
   else
   {
-    CheckHRESULT(ret);
+    CHECK_HR(this, ret);
   }
 
   return ret;

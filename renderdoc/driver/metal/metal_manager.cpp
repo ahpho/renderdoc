@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2021-2024 Baldur Karlsson
+ * Copyright (c) 2021-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -53,8 +53,7 @@ void MetalResourceManager::Create_InitialState(ResourceId id, WrappedMTLObject *
   return m_Device->Create_InitialState(id, live, hasData);
 }
 
-void MetalResourceManager::Apply_InitialState(WrappedMTLObject *live,
-                                              const MetalInitialContents &initial)
+void MetalResourceManager::Apply_InitialState(WrappedMTLObject *live, MetalInitialContents &initial)
 {
   return m_Device->Apply_InitialState(live, initial);
 }

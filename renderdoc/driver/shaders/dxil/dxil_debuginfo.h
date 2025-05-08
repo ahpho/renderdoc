@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2024 Baldur Karlsson
+ * Copyright (c) 2020-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -760,3 +760,4 @@ struct DIImportedEntity : public DIBase
 };    // namespace DXIL
 
 DECLARE_REFLECTION_ENUM(DXIL::DW_LANG);
+DECLARE_STRINGISE_TYPE(DXIL::DW_OP);

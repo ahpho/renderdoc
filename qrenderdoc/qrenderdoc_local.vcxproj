@@ -78,6 +78,7 @@
       <PreprocessorDefinitions>RELEASE;QT_MESSAGELOGCONTEXT;QT_NO_DEBUG;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
+  <Import Project="$(SolutionDir)\util\WindowsSDKFix.props" />
   <PropertyGroup>
     <!-- QtBaseDir would be used for everything, except in our local repository copy of Qt
          we only have one include and split the bin/lib by platform. Since include doesn't

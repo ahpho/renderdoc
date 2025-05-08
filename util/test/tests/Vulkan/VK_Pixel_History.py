@@ -451,7 +451,7 @@ class VK_Pixel_History(rdtest.TestCase):
                         a = (a[0], -2)
                         b = (b[0], -2)
 
-                if not rdtest.value_compare(a, b):
+                if not rdtest.value_compare(a, b, eps=1.0/256.0):
                     raise rdtest.TestFailureException(
                         "postmod at {} primitive {}: {} doesn't match premod: {}".format(modifs[i].eventId,
                                                                                          modifs[i].primitiveID, b, a))

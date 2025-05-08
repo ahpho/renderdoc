@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -102,6 +102,28 @@ layout(binding=0) uniform myUniformBuffer
 void main()
 {
 	Color = ubos[7].data;
+}
+
+)EOSHADER";
+
+  const std::string inlineubopixel = R"EOSHADER(
+#version 450 core
+
+layout(location = 0, index = 0) out vec4 Color;
+
+layout(binding=0) uniform ubo_block1
+{
+  vec4 col;
+} ubo1;
+
+layout(binding=1) uniform ubo_block2
+{
+  vec4 col;
+} ubo2;
+
+void main()
+{
+	Color = ubo1.col + ubo2.col;
 }
 
 )EOSHADER";
@@ -263,6 +285,7 @@ void main()
   void Prepare(int argc, char **argv)
   {
     optDevExts.push_back(VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME);
+    optDevExts.push_back(VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME);
     optDevExts.push_back(VK_EXT_TOOLING_INFO_EXTENSION_NAME);
     optDevExts.push_back(VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME);
     optDevExts.push_back(VK_KHR_BIND_MEMORY_2_EXTENSION_NAME);
@@ -362,6 +385,17 @@ void main()
       dyn.dynamicRendering = VK_TRUE;
       dyn.pNext = (void *)devInfoNext;
       devInfoNext = &dyn;
+    }
+
+    static VkPhysicalDeviceInlineUniformBlockFeaturesEXT inlineFeats = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INLINE_UNIFORM_BLOCK_FEATURES_EXT,
+    };
+
+    if(hasExt(VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME))
+    {
+      inlineFeats.inlineUniformBlock = VK_TRUE;
+      inlineFeats.pNext = (void *)devInfoNext;
+      devInfoNext = &inlineFeats;
     }
   }
 
@@ -566,6 +600,27 @@ void main()
     VkPipelineLayout dynamicarraylayout =
         createPipelineLayout(vkh::PipelineLayoutCreateInfo({dynamicarraysetlayout}));
 
+    VkDescriptorSetLayout inlineubosetlayout = VK_NULL_HANDLE;
+
+    if(hasExt(VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME))
+    {
+      inlineubosetlayout = createDescriptorSetLayout(vkh::DescriptorSetLayoutCreateInfo({
+          {0, VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, 16, VK_SHADER_STAGE_FRAGMENT_BIT},
+          {1, VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, 16, VK_SHADER_STAGE_FRAGMENT_BIT},
+      }));
+    }
+    else
+    {
+      // dummy, won't be tested
+      inlineubosetlayout = createDescriptorSetLayout(vkh::DescriptorSetLayoutCreateInfo({
+          {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
+          {1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
+      }));
+    }
+
+    VkPipelineLayout inlineubolayout =
+        createPipelineLayout(vkh::PipelineLayoutCreateInfo({inlineubosetlayout}));
+
     VkDescriptorSet descset2 = allocateDescriptorSet(setlayout2);
 
     VkDescriptorSetLayout asm_setlayout =
@@ -681,6 +736,15 @@ void main()
     };
 
     VkPipeline dynarraypipe = createGraphicsPipeline(pipeCreateInfo);
+
+    pipeCreateInfo.layout = inlineubolayout;
+
+    pipeCreateInfo.stages = {
+        CompileShaderModule(VKDefaultVertex, ShaderLang::glsl, ShaderStage::vert, "main"),
+        CompileShaderModule(inlineubopixel, ShaderLang::glsl, ShaderStage::frag, "main"),
+    };
+
+    VkPipeline inlineubopipe = createGraphicsPipeline(pipeCreateInfo);
 
     pipeCreateInfo.stages = {
         CompileShaderModule(VKDefaultVertex, ShaderLang::glsl, ShaderStage::vert, "main"),
@@ -1201,6 +1265,53 @@ void main()
       vkCreateDescriptorUpdateTemplateKHR(device, &createInfo, NULL, &refpushtempl);
     }
 
+    Vec4f inlinetemplData[2] = {
+        Vec4f(1.0f, 0.0f, 0.0f, 0.0f),
+        Vec4f(0.0f, 0.0f, 1.0f, 1.0f),
+    };
+
+    VkDescriptorUpdateTemplateKHR inlinetempl = VK_NULL_HANDLE;
+    VkDescriptorSet inlineuboset = allocateDescriptorSet(inlineubosetlayout);
+    VkDescriptorSet inlineuboset_templ = allocateDescriptorSet(inlineubosetlayout);
+    VkDescriptorSet inlineuboset_templ_dyn = allocateDescriptorSet(inlineubosetlayout);
+
+    if(hasExt(VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME))
+    {
+      vkh::updateDescriptorSets(
+          device, {
+                      vkh::WriteDescriptorSet(inlineuboset, 0,
+                                              vkh::WriteDescriptorSetInlineUniformBlockEXT(
+                                                  &inlinetemplData[0], sizeof(Vec4f)),
+                                              vkh::DescriptorBufferInfo(validBuffer)),
+                      vkh::WriteDescriptorSet(inlineuboset, 1,
+                                              vkh::WriteDescriptorSetInlineUniformBlockEXT(
+                                                  &inlinetemplData[1], sizeof(Vec4f)),
+                                              vkh::DescriptorBufferInfo(validBuffer)),
+                  });
+
+      if(KHR_descriptor_update_template)
+      {
+        std::vector<VkDescriptorUpdateTemplateEntryKHR> entries = {
+            {0, 0, sizeof(Vec4f), VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, 0, sizeof(Vec4f) * 2},
+            {1, 0, sizeof(Vec4f), VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, sizeof(Vec4f),
+             sizeof(Vec4f) * 2},
+        };
+
+        VkDescriptorUpdateTemplateCreateInfoKHR createInfo = {};
+        createInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_CREATE_INFO_KHR;
+        createInfo.descriptorUpdateEntryCount = (uint32_t)entries.size();
+        createInfo.pDescriptorUpdateEntries = entries.data();
+        createInfo.templateType = VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET_KHR;
+        createInfo.descriptorSetLayout = setlayout;
+        createInfo.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+
+        vkCreateDescriptorUpdateTemplateKHR(device, &createInfo, NULL, &inlinetempl);
+
+        vkUpdateDescriptorSetWithTemplateKHR(device, inlineuboset_templ, inlinetempl,
+                                             &inlinetemplData);
+      }
+    }
+
     // check that stale views in descriptors don't cause problems if the handle is re-used
 
     VkImageView view1, view2;
@@ -1619,6 +1730,10 @@ void main()
         if(KHR_descriptor_update_template)
           vkUpdateDescriptorSetWithTemplateKHR(device, reftempldescset, reftempl, &reftempldata);
 
+        if(hasExt(VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME) && KHR_descriptor_update_template)
+          vkUpdateDescriptorSetWithTemplateKHR(device, inlineuboset_templ_dyn, inlinetempl,
+                                               &inlinetemplData);
+
         VkCommandBuffer cmd = GetCommandBuffer();
 
         vkBeginCommandBuffer(cmd, vkh::CommandBufferBeginInfo());
@@ -1780,6 +1895,12 @@ void main()
           vkCmdPushDescriptorSetWithTemplateKHR(cmd, pushtempl, layout, 1, &pushdata);
         vkCmdDraw(cmd, 3, 1, 0, 0);
 
+        if(KHR_push_descriptor)
+          vkCmdPushDescriptorSetKHR(
+              cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1,
+              vkh::WriteDescriptorSet((VkDescriptorSet)0x1234, 20,
+                                      VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, validBufInfos));
+
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, immutpipe);
         vkh::cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, immutlayout, 0,
                                    {immutdescset}, {});
@@ -1793,6 +1914,33 @@ void main()
 
         setMarker(cmd, "Dynamic Array Draw");
         vkCmdDraw(cmd, 3, 1, 0, 0);
+
+        if(hasExt(VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME))
+        {
+          vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, inlineubopipe);
+          vkh::cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, inlineubolayout, 0,
+                                     {inlineuboset}, {});
+
+          setMarker(cmd, "Inline UBO Draw");
+          vkCmdDraw(cmd, 3, 1, 0, 0);
+
+          if(KHR_descriptor_update_template)
+          {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, inlineubopipe);
+            vkh::cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, inlineubolayout, 0,
+                                       {inlineuboset_templ}, {});
+
+            setMarker(cmd, "Inline UBO + Templ Draw");
+            vkCmdDraw(cmd, 3, 1, 0, 0);
+
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, inlineubopipe);
+            vkh::cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, inlineubolayout, 0,
+                                       {inlineuboset_templ_dyn}, {});
+
+            setMarker(cmd, "Inline UBO + Templ Dyn Draw");
+            vkCmdDraw(cmd, 3, 1, 0, 0);
+          }
+        }
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe2);
         vkh::cmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout2, 0, {descset2}, {});
@@ -1875,7 +2023,12 @@ void main()
     }
 
     if(KHR_descriptor_update_template)
+    {
       vkDestroyDescriptorUpdateTemplateKHR(device, reftempl, NULL);
+
+      if(hasExt(VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME))
+        vkDestroyDescriptorUpdateTemplateKHR(device, inlinetempl, NULL);
+    }
 
     return 0;
   }

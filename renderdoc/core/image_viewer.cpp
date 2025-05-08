@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -111,10 +111,6 @@ public:
   }
   void DestroyOutputWindow(uint64_t id) { m_Proxy->DestroyOutputWindow(id); }
   bool CheckResizeOutputWindow(uint64_t id) { return m_Proxy->CheckResizeOutputWindow(id); }
-  void SetOutputWindowDimensions(uint64_t id, int32_t w, int32_t h)
-  {
-    m_Proxy->SetOutputWindowDimensions(id, w, h);
-  }
   void GetOutputWindowDimensions(uint64_t id, int32_t &w, int32_t &h)
   {
     m_Proxy->GetOutputWindowDimensions(id, w, h);
@@ -357,6 +353,11 @@ public:
   {
     return new ShaderDebugTrace();
   }
+  ShaderDebugTrace *DebugMeshThread(uint32_t eventId, const rdcfixedarray<uint32_t, 3> &groupid,
+                                    const rdcfixedarray<uint32_t, 3> &threadid)
+  {
+    return new ShaderDebugTrace();
+  }
   rdcarray<ShaderDebugState> ContinueDebug(ShaderDebugger *debugger) { return {}; }
   void FreeDebugger(ShaderDebugger *debugger) { delete debugger; }
   void BuildTargetShader(ShaderEncoding sourceEncoding, const bytebuf &source, const rdcstr &entry,
@@ -367,6 +368,7 @@ public:
     errors = "Building target shaders is unsupported";
   }
   void ReplaceResource(ResourceId from, ResourceId to) {}
+  void ClearReplayCache() {}
   void RemoveReplacement(ResourceId id) {}
   // these are proxy functions, and will never be used
   ResourceId CreateProxyTexture(const TextureDescription &templateTex)
@@ -395,7 +397,7 @@ public:
   void FileChanged() { RefreshFile(); }
 private:
   void RefreshFile();
-  void CreateProxyTexture(TextureDescription &texDetails, read_dds_data &read_data);
+  void CreateProxyTexture(TextureDescription &texDetails, read_tex_data &read_data);
 
   APIProperties m_Props;
   FrameRecord m_FrameRecord;
@@ -433,7 +435,7 @@ RDResult IMG_CreateReplayDevice(RDCFile *rdc, IReplayDriver **driver)
   FileIO::fseek64(f, 0, SEEK_SET);
 
   // make sure the file is a type we recognise before going further
-  if(is_exr_file(f))
+  if(is_exr_file(headerBuffer, headerSize))
   {
     FileIO::fseek64(f, 0, SEEK_END);
     uint64_t size = FileIO::ftell64(f);
@@ -467,13 +469,6 @@ RDResult IMG_CreateReplayDevice(RDCFile *rdc, IReplayDriver **driver)
       FileIO::fclose(f);
       RETURN_ERROR_RESULT(ResultCode::ImageUnsupported,
                           "Unsupported EXR file detected - deep image EXR.");
-    }
-
-    if(exrVersion.tiled)
-    {
-      FileIO::fclose(f);
-      RETURN_ERROR_RESULT(ResultCode::ImageUnsupported,
-                          "Unsupported EXR file detected - tiled EXR.");
     }
 
     EXRHeader exrHeader;
@@ -522,7 +517,7 @@ RDResult IMG_CreateReplayDevice(RDCFile *rdc, IReplayDriver **driver)
   {
     FileIO::fseek64(f, 0, SEEK_SET);
     StreamReader reader(f);
-    read_dds_data read_data = {};
+    read_tex_data read_data = {};
     RDResult res = load_dds_from_file(&reader, read_data);
     f = NULL;
 
@@ -591,6 +586,205 @@ RDResult IMG_CreateReplayDevice(RDCFile *rdc, IReplayDriver **driver)
   return ResultCode::Succeeded;
 }
 
+static RDResult load_exr_from_file(FILE *f, uint64_t fileSize, read_tex_data &read_data)
+{
+  // read file into memory
+  bytebuf buffer;
+  buffer.resize((size_t)fileSize);
+  FileIO::fseek64(f, 0, SEEK_SET);
+  FileIO::fread(buffer.data(), 1, buffer.size(), f);
+
+  // parse and check version
+  EXRVersion exrVersion;
+  int ret = ParseEXRVersionFromMemory(&exrVersion, buffer.data(), buffer.size());
+  if(ret != 0)
+  {
+    RETURN_ERROR_RESULT(ResultCode::ImageUnsupported,
+                        "EXR file detected, but couldn't load with ParseEXRVersionFromMemory: %d",
+                        ret);
+  }
+  if(exrVersion.multipart)
+  {
+    RETURN_ERROR_RESULT(ResultCode::ImageUnsupported,
+                        "Unsupported EXR file detected - multipart EXR.");
+  }
+  if(exrVersion.non_image)
+  {
+    RETURN_ERROR_RESULT(ResultCode::ImageUnsupported,
+                        "Unsupported EXR file detected - deep image EXR.");
+  }
+
+  // parse and check header
+  EXRHeader exrHeader;
+  InitEXRHeader(&exrHeader);
+
+  rdcstr errString;
+  {
+    const char *err = NULL;
+    ret = ParseEXRHeaderFromMemory(&exrHeader, &exrVersion, buffer.data(), buffer.size(), &err);
+    if(err)
+    {
+      errString = err;
+      free((void *)err);
+    }
+  }
+
+  if(ret != 0)
+  {
+    RETURN_ERROR_RESULT(
+        ResultCode::ImageUnsupported,
+        "EXR file detected, but couldn't load with ParseEXRHeaderFromMemory %d: '%s'", ret,
+        errString.c_str());
+  }
+
+  // load the file contents
+  for(int i = 0; i < exrHeader.num_channels; i++)
+    exrHeader.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+
+  EXRImage exrImage;
+  InitEXRImage(&exrImage);
+
+  {
+    const char *err = NULL;
+
+    ret = LoadEXRImageFromMemory(&exrImage, &exrHeader, buffer.data(), buffer.size(), &err);
+
+    if(err)
+    {
+      errString = err;
+      free((void *)err);
+    }
+  }
+  if(ret != 0)
+  {
+    RETURN_ERROR_RESULT(ResultCode::ImageUnsupported,
+                        "EXR file detected, but couldn't load with LoadEXRImageFromMemory %d: '%s'",
+                        ret, errString.c_str());
+  }
+  if(exrImage.width > 16384 || exrImage.height > 16384)
+  {
+    RETURN_ERROR_RESULT(ResultCode::OutOfMemory, "EXR dimension %d x %d is too large for display",
+                        exrImage.width, exrImage.height);
+  }
+
+  // assemble texture data out of what tinyexr provides us
+  ResourceFormat rgba32_float;
+  rgba32_float.compByteWidth = 4;
+  rgba32_float.compCount = 4;
+  rgba32_float.compType = CompType::Float;
+  rgba32_float.type = ResourceFormatType::Regular;
+
+  read_data.width = exrImage.width;
+  read_data.height = exrImage.height;
+  read_data.format = rgba32_float;
+  read_data.depth = 1;
+  read_data.slices = 1;
+  read_data.mips = 1;
+
+  size_t totalSize = size_t(exrImage.width) * size_t(exrImage.height) * 4 * sizeof(float);
+  read_data.subresources.push_back({0, totalSize});
+  // Support mipmaps in EXR, if the tile rounding mode matches the graphics APIs (rounding
+  // down for odd sizes).
+  if(exrImage.images == NULL && exrImage.tiles != NULL &&
+     exrHeader.tile_level_mode == TINYEXR_TILE_MIPMAP_LEVELS &&
+     exrHeader.tile_rounding_mode == TINYEXR_TILE_ROUND_DOWN)
+  {
+    const EXRImage *exrLevel = exrImage.next_level;
+    while(exrLevel != NULL)
+    {
+      size_t mipSize = size_t(exrLevel->width) * size_t(exrLevel->height) * 4 * sizeof(float);
+      read_data.subresources.push_back({totalSize, mipSize});
+      totalSize += mipSize;
+      read_data.mips++;
+      exrLevel = exrLevel->next_level;
+    }
+  }
+  read_data.buffer.resize(totalSize);
+
+  // Expect R/G/B/A channel names as first char of the string, or
+  // after the last '.' char.
+  int channels[4] = {-1, -1, -1, -1};
+  for(int i = 0; i < exrImage.num_channels; i++)
+  {
+    const char *dotPos = strrchr(exrHeader.channels[i].name, '.');
+    const char *name = dotPos ? dotPos + 1 : exrHeader.channels[i].name;
+    switch(name[0])
+    {
+      case 'R': channels[0] = i; break;
+      case 'G': channels[1] = i; break;
+      case 'B': channels[2] = i; break;
+      case 'A': channels[3] = i; break;
+    }
+  }
+
+  if(exrImage.images != NULL)
+  {
+    // scanline image
+    const float **src = (const float **)exrImage.images;
+    const float *srcR = channels[0] >= 0 ? src[channels[0]] : NULL;
+    const float *srcG = channels[1] >= 0 ? src[channels[1]] : NULL;
+    const float *srcB = channels[2] >= 0 ? src[channels[2]] : NULL;
+    const float *srcA = channels[3] >= 0 ? src[channels[3]] : NULL;
+
+    float *rgba_dst = (float *)read_data.buffer.data();
+    for(uint32_t i = 0, n = exrImage.width * exrImage.height; i < n; i++)
+    {
+      rgba_dst[0] = srcR ? srcR[i] : 0.0f;
+      rgba_dst[1] = srcG ? srcG[i] : 0.0f;
+      rgba_dst[2] = srcB ? srcB[i] : 0.0f;
+      rgba_dst[3] = srcA ? srcA[i] : 1.0f;
+      rgba_dst += 4;
+    }
+  }
+  else if(exrImage.tiles != NULL)
+  {
+    // tiled image
+    const int fullTileWidth = exrHeader.tile_size_x;
+    const int fullTileHeight = exrHeader.tile_size_y;
+    const EXRImage *exrLevel = &exrImage;
+
+    for(uint32_t mip = 0; mip < read_data.mips; mip++, exrLevel = exrLevel->next_level)
+    {
+      for(int idx = 0; idx < exrLevel->num_tiles; idx++)
+      {
+        const EXRTile &tile = exrLevel->tiles[idx];
+        const int thisTileWidth = tile.width;
+        const int thisTileHeight = tile.height;
+        float **src = (float **)tile.images;
+        float *rgba_tile =
+            (float *)(read_data.buffer.data() + read_data.subresources[mip].first) +
+            (tile.offset_y * fullTileHeight * exrLevel->width + tile.offset_x * fullTileWidth) * 4;
+
+        for(int y = 0; y < thisTileHeight; y++)
+        {
+          const float *srcR = channels[0] >= 0 ? src[channels[0]] + y * fullTileWidth : NULL;
+          const float *srcG = channels[1] >= 0 ? src[channels[1]] + y * fullTileWidth : NULL;
+          const float *srcB = channels[2] >= 0 ? src[channels[2]] + y * fullTileWidth : NULL;
+          const float *srcA = channels[3] >= 0 ? src[channels[3]] + y * fullTileWidth : NULL;
+          float *rgba_dst = rgba_tile + y * exrLevel->width * 4;
+          for(int x = 0; x < thisTileWidth; x++)
+          {
+            rgba_dst[0] = srcR ? srcR[x] : 0.0f;
+            rgba_dst[1] = srcG ? srcG[x] : 0.0f;
+            rgba_dst[2] = srcB ? srcB[x] : 0.0f;
+            rgba_dst[3] = srcA ? srcA[x] : 1.0f;
+            rgba_dst += 4;
+          }
+        }
+      }
+    }
+  }
+
+  // cleanup
+  ret = FreeEXRImage(&exrImage);
+  if(ret != 0)
+  {
+    RETURN_ERROR_RESULT(ResultCode::ImageUnsupported,
+                        "EXR file detected, but failed during parsing");
+  }
+  return ResultCode::Succeeded;
+}
+
 void ImageViewer::RefreshFile()
 {
   FILE *f = NULL;
@@ -644,6 +838,7 @@ void ImageViewer::RefreshFile()
   size_t datasize = 0;
 
   bool dds = false;
+  bool exr = false;
   byte headerBuffer[4];
   const size_t headerSize = FileIO::fread(headerBuffer, 1, 4, f);
 
@@ -651,167 +846,9 @@ void ImageViewer::RefreshFile()
   uint64_t fileSize = FileIO::ftell64(f);
   FileIO::fseek64(f, 0, SEEK_SET);
 
-  if(is_exr_file(f))
+  if(is_exr_file(headerBuffer, headerSize))
   {
-    texDetails.format = rgba32_float;
-
-    FileIO::fseek64(f, 0, SEEK_SET);
-
-    bytebuf buffer;
-    buffer.resize((size_t)fileSize);
-
-    FileIO::fread(buffer.data(), 1, buffer.size(), f);
-
-    EXRVersion exrVersion;
-    int ret = ParseEXRVersionFromMemory(&exrVersion, buffer.data(), buffer.size());
-
-    if(ret != 0)
-    {
-      SET_ERROR_RESULT(m_Error, ResultCode::ImageUnsupported,
-                       "EXR file detected, but couldn't load with ParseEXRVersionFromMemory: %d",
-                       ret);
-      FileIO::fclose(f);
-      return;
-    }
-
-    if(exrVersion.multipart)
-    {
-      SET_ERROR_RESULT(m_Error, ResultCode::ImageUnsupported,
-                       "Unsupported EXR file detected - multipart EXR.");
-      FileIO::fclose(f);
-      return;
-    }
-
-    if(exrVersion.non_image)
-    {
-      SET_ERROR_RESULT(m_Error, ResultCode::ImageUnsupported,
-                       "Unsupported EXR file detected - deep image EXR.");
-      FileIO::fclose(f);
-      return;
-    }
-
-    if(exrVersion.tiled)
-    {
-      SET_ERROR_RESULT(m_Error, ResultCode::ImageUnsupported,
-                       "Unsupported EXR file detected - tiled EXR.");
-      FileIO::fclose(f);
-      return;
-    }
-
-    EXRHeader exrHeader;
-    InitEXRHeader(&exrHeader);
-
-    rdcstr errString;
-
-    {
-      const char *err = NULL;
-
-      ret = ParseEXRHeaderFromMemory(&exrHeader, &exrVersion, buffer.data(), buffer.size(), &err);
-
-      if(err)
-      {
-        errString = err;
-        free((void *)err);
-      }
-    }
-
-    if(ret != 0)
-    {
-      SET_ERROR_RESULT(
-          m_Error, ResultCode::ImageUnsupported,
-          "EXR file detected, but couldn't load with ParseEXRHeaderFromMemory %d: '%s'", ret,
-          errString.c_str());
-      FileIO::fclose(f);
-      return;
-    }
-
-    for(int i = 0; i < exrHeader.num_channels; i++)
-      exrHeader.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
-
-    EXRImage exrImage;
-    InitEXRImage(&exrImage);
-
-    {
-      const char *err = NULL;
-
-      ret = LoadEXRImageFromMemory(&exrImage, &exrHeader, buffer.data(), buffer.size(), &err);
-
-      if(err)
-      {
-        errString = err;
-        free((void *)err);
-      }
-    }
-
-    if(ret != 0)
-    {
-      SET_ERROR_RESULT(m_Error, ResultCode::ImageUnsupported,
-                       "EXR file detected, but couldn't load with LoadEXRImageFromMemory %d: '%s'",
-                       ret, errString.c_str());
-      FileIO::fclose(f);
-      return;
-    }
-
-    texDetails.width = exrImage.width;
-    texDetails.height = exrImage.height;
-
-    if(texDetails.width > 16384 || texDetails.height > 16384)
-    {
-      SET_ERROR_RESULT(m_Error, ResultCode::OutOfMemory,
-                       "EXR dimension %d x %d is too large for display", exrImage.width,
-                       exrImage.height);
-      return;
-    }
-
-    datasize = size_t(texDetails.width) * size_t(texDetails.height) * 4 * sizeof(float);
-    data = (byte *)malloc(datasize);
-
-    if(!data)
-    {
-      SET_ERROR_RESULT(m_Error, ResultCode::OutOfMemory,
-                       "Allocation for %zu bytes failed for EXR data", datasize);
-      return;
-    }
-
-    int channels[4] = {-1, -1, -1, -1};
-    for(int i = 0; i < exrImage.num_channels; i++)
-    {
-      switch(exrHeader.channels[i].name[0])
-      {
-        case 'R': channels[0] = i; break;
-        case 'G': channels[1] = i; break;
-        case 'B': channels[2] = i; break;
-        case 'A': channels[3] = i; break;
-      }
-    }
-
-    float *rgba = (float *)data;
-    float **src = (float **)exrImage.images;
-
-    for(uint32_t i = 0; i < texDetails.width * texDetails.height; i++)
-    {
-      for(int c = 0; c < 4; c++)
-      {
-        if(channels[c] >= 0)
-          rgba[i * 4 + c] = src[channels[c]][i];
-        else if(c < 3)    // RGB channels default to 0
-          rgba[i * 4 + c] = 0.0f;
-        else    // alpha defaults to 1
-          rgba[i * 4 + c] = 1.0f;
-      }
-    }
-
-    ret = FreeEXRImage(&exrImage);
-
-    // shouldn't get here but let's be safe
-    if(ret != 0)
-    {
-      free(data);
-      SET_ERROR_RESULT(m_Error, ResultCode::ImageUnsupported,
-                       "EXR file detected, but failed during parsing");
-      FileIO::fclose(f);
-      return;
-    }
+    exr = true;
   }
   else if(stbi_is_hdr_from_file(f))
   {
@@ -860,9 +897,9 @@ void ImageViewer::RefreshFile()
     datasize = texDetails.width * texDetails.height * 4 * sizeof(byte);
   }
 
-  // if we don't have data at this point (and we're not a dds file) then the
+  // if we don't have data at this point (and we're not a dds/exr file) then the
   // file was corrupted and we failed to load it
-  if(!dds && data == NULL)
+  if(!dds && !exr && data == NULL)
   {
     SET_ERROR_RESULT(m_Error, ResultCode::ImageUnsupported, "Image failed to load");
     FileIO::fclose(f);
@@ -873,14 +910,22 @@ void ImageViewer::RefreshFile()
   m_FrameRecord.frameInfo.persistentSize = 0;
   m_FrameRecord.frameInfo.uncompressedFileSize = datasize;
 
-  read_dds_data read_data = {};
+  read_tex_data read_data = {};
 
-  if(dds)
+  if(dds || exr)
   {
     FileIO::fseek64(f, 0, SEEK_SET);
-    StreamReader reader(f);
-    RDResult res = load_dds_from_file(&reader, read_data);
-    f = NULL;
+    RDResult res = ResultCode::FileIOFailed;
+    if(dds)
+    {
+      StreamReader reader(f);
+      res = load_dds_from_file(&reader, read_data);
+      f = NULL;
+    }
+    else if(exr)
+    {
+      res = load_exr_from_file(f, fileSize, read_data);
+    }
 
     if(res != ResultCode::Succeeded)
     {
@@ -958,7 +1003,7 @@ void ImageViewer::RefreshFile()
   m_TexDetails.resourceId = m_TextureID;
   m_TexDetails.byteSize = fileSize;
 
-  if(!dds)
+  if(data != NULL)
   {
     m_Proxy->SetProxyTextureData(m_TextureID, Subresource(), data, datasize);
     free(data);
@@ -977,7 +1022,7 @@ void ImageViewer::RefreshFile()
     FileIO::fclose(f);
 }
 
-void ImageViewer::CreateProxyTexture(TextureDescription &texDetails, read_dds_data &read_data)
+void ImageViewer::CreateProxyTexture(TextureDescription &texDetails, read_tex_data &read_data)
 {
   if(m_Proxy->IsTextureSupported(texDetails))
   {

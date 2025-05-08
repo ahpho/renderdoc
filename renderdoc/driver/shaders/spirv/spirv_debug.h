@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2024 Baldur Karlsson
+ * Copyright (c) 2020-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@
 
 #include "api/replay/rdcarray.h"
 #include "maths/vec.h"
+#include "shaders/controlflow.h"
 #include "spirv_common.h"
 #include "spirv_processor.h"
 
@@ -43,6 +44,19 @@ enum class GatherChannel : uint8_t
   Blue = 2,
   Alpha = 3,
 };
+
+enum class ThreadProperty : uint32_t
+{
+  Helper,
+  QuadId,
+  QuadLane,
+  Active,
+  Elected,
+  SubgroupId,
+  Count,
+};
+
+ITERABLE_OPERATORS(ThreadProperty);
 
 struct ThreadState;
 
@@ -69,8 +83,10 @@ public:
   virtual bool WriteTexel(ShaderBindIndex imageBind, const ShaderVariable &coord, uint32_t sample,
                           const ShaderVariable &value) = 0;
 
-  virtual void FillInputValue(ShaderVariable &var, ShaderBuiltin builtin, uint32_t location,
-                              uint32_t component) = 0;
+  virtual void FillInputValue(ShaderVariable &var, ShaderBuiltin builtin, uint32_t threadIndex,
+                              uint32_t location, uint32_t component) = 0;
+
+  virtual uint32_t GetThreadProperty(uint32_t threadIndex, ThreadProperty prop) = 0;
 
   enum TextureType
   {
@@ -93,17 +109,6 @@ public:
 
   virtual bool CalculateMathOp(ThreadState &lane, GLSLstd450 op,
                                const rdcarray<ShaderVariable> &params, ShaderVariable &output) = 0;
-
-  struct DerivativeDeltas
-  {
-    ShaderVariable ddxcoarse;
-    ShaderVariable ddycoarse;
-    ShaderVariable ddxfine;
-    ShaderVariable ddyfine;
-  };
-
-  virtual DerivativeDeltas GetDerivative(ShaderBuiltin builtin, uint32_t location,
-                                         uint32_t component, VarType type) = 0;
 };
 
 typedef ShaderVariable (*ExtInstImpl)(ThreadState &, uint32_t, const rdcarray<Id> &);
@@ -172,11 +177,12 @@ class Debugger;
 
 struct ThreadState
 {
-  ThreadState(uint32_t workgroupIdx, Debugger &debug, const GlobalState &globalState);
+  ThreadState(Debugger &debug, const GlobalState &globalState);
   ~ThreadState();
 
   void EnterEntryPoint(ShaderDebugState *state);
-  void StepNext(ShaderDebugState *state, const rdcarray<ThreadState> &workgroup);
+  void StepNext(ShaderDebugState *state, const rdcarray<ThreadState> &workgroup,
+                const rdcarray<bool> &activeMask);
 
   enum DerivDir
   {
@@ -196,6 +202,7 @@ struct ThreadState
 
   bool Finished() const;
 
+  uint32_t currentInstruction;
   uint32_t nextInstruction;
 
   const GlobalState &global;
@@ -220,18 +227,34 @@ struct ThreadState
 
   // the id of the merge block that the last branch targetted
   Id mergeBlock;
+  uint32_t convergenceInstruction;
+  uint32_t functionReturnPoint;
   ShaderVariable returnValue;
   rdcarray<StackFrame *> callstack;
 
   // the list of IDs that are currently valid and live
   rdcarray<Id> live;
 
+  // true if executed an operation which could trigger divergence
+  bool diverged;
+  // list of potential convergence points that were entered in a single step (used for tracking thread convergence)
+  rdcarray<uint32_t> enteredPoints;
+
   std::map<Id, uint32_t> lastWrite;
 
-  // index in the pixel quad
-  uint32_t workgroupIndex;
-  bool helperInvocation;
-  bool killed;
+  // quad ID (arbitrary, just used to find neighbours for derivatives)
+  uint32_t quadId = 0;
+  // index in the pixel quad (relative to the active lane)
+  uint32_t quadLaneIndex = ~0U;
+  // the lane indices of our quad neighbours
+  uint32_t quadNeighbours[4] = {~0U, ~0U, ~0U, ~0U};
+  // index in the workgroup
+  uint32_t workgroupIndex = 0;
+  // index in the subgroup
+  uint32_t subgroupId = 0;
+  bool helperInvocation = false;
+  bool dead = true;
+  bool elected = false;
 
   const ShaderVariable &GetSrc(Id id) const;
   void WritePointerValue(Id pointer, const ShaderVariable &val);
@@ -245,6 +268,9 @@ private:
   bool ReferencePointer(Id id);
 
   void SkipIgnoredInstructions();
+  void SetConvergencePoint(Id block);
+
+  static bool WorkgroupIsDiverged(const rdcarray<ThreadState> &workgroup);
 
   ShaderDebugState *m_State = NULL;
 };
@@ -365,7 +391,8 @@ public:
   ShaderDebugTrace *BeginDebug(DebugAPIWrapper *apiWrapper, const ShaderStage stage,
                                const rdcstr &entryPoint, const rdcarray<SpecConstant> &specInfo,
                                const std::map<size_t, uint32_t> &instructionLines,
-                               const SPIRVPatchData &patchData, uint32_t activeIndex);
+                               const SPIRVPatchData &patchData, uint32_t activeIndex,
+                               uint32_t threadsInWorkgroup, uint32_t threadsInSubgroup);
 
   rdcarray<ShaderDebugState> ContinueDebug();
 
@@ -404,13 +431,13 @@ public:
   const rdcarray<Id> &GetLiveGlobals() { return liveGlobals; }
   ThreadState &GetActiveLane() { return workgroup[activeLaneIndex]; }
   const ThreadState &GetActiveLane() const { return workgroup[activeLaneIndex]; }
+  uint32_t GetSubgroupSize() const { return subgroupSize; }
 private:
   virtual void PreParse(uint32_t maxId);
   virtual void PostParse();
   virtual void RegisterOp(Iter it);
 
-  uint32_t ApplyDerivatives(uint32_t quadIndex, const Decorations &curDecorations,
-                            uint32_t location, const DataType &inType, ShaderVariable &outVar);
+  void SetDebugTypeMember(const OpShaderDbg &member, TypeData &resultType, size_t memberIndex);
 
   template <typename ShaderVarType, bool allocate>
   uint32_t WalkVariable(const Decorations &curDecorations, const DataType &type,
@@ -438,6 +465,7 @@ private:
   Id convergeBlock;
 
   uint32_t activeLaneIndex = 0;
+  uint32_t subgroupSize = 0;
   ShaderStage stage;
 
   int steps = 0;
@@ -484,11 +512,12 @@ private:
 
   std::set<rdcstr> usedNames;
   std::map<Id, rdcstr> dynamicNames;
-  void CalcActiveMask(rdcarray<bool> &activeMask);
 
   struct
   {
     bool valid = false;
+
+    rdcarray<std::function<void()>> deferredMembers;
 
     SparseIdMap<TypeData> types;
     SparseIdMap<ScopeData> scopes;
@@ -513,6 +542,8 @@ private:
 
     rdcarray<LocalMapping> activeLocalMappings;
   } m_DebugInfo;
+
+  rdcshaders::ControlFlow controlFlow;
 
   const ScopeData *GetScope(size_t offset) const;
 };

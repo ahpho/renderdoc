@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2024 Baldur Karlsson
+ * Copyright (c) 2020-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,16 +25,18 @@
 #include "spirv_debug.h"
 #include "common/formatting.h"
 #include "core/settings.h"
+#include "replay/common/var_dispatch_helpers.h"
 #include "spirv_op_helpers.h"
 #include "spirv_reflect.h"
-#include "var_dispatch_helpers.h"
 
 RDOC_CONFIG(bool, Vulkan_Debug_UseDebugColumnInformation, false,
             "Control whether column information should be read from vulkan debug info.");
 
-RDOC_CONFIG(bool, Vulkan_Hack_AllowNonUniformSubgroups, false,
-            "Allow shaders to be debugged with subgroup ops. Most subgroup ops will break, this "
-            "will only work for a limited set and not with the 'real' subgroup.");
+RDOC_DEBUG_CONFIG(
+    bool, Vulkan_Hack_EnableGroupCaps, false,
+    "Work in progress allow shaders to be debugged with subgroup/workgroup requirements.");
+
+using namespace rdcshaders;
 
 // this could be cleaner if ShaderVariable wasn't a very public struct, but it's not worth it so
 // we just reserve value slots that we know won't be used in opaque variables.
@@ -407,36 +409,84 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
     debuggable = false;
   }
 
-  // this list is sorted in order of the SPIR-V registry.
+  for(const Variable &g : globals)
+  {
+    if(g.storage == StorageClass::TaskPayloadWorkgroupEXT)
+    {
+      debugStatus += "Unsupported Task payload\n";
+      debuggable = false;
+    }
+  }
+
   const rdcstr whitelist[] = {
-      "SPV_KHR_shader_draw_parameters",
+      // KHR extensions
       "SPV_KHR_16bit_storage",
+      "SPV_KHR_8bit_storage",
+      "SPV_KHR_bit_instructions",
+      // SPV_KHR_compute_shader_derivatives
+      // SPV_KHR_cooperative_matrix
       "SPV_KHR_device_group",
+      "SPV_KHR_expect_assume",
+      "SPV_KHR_float_controls",
+      // SPV_KHR_float_controls2
+      // SPV_KHR_fragment_shader_barycentric
+      // SPV_KHR_fragment_shading_rate
+      // SPV_KHR_integer_dot_product
+      // SPV_KHR_linkonce_odr  - kernel only
+      "SPV_KHR_maximal_reconvergence",
       "SPV_KHR_multiview",
-      "SPV_KHR_storage_buffer_storage_class",
+      "SPV_KHR_no_integer_wrap_decoration",
+      "SPV_KHR_non_semantic_info",
+      "SPV_KHR_physical_storage_buffer",
       "SPV_KHR_post_depth_coverage",
+      "SPV_KHR_quad_control",
+      // SPV_KHR_ray_cull_mask
+      // SPV_KHR_ray_query
+      // SPV_KHR_ray_tracing
+      // SPV_KHR_ray_tracing_position_fetch
+      "SPV_KHR_relaxed_extended_instruction",
       "SPV_KHR_shader_atomic_counter_ops",
-      "SPV_EXT_shader_stencil_export",
-      "SPV_EXT_shader_viewport_index_layer",
+      "SPV_KHR_shader_ballot",
+      "SPV_KHR_shader_clock",
+      "SPV_KHR_shader_draw_parameters",
+      "SPV_KHR_storage_buffer_storage_class",
+      "SPV_KHR_subgroup_rotate",
+      "SPV_KHR_subgroup_uniform_control_flow",
+      "SPV_KHR_subgroup_vote",
+      "SPV_KHR_terminate_invocation",
+      // SPV_KHR_uniform_group_instructions - kernel?
+      // SPV_KHR_untyped_pointers - kernel
+      // SPV_KHR_variable_pointers
+      "SPV_KHR_vulkan_memory_model",
+      // SPV_KHR_workgroup_memory_explicit_layout
+
+      // EXT extensions
+      // SPV_EXT_arithmetic_fence - kernel?
+      "SPV_EXT_demote_to_helper_invocation",
+      "SPV_EXT_descriptor_indexing",
       "SPV_EXT_fragment_fully_covered",
+      "SPV_EXT_fragment_invocation_density",
+      // SPV_EXT_fragment_shader_interlock
+      // SPV_EXT_image_raw10_raw12 - kernel?
+      "SPV_EXT_mesh_shader",
+      // SPV_EXT_opacity_micromap
+      // SPV_EXT_optnone - kernel?
+      "SPV_EXT_physical_storage_buffer",
+      // SPV_EXT_relaxed_printf_string_address_space - kernel
+      // SPV_EXT_replicated_composites
+      "SPV_EXT_shader_atomic_float_add",
+      // SPV_EXT_shader_atomic_float_min_max
+      // SPV_EXT_shader_atomic_float16_add
+      "SPV_EXT_shader_image_int64",
+      "SPV_EXT_shader_stencil_export",
+      // SPV_EXT_shader_tile_image
+      "SPV_EXT_shader_viewport_index_layer",
+      // SPV_EXT_ycbcr_attachments
+
+      // vendor extensions
       "SPV_GOOGLE_decorate_string",
       "SPV_GOOGLE_hlsl_functionality1",
-      "SPV_EXT_descriptor_indexing",
-      "SPV_KHR_8bit_storage",
-      "SPV_KHR_vulkan_memory_model",
-      "SPV_EXT_fragment_invocation_density",
-      "SPV_KHR_no_integer_wrap_decoration",
-      "SPV_KHR_float_controls",
-      "SPV_EXT_physical_storage_buffer",
-      "SPV_KHR_shader_clock",
-      "SPV_EXT_demote_to_helper_invocation",
-      "SPV_KHR_non_semantic_info",
-      "SPV_EXT_shader_atomic_float_add",
-      "SPV_KHR_terminate_invocation",
-      "SPV_EXT_shader_image_int64",
       "SPV_GOOGLE_user_type",
-      "SPV_KHR_physical_storage_buffer",
-      "SPV_KHR_relaxed_extended_instruction",
   };
 
   // whitelist supported extensions
@@ -527,7 +577,7 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       case Capability::StorageTexelBufferArrayNonUniformIndexing:
       case Capability::VulkanMemoryModel:
       case Capability::VulkanMemoryModelDeviceScope:
-      case Capability::DemoteToHelperInvocationEXT:
+      case Capability::DemoteToHelperInvocation:
       case Capability::AtomicFloat32AddEXT:
       case Capability::AtomicFloat32MinMaxEXT:
       case Capability::AtomicFloat16AddEXT:
@@ -554,14 +604,25 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       case Capability::UniformDecoration:
       case Capability::SignedZeroInfNanPreserve:
       case Capability::PhysicalStorageBufferAddresses:
+      case Capability::MeshShadingEXT:
+      case Capability::QuadControlKHR:
       {
         supported = true;
         break;
       }
-
+      case Capability::GroupNonUniform:
+      case Capability::GroupNonUniformVote:
+      case Capability::GroupNonUniformBallot:
+      case Capability::GroupNonUniformShuffle:
+      case Capability::GroupNonUniformShuffleRelative:
+      case Capability::GroupNonUniformClustered:
+      case Capability::GroupNonUniformQuad:
+      case Capability::SubgroupBallotKHR:
+      case Capability::SubgroupVoteKHR:
+      case Capability::GroupNonUniformRotateKHR:
       case Capability::GroupNonUniformArithmetic:
       {
-        if(Vulkan_Hack_AllowNonUniformSubgroups())
+        if(Vulkan_Hack_EnableGroupCaps())
         {
           supported = true;
         }
@@ -587,18 +648,9 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       case Capability::RoundingModeRTE:
       case Capability::RoundingModeRTZ:
 
+      case Capability::FloatControls2:
+
       // group instructions
-      case Capability::Groups:
-      case Capability::GroupNonUniform:
-      case Capability::GroupNonUniformVote:
-      case Capability::GroupNonUniformBallot:
-      case Capability::GroupNonUniformShuffle:
-      case Capability::GroupNonUniformShuffleRelative:
-      case Capability::GroupNonUniformClustered:
-      case Capability::GroupNonUniformQuad:
-      case Capability::SubgroupBallotKHR:
-      case Capability::SubgroupVoteKHR:
-      case Capability::GroupNonUniformRotateKHR:
 
       // workgroup layout:
       case Capability::WorkgroupMemoryExplicitLayout16BitAccessKHR:
@@ -625,10 +677,10 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       }
 
       // integer dot product
-      case Capability::DotProductKHR:
-      case Capability::DotProductInput4x8BitKHR:
-      case Capability::DotProductInput4x8BitPackedKHR:
-      case Capability::DotProductInputAllKHR:
+      case Capability::DotProduct:
+      case Capability::DotProductInput4x8Bit:
+      case Capability::DotProductInput4x8BitPacked:
+      case Capability::DotProductInputAll:
       {
         supported = false;
         break;
@@ -640,14 +692,32 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       case Capability::RayTracingKHR:
       case Capability::RayCullMaskKHR:
       case Capability::RayTracingOpacityMicromapEXT:
+      case Capability::RayTracingNV:
       case Capability::ShaderInvocationReorderNV:
+      case Capability::RayQueryPositionFetchKHR:
+      case Capability::RayTracingPositionFetchKHR:
       {
         supported = false;
         break;
       }
 
-      // mesh shading
-      case Capability::MeshShadingEXT:
+      // barycentric
+      case Capability::FragmentBarycentricKHR:
+      {
+        supported = false;
+        break;
+      }
+
+      // compute shader derivatives
+      case Capability::ComputeDerivativeGroupQuadsKHR:
+      case Capability::ComputeDerivativeGroupLinearKHR:
+      {
+        supported = false;
+        break;
+      }
+
+      // untyped pointers
+      case Capability::UntypedPointersKHR:
       {
         supported = false;
         break;
@@ -657,6 +727,7 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       case Capability::Addresses:
       case Capability::Linkage:
       case Capability::Kernel:
+      case Capability::Groups:
       case Capability::Vector16:
       case Capability::ImageBasic:
       case Capability::ImageReadWrite:
@@ -678,12 +749,8 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       case Capability::ShaderStereoViewNV:
       case Capability::PerViewAttributesNV:
       case Capability::MeshShadingNV:
-      case Capability::FragmentBarycentricNV:
       case Capability::ImageFootprintNV:
-      case Capability::ComputeDerivativeGroupQuadsNV:
       case Capability::GroupNonUniformPartitionedNV:
-      case Capability::RayTracingNV:
-      case Capability::ComputeDerivativeGroupLinearNV:
       case Capability::CooperativeMatrixNV:
       case Capability::ShaderSMBuiltinsNV:
       case Capability::SubgroupShuffleINTEL:
@@ -703,7 +770,6 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       case Capability::UnstructuredLoopControlsINTEL:
       case Capability::KernelAttributesINTEL:
       case Capability::BlockingPipesINTEL:
-      case Capability::OptNoneINTEL:
       case Capability::RayTracingMotionBlurNV:
       case Capability::RoundToInfinityINTEL:
       case Capability::FloatingPointModeINTEL:
@@ -738,20 +804,23 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       case Capability::TextureSampleWeightedQCOM:
       case Capability::TextureBoxFilterQCOM:
       case Capability::TextureBlockMatchQCOM:
-      case Capability::RayQueryPositionFetchKHR:
-      case Capability::RayTracingPositionFetchKHR:
       case Capability::BFloat16ConversionINTEL:
       case Capability::FPGAKernelAttributesv2INTEL:
       case Capability::FPGALatencyControlINTEL:
       case Capability::FPGAArgumentInterfacesINTEL:
       case Capability::TextureBlockMatch2QCOM:
       case Capability::ShaderEnqueueAMDX:
-      case Capability::QuadControlKHR:
       case Capability::DisplacementMicromapNV:
       case Capability::AtomicFloat16VectorNV:
       case Capability::RayTracingDisplacementMicromapNV:
       case Capability::CooperativeMatrixKHR:
-      case Capability::FloatControls2:
+      case Capability::CooperativeVectorNV:
+      case Capability::CooperativeVectorTrainingNV:
+      case Capability::CooperativeMatrixReductionsNV:
+      case Capability::CooperativeMatrixConversionsNV:
+      case Capability::CooperativeMatrixPerElementOperationsNV:
+      case Capability::CooperativeMatrixTensorAddressingNV:
+      case Capability::CooperativeMatrixBlockLoadsNV:
       case Capability::FPGAClusterAttributesV2INTEL:
       case Capability::FPMaxErrorINTEL:
       case Capability::GlobalVariableFPGADecorationsINTEL:
@@ -759,9 +828,20 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       case Capability::CacheControlsINTEL:
       case Capability::RegisterLimitsINTEL:
       case Capability::GlobalVariableHostAccessINTEL:
+      case Capability::SubgroupBufferPrefetchINTEL:
+      case Capability::Subgroup2DBlockIOINTEL:
+      case Capability::Subgroup2DBlockTransformINTEL:
+      case Capability::Subgroup2DBlockTransposeINTEL:
+      case Capability::SubgroupMatrixMultiplyAccumulateINTEL:
       case Capability::CooperativeMatrixLayoutsARM:
       case Capability::RawAccessChainsNV:
       case Capability::ReplicatedCompositesEXT:
+      case Capability::RayTracingSpheresGeometryNV:
+      case Capability::RayTracingLinearSweptSpheresGeometryNV:
+      case Capability::RayTracingClusterAccelerationStructureNV:
+      case Capability::TensorAddressingNV:
+      case Capability::OptNoneEXT:
+      case Capability::ArithmeticFenceEXT:
       case Capability::Max:
       case Capability::Invalid:
       {
@@ -834,7 +914,8 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
                                        const rdcstr &entryPoint,
                                        const rdcarray<SpecConstant> &specInfo,
                                        const std::map<size_t, uint32_t> &instructionLines,
-                                       const SPIRVPatchData &patchData, uint32_t activeIndex)
+                                       const SPIRVPatchData &patchData, uint32_t activeIndex,
+                                       uint32_t threadsInWorkgroup, uint32_t threadsInSubgroup)
 {
   Id entryId = entryLookup[ShaderEntryPoint(entryPoint, shaderStage)];
 
@@ -888,12 +969,12 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
   ret->debugger = this;
   ret->stage = shaderStage;
   activeLaneIndex = activeIndex;
+  subgroupSize = threadsInSubgroup;
   stage = shaderStage;
   apiWrapper = api;
 
-  uint32_t workgroupSize = shaderStage == ShaderStage::Pixel ? 4 : 1;
-  for(uint32_t i = 0; i < workgroupSize; i++)
-    workgroup.push_back(ThreadState(i, *this, global));
+  for(uint32_t i = 0; i < threadsInWorkgroup; i++)
+    workgroup.push_back(ThreadState(*this, global));
 
   ThreadState &active = GetActiveLane();
 
@@ -950,7 +1031,6 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
 #define GLOBAL_POINTER(id, list) PointerId(id, &GlobalState::list, global.list)
 #define THREAD_POINTER(id, list) PointerId(id, &ThreadState::list, active.list)
 
-  rdcarray<Id> inputIDs, outputIDs;
   rdcarray<PointerId> pointerIDs;
 
   // allocate storage for globals with opaque storage classes, and prepare to set up pointers to
@@ -998,11 +1078,14 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
 
       bool addSource = m_DebugInfo.valid ? m_DebugInfo.globals.contains(v.id) : true;
 
+      // modified in a loop below as needed
+      uint32_t laneIndex = 0;
+
       // fill the interface variable
-      auto fillInputCallback = [this, isInput, addSource, ret, &sigNames, &rawName, &sourceName](
-                                   ShaderVariable &var, const Decorations &curDecorations,
-                                   const DataType &type, uint64_t location,
-                                   const rdcstr &accessSuffix) {
+      auto fillInputCallback = [this, isInput, addSource, ret, &sigNames, &rawName, &sourceName,
+                                &laneIndex](ShaderVariable &var, const Decorations &curDecorations,
+                                            const DataType &type, uint64_t location,
+                                            const rdcstr &accessSuffix) {
         if(!var.members.empty())
           return;
 
@@ -1022,7 +1105,7 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
           if(curDecorations.flags & Decorations::HasBuiltIn)
             builtin = MakeShaderBuiltin(stage, curDecorations.builtIn);
 
-          this->apiWrapper->FillInputValue(var, builtin, (uint32_t)location, component);
+          this->apiWrapper->FillInputValue(var, builtin, laneIndex, (uint32_t)location, component);
         }
         else
         {
@@ -1030,7 +1113,15 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
           memset(&var.value, 0xcc, sizeof(var.value));
         }
 
-        if(sourceName != rawName)
+        bool addSourceVar = false;
+
+        if(!isInput && addSource)
+          addSourceVar = true;
+
+        if(isInput && laneIndex == activeLaneIndex)
+          addSourceVar = true;
+
+        if(sourceName != rawName && addSourceVar)
         {
           rdcstr debugVarName = rawName + accessSuffix;
 
@@ -1048,29 +1139,32 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
             sourceVar.variables.push_back(DebugVariableReference(
                 isInput ? DebugVariableType::Input : DebugVariableType::Variable, debugVarName, x));
 
-          if(isInput)
-            ret->sourceVars.push_back(sourceVar);
-          else if(addSource)
+          if(addSourceVar)
             ret->sourceVars.push_back(sourceVar);
         }
       };
 
-      WalkVariable<ShaderVariable, true>(decorations[v.id], dataTypes[type.InnerType()], ~0U, var,
-                                         rdcstr(), fillInputCallback);
-
       if(isInput)
       {
-        // create the opaque storage
-        active.inputs.push_back(var);
+        for(laneIndex = 0; laneIndex < threadsInWorkgroup; laneIndex++)
+        {
+          // create the opaque storage
+          workgroup[laneIndex].inputs.push_back(var);
+
+          WalkVariable<ShaderVariable, true>(decorations[v.id], dataTypes[type.InnerType()], ~0U,
+                                             workgroup[laneIndex].inputs.back(), rdcstr(),
+                                             fillInputCallback);
+        }
 
         // then make sure we know which ID to set up for the pointer
-        inputIDs.push_back(v.id);
         pointerIDs.push_back(THREAD_POINTER(v.id, inputs));
       }
       else
       {
+        WalkVariable<ShaderVariable, true>(decorations[v.id], dataTypes[type.InnerType()], ~0U, var,
+                                           rdcstr(), fillInputCallback);
+
         active.outputs.push_back(var);
-        outputIDs.push_back(v.id);
         liveGlobals.push_back(v.id);
         pointerIDs.push_back(THREAD_POINTER(v.id, outputs));
       }
@@ -1469,23 +1563,99 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
 
   std::sort(liveGlobals.begin(), liveGlobals.end());
 
-  for(uint32_t i = 0; i < workgroupSize; i++)
+  rdcarray<ThreadIndex> threadIds;
+  for(uint32_t i = 0; i < threadsInWorkgroup; i++)
   {
     ThreadState &lane = workgroup[i];
+    lane.workgroupIndex = i;
     if(i != activeLaneIndex)
     {
       lane.nextInstruction = active.nextInstruction;
-      lane.inputs = active.inputs;
       lane.outputs = active.outputs;
       lane.privates = active.privates;
       lane.ids = active.ids;
-      // mark as inactive/helper lane
-      lane.helperInvocation = true;
     }
+
+    if(stage == ShaderStage::Pixel)
+    {
+      lane.helperInvocation = apiWrapper->GetThreadProperty(i, ThreadProperty::Helper) != 0;
+      lane.quadLaneIndex = apiWrapper->GetThreadProperty(i, ThreadProperty::QuadLane);
+      lane.quadId = apiWrapper->GetThreadProperty(i, ThreadProperty::QuadId);
+    }
+
+    lane.subgroupId = apiWrapper->GetThreadProperty(i, ThreadProperty::SubgroupId);
+    lane.dead = apiWrapper->GetThreadProperty(i, ThreadProperty::Active) == 0;
+
+    if(patchData.threadScope & ThreadScope::Subgroup)
+      lane.elected = apiWrapper->GetThreadProperty(i, ThreadProperty::Elected) != 0;
 
     // now that the globals are allocated and their storage won't move, we can take pointers to them
     for(const PointerId &p : pointerIDs)
       p.Set(*this, global, lane);
+
+    // Only add active lanes to control flow
+    if(!lane.dead)
+      threadIds.push_back(i);
+  }
+
+  controlFlow.Construct(threadIds);
+
+  // find quad neighbours
+  {
+    rdcarray<uint32_t> processedQuads;
+    for(uint32_t i = 0; i < threadsInWorkgroup; i++)
+    {
+      uint32_t desiredQuad = workgroup[i].quadId;
+
+      // ignore threads not in any quad
+      if(desiredQuad == 0)
+        continue;
+
+      // quads are almost certainly sorted together, so shortcut by checking the last one
+      if((!processedQuads.empty() && processedQuads.back() == desiredQuad) ||
+         processedQuads.contains(desiredQuad))
+        continue;
+
+      processedQuads.push_back(desiredQuad);
+
+      // find the threads
+      uint32_t threads[4] = {
+          i,
+          ~0U,
+          ~0U,
+          ~0U,
+      };
+      for(uint32_t j = i + 1, t = 1; j < threadsInWorkgroup && t < 4; j++)
+      {
+        if(workgroup[j].quadId == desiredQuad)
+          threads[t++] = j;
+      }
+
+      // now swizzle the threads to know each other
+      for(uint32_t src = 0; src < 4; src++)
+      {
+        const uint32_t thread = threads[src];
+
+        if(thread >= workgroup.size())
+        {
+          RDCERR("Unexpected incomplete quad missing a thread");
+          continue;
+        }
+
+        const uint32_t lane = workgroup[thread].quadLaneIndex;
+
+        if(lane >= 4)
+          continue;
+
+        for(uint32_t dst = 0; dst < 4; dst++)
+        {
+          if(threads[dst] == ~0U)
+            continue;
+
+          workgroup[threads[dst]].quadNeighbours[lane] = threads[src];
+        }
+      }
+    }
   }
 
   // this contains all the accumulated line number information. Add in our disassembly mapping
@@ -1509,39 +1679,6 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
   ret->readWriteResources = global.readWriteResources;
   ret->samplers = global.samplers;
   ret->inputs = active.inputs;
-
-  if(stage == ShaderStage::Pixel)
-  {
-    // apply derivatives to generate the correct inputs for the quad neighbours
-    for(uint32_t q = 0; q < workgroupSize; q++)
-    {
-      if(q == activeLaneIndex)
-        continue;
-
-      for(size_t i = 0; i < inputIDs.size(); i++)
-      {
-        Id id = inputIDs[i];
-
-        const DataType &type = dataTypes[idTypes[id]];
-
-        // global variables should all be pointers into opaque storage
-        RDCASSERT(type.type == DataType::PointerType);
-
-        const DataType &innertype = dataTypes[type.InnerType()];
-
-        auto derivCallback = [this, q](ShaderVariable &var, const Decorations &dec,
-                                       const DataType &type, uint64_t location, const rdcstr &) {
-          if(!var.members.empty())
-            return;
-
-          ApplyDerivatives(q, dec, (uint32_t)location, type, var);
-        };
-
-        WalkVariable<ShaderVariable, false>(decorations[id], innertype, ~0U, workgroup[q].inputs[i],
-                                            rdcstr(), derivCallback);
-      }
-    }
-  }
 
   return ret;
 }
@@ -1745,6 +1882,10 @@ void Debugger::FillDebugSourceVars(rdcarray<InstructionSourceInfo> &instInfo)
 
             usage->type = scalar.type;
             columns = RDCMAX(1U, typeWalk->vecSize);
+          }
+          else
+          {
+            usage->type = typeWalk->type;
           }
 
           usage->debugVar = mapping.debugVar;
@@ -2196,6 +2337,8 @@ void Debugger::FillDebugSourceVars(rdcarray<InstructionSourceInfo> &instInfo)
         SourceVariableMapping sourceVar;
         sourceVar.name = n->name;
         sourceVar.type = n->type;
+        sourceVar.rows = n->rows;
+        sourceVar.columns = n->columns;
         sourceVar.signatureIndex = -1;
         sourceVar.offset = n->offset;
         sourceVar.variables.clear();
@@ -2328,6 +2471,7 @@ rdcarray<ShaderDebugState> Debugger::ContinueDebug()
   if(steps == 0)
   {
     ShaderDebugState initial;
+    uint32_t startPoint = INVALID_EXECUTION_POINT;
 
     // we should be sitting at the entry point function prologue, step forward into the first block
     // and past any function-local variable declarations
@@ -2340,6 +2484,7 @@ rdcarray<ShaderDebugState> Debugger::ContinueDebug()
         thread.EnterEntryPoint(&initial);
         FillCallstack(thread, initial);
         initial.nextInstruction = thread.nextInstruction;
+        startPoint = initial.nextInstruction;
       }
       else
       {
@@ -2361,6 +2506,21 @@ rdcarray<ShaderDebugState> Debugger::ContinueDebug()
 
     ret.push_back(std::move(initial));
 
+    // Set the initial execution point for the threads in the root tangle
+    ThreadExecutionStates threadExecutionStates;
+    TangleGroup &tangles = controlFlow.GetTangles();
+    RDCASSERTEQUAL(tangles.size(), 1);
+    RDCASSERTNOTEQUAL(startPoint, INVALID_EXECUTION_POINT);
+    for(Tangle &tangle : tangles)
+    {
+      RDCASSERT(tangle.IsAliveActive());
+      for(uint32_t threadIdx = 0; threadIdx < workgroup.size(); ++threadIdx)
+      {
+        if(!workgroup[threadIdx].Finished())
+          threadExecutionStates[threadIdx].push_back(startPoint);
+      }
+    }
+    controlFlow.UpdateState(threadExecutionStates);
     steps++;
   }
 
@@ -2379,21 +2539,60 @@ rdcarray<ShaderDebugState> Debugger::ContinueDebug()
     if(active.Finished())
       break;
 
-    // calculate the current mask of which threads are active
-    CalcActiveMask(activeMask);
+    // Execute the threads in each active tangle
+    ThreadExecutionStates threadExecutionStates;
+    TangleGroup &tangles = controlFlow.GetTangles();
 
-    // step all active members of the workgroup
-    for(size_t lane = 0; lane < workgroup.size(); lane++)
+    bool anyActiveThreads = false;
+    for(Tangle &tangle : tangles)
     {
-      ThreadState &thread = workgroup[lane];
+      if(!tangle.IsAliveActive())
+        continue;
 
-      if(activeMask[lane])
+      rdcarray<ThreadReference> threadRefs = tangle.GetThreadRefs();
+      // calculate the current active thread mask from the threads in the tangle
       {
-        if(thread.nextInstruction >= instructionOffsets.size())
+        // one bool per workgroup thread
+        activeMask.resize(workgroup.size());
+
+        // start with all threads as inactive
+        for(size_t i = 0; i < workgroup.size(); i++)
+          activeMask[i] = false;
+
+        // activate the threads in the tangle
+        for(const ThreadReference &ref : threadRefs)
+        {
+          uint32_t idx = ref.id;
+          RDCASSERT(idx < workgroup.size(), idx, workgroup.size());
+          RDCASSERT(!workgroup[idx].Finished());
+          activeMask[idx] = true;
+          anyActiveThreads = true;
+        }
+      }
+
+      ExecutionPoint newConvergeInstruction = INVALID_EXECUTION_POINT;
+      ExecutionPoint newFunctionReturnPoint = INVALID_EXECUTION_POINT;
+      uint32_t countActiveThreads = 0;
+      uint32_t countDivergedThreads = 0;
+      uint32_t countConvergePointThreads = 0;
+      uint32_t countFunctionReturnThreads = 0;
+
+      // step all active members of the workgroup
+      for(size_t lane = 0; lane < workgroup.size(); lane++)
+      {
+        if(!activeMask[lane])
+          continue;
+        ++countActiveThreads;
+
+        ThreadState &thread = workgroup[lane];
+        const uint32_t currentPC = thread.nextInstruction;
+        const uint32_t threadId = lane;
+        if(currentPC >= instructionOffsets.size())
         {
           if(lane == activeLaneIndex)
             ret.emplace_back();
 
+          tangle.SetThreadDead(threadId);
           continue;
         }
 
@@ -2401,7 +2600,7 @@ rdcarray<ShaderDebugState> Debugger::ContinueDebug()
         {
           ShaderDebugState state;
 
-          size_t instOffs = instructionOffsets[thread.nextInstruction];
+          size_t instOffs = instructionOffsets[currentPC];
 
           // see if we're retiring any IDs at this state
           for(size_t l = 0; l < thread.live.size();)
@@ -2427,7 +2626,7 @@ rdcarray<ShaderDebugState> Debugger::ContinueDebug()
             funcRet = thread.callstack.back()->funcCallInstruction;
 
           state.stepIndex = steps;
-          thread.StepNext(&state, workgroup);
+          thread.StepNext(&state, workgroup, activeMask);
 
           if(thread.callstack.size() > prevStackSize)
             instOffs =
@@ -2440,7 +2639,7 @@ rdcarray<ShaderDebugState> Debugger::ContinueDebug()
 
           if(m_DebugInfo.valid)
           {
-            size_t endOffs = instructionOffsets[thread.nextInstruction - 1];
+            size_t endOffs = instructionOffsets[currentPC - 1];
 
             // append any inlined functions to the top of the stack
             InlineData *inlined = m_DebugInfo.lineInline[endOffs];
@@ -2486,10 +2685,80 @@ rdcarray<ShaderDebugState> Debugger::ContinueDebug()
         }
         else
         {
-          thread.StepNext(NULL, workgroup);
+          thread.StepNext(NULL, workgroup, activeMask);
         }
+        threadExecutionStates[threadId] = thread.enteredPoints;
+
+        uint32_t threadConvergeInstruction = thread.convergenceInstruction;
+        // the thread activated a new convergence point
+        if(threadConvergeInstruction != INVALID_EXECUTION_POINT)
+        {
+          if(newConvergeInstruction == INVALID_EXECUTION_POINT)
+          {
+            newConvergeInstruction = threadConvergeInstruction;
+            RDCASSERTNOTEQUAL(newConvergeInstruction, INVALID_EXECUTION_POINT);
+          }
+          else
+          {
+            // All the threads in the tangle should set the same convergence point
+            RDCASSERTEQUAL(threadConvergeInstruction, newConvergeInstruction);
+          }
+          ++countConvergePointThreads;
+        }
+        uint32_t threadFunctionReturnPoint = thread.functionReturnPoint;
+        // the thread activated a new function return point
+        if(threadFunctionReturnPoint != INVALID_EXECUTION_POINT)
+        {
+          if(newFunctionReturnPoint == INVALID_EXECUTION_POINT)
+          {
+            newFunctionReturnPoint = threadFunctionReturnPoint;
+            RDCASSERTNOTEQUAL(newFunctionReturnPoint, INVALID_EXECUTION_POINT);
+          }
+          else
+          {
+            // All the threads in the tangle should set the same function return point
+            RDCASSERTEQUAL(threadFunctionReturnPoint, newFunctionReturnPoint);
+          }
+          ++countFunctionReturnThreads;
+        }
+
+        if(thread.Finished())
+          tangle.SetThreadDead(threadId);
+
+        if(thread.diverged)
+          ++countDivergedThreads;
+      }
+      for(size_t lane = 0; lane < workgroup.size(); lane++)
+      {
+        if(activeMask[lane])
+          workgroup[lane].currentInstruction = workgroup[lane].nextInstruction;
+      }
+      if(countConvergePointThreads)
+      {
+        // all the active threads should have a convergence point if any have one
+        RDCASSERTEQUAL(countConvergePointThreads, countActiveThreads);
+        tangle.AddMergePoint(newConvergeInstruction);
+      }
+      if(countFunctionReturnThreads)
+      {
+        // all the active threads should have a function return point if any have one
+        RDCASSERTEQUAL(countFunctionReturnThreads, countActiveThreads);
+        tangle.AddFunctionReturnPoint(newFunctionReturnPoint);
+      }
+      if(countDivergedThreads)
+      {
+        // all the active threads should have diverged if any diverges
+        RDCASSERTEQUAL(countDivergedThreads, countActiveThreads);
+        tangle.SetDiverged(true);
       }
     }
+    if(!anyActiveThreads)
+    {
+      active.dead = true;
+      controlFlow.UpdateState(threadExecutionStates);
+      RDCERR("No active threads in any tangle, killing active thread to terminate the debugger");
+    }
+    controlFlow.UpdateState(threadExecutionStates);
   }
 
   return ret;
@@ -3292,82 +3561,6 @@ rdcstr Debugger::GetHumanName(Id id)
   return name;
 }
 
-void Debugger::CalcActiveMask(rdcarray<bool> &activeMask)
-{
-  // one bool per workgroup thread
-  activeMask.resize(workgroup.size());
-
-  // mark any threads that have finished as inactive, otherwise they're active
-  for(size_t i = 0; i < workgroup.size(); i++)
-    activeMask[i] = !workgroup[i].Finished();
-
-  // only pixel shaders automatically converge workgroups, compute shaders need explicit sync
-  if(stage != ShaderStage::Pixel)
-    return;
-
-  // otherwise we need to make sure that control flow which converges stays in lockstep so that
-  // derivatives etc are still valid. While diverged, we don't have to keep threads in lockstep
-  // since using derivatives is invalid.
-  //
-  // We take advantage of SPIR-V's structured control flow. We only ever diverge at a branch
-  // instruction, and the preceeding OpLoopMerge/OpSelectionMerge.
-  //
-  // So the scheme is as follows:
-  // * If we haven't diverged and all threads have the same nextInstruction, we're still uniform so
-  //   continue in lockstep.
-  // * As soon as they differ, we've diverged. Check the last mergeBlock that was specified - we
-  //   won't be uniform again until all threads reach that block.
-  // * Once we've diverged, any threads which are NOT in the merge block are active, and any threads
-  //   which are in it are inactive. This causes them to pause and wait for others to catch up
-  //   until the point where all threads are in the merge block at which point we've converged and
-  //   can go back to uniformity.
-
-  // if we're waiting on a converge block to be reached, we've diverged previously.
-  bool wasDiverged = convergeBlock != Id();
-
-  // see if we've diverged by starting procesing different next instructions
-  bool diverged = false;
-  for(size_t i = 1; !diverged && i < workgroup.size(); i++)
-    diverged |= (workgroup[0].nextInstruction != workgroup[i].nextInstruction);
-
-  if(!wasDiverged && diverged)
-  {
-    // if we've newly diverged, all workgroups should have the same merge block - the point where we
-    // become uniform again.
-    convergeBlock = workgroup[0].mergeBlock;
-    for(size_t i = 1; i < workgroup.size(); i++)
-      RDCASSERT(!activeMask[i] || convergeBlock == workgroup[i].mergeBlock);
-  }
-
-  if(wasDiverged || diverged)
-  {
-    // for every thread, turn it off if it's in the converge block
-    rdcarray<bool> inConverge;
-    inConverge.resize(activeMask.size());
-    for(size_t i = 0; i < workgroup.size(); i++)
-      inConverge[i] = (!workgroup[i].callstack.empty() &&
-                       workgroup[i].callstack.back()->curBlock == convergeBlock);
-
-    // is any thread active, but not converged?
-    bool anyActiveNotConverged = false;
-    for(size_t i = 0; i < workgroup.size(); i++)
-      anyActiveNotConverged |= activeMask[i] && !inConverge[i];
-
-    if(anyActiveNotConverged)
-    {
-      // if so, then only non-converged threads are active right now
-      for(size_t i = 0; i < workgroup.size(); i++)
-        activeMask[i] &= !inConverge[i];
-    }
-    else
-    {
-      // otherwise we can leave the active mask as is, forget the convergence point, and allow
-      // everything to run as normal
-      convergeBlock = Id();
-    }
-  }
-}
-
 void Debugger::AllocateVariable(Id id, Id typeId, ShaderVariable &outVar)
 {
   // allocs should always be pointers
@@ -3513,8 +3706,7 @@ uint32_t Debugger::WalkVariable(
     }
     case DataType::PointerType:
     {
-      RDCASSERT((dataTypes[type.id].pointerType.storage == StorageClass::PhysicalStorageBuffer) ||
-                (dataTypes[type.id].pointerType.storage == StorageClass::PhysicalStorageBufferEXT));
+      RDCASSERT(dataTypes[type.id].pointerType.storage == StorageClass::PhysicalStorageBuffer);
       if(outVar)
       {
         outVar->type = VarType::GPUPointer;
@@ -3541,201 +3733,6 @@ uint32_t Debugger::WalkVariable(
 
   // for auto-assigning locations, we return the number of locations
   return numLocations;
-}
-
-template <typename FloatType>
-static void ApplyDerivative(uint32_t activeLaneIndex, uint32_t quadIndex, FloatType *dst,
-                            DebugAPIWrapper::DerivativeDeltas &derivs)
-{
-  // We make the assumption that the coarse derivatives are generated from (0,0) in the quad, and
-  // fine derivatives are generated from the destination index and its neighbours in X and Y.
-  // This isn't spec'd but we must assume something and this will hopefully get us closest to
-  // reproducing actual results.
-  //
-  // For debugging, we need members of the quad to be able to generate coarse and fine
-  // derivatives.
-  //
-  // For (0,0) we only need the coarse derivatives to get our neighbours (1,0) and (0,1) which
-  // will give us coarse and fine derivatives being identical.
-  //
-  // For the others we will need to use a combination of coarse and fine derivatives to get the
-  // diagonal element in the quad. In the examples below, remember that the quad indices are:
-  //
-  // +---+---+
-  // | 0 | 1 |
-  // +---+---+
-  // | 2 | 3 |
-  // +---+---+
-  //
-  // And that we have definitions of the derivatives:
-  //
-  // ddx_coarse = (1,0) - (0,0)
-  // ddy_coarse = (0,1) - (0,0)
-  //
-  // i.e. the same for all members of the quad
-  //
-  // ddx_fine   = (x,y) - (1-x,y)
-  // ddy_fine   = (x,y) - (x,1-y)
-  //
-  // i.e. the difference to the neighbour of our desired invocation (the one we have the actual
-  // inputs for, from gathering above).
-  //
-  // So e.g. if our thread is at (1,1) destIdx = 3
-  //
-  // (1,0) = (1,1) - ddx_fine
-  // (0,1) = (1,1) - ddy_fine
-  // (0,0) = (1,1) - ddy_fine - ddx_coarse
-  //
-  // and ddy_coarse is unused. For (1,0) destIdx = 1:
-  //
-  // (1,1) = (1,0) + ddy_fine
-  // (0,1) = (1,0) - ddx_coarse + ddy_coarse
-  // (0,0) = (1,0) - ddx_coarse
-  //
-  // and ddx_fine is unused (it's identical to ddx_coarse anyway)
-
-  // in the diagrams below * marks the active lane index.
-  //
-  //   V and ^ == coarse ddy
-  //   , and ` == fine ddy
-  //   < and > == coarse ddx
-  //   { and } == fine ddx
-  //
-  // We are basically making one or two cardinal direction moves from the starting point
-  // (activeLaneIndex) to the end point (quadIndex).
-  RDCASSERTNOTEQUAL(activeLaneIndex, quadIndex);
-
-#define ADD_DERIV(src)       \
-  for(int i = 0; i < 4; i++) \
-    dst[i] += comp<FloatType>(src, i);
-#define SUB_DERIV(src)       \
-  for(int i = 0; i < 4; i++) \
-    dst[i] -= comp<FloatType>(src, i);
-
-  switch(activeLaneIndex)
-  {
-    case 0:
-    {
-      // +---+---+
-      // |*0 > 1 |
-      // +-V-+-V-+
-      // | 2 | 3 |
-      // +---+---+
-      switch(quadIndex)
-      {
-        case 0: break;
-        case 1: ADD_DERIV(derivs.ddxcoarse); break;
-        case 2: ADD_DERIV(derivs.ddycoarse); break;
-        case 3:
-          ADD_DERIV(derivs.ddxcoarse);
-          ADD_DERIV(derivs.ddycoarse);
-          break;
-        default: break;
-      }
-      break;
-    }
-    case 1:
-    {
-      // we need to use fine to get from 1 to 3 as coarse only ever involves 0->1 and 0->2
-      // +---+---+
-      // | 0 < 1*|
-      // +-V-+-,-+
-      // | 2 | 3 |
-      // +---+---+
-      switch(quadIndex)
-      {
-        case 0: SUB_DERIV(derivs.ddxcoarse); break;
-        case 1: break;
-        case 2:
-          SUB_DERIV(derivs.ddxcoarse);
-          ADD_DERIV(derivs.ddycoarse);
-          break;
-        case 3: ADD_DERIV(derivs.ddyfine); break;
-        default: break;
-      }
-      break;
-    }
-    case 2:
-    {
-      // +---+---+
-      // | 0 > 1 |
-      // +-^-+---+
-      // |*2 } 3 |
-      // +---+---+
-      switch(quadIndex)
-      {
-        case 0: SUB_DERIV(derivs.ddycoarse); break;
-        case 1:
-          SUB_DERIV(derivs.ddycoarse);
-          ADD_DERIV(derivs.ddxcoarse);
-          break;
-        case 2: break;
-        case 3: ADD_DERIV(derivs.ddxfine); break;
-        default: break;
-      }
-      break;
-    }
-    case 3:
-    {
-      // +---+---+
-      // | 0 < 1 |
-      // +---+-`-+
-      // | 2 { 3*|
-      // +---+---+
-      switch(quadIndex)
-      {
-        case 0:
-          SUB_DERIV(derivs.ddyfine);
-          SUB_DERIV(derivs.ddxcoarse);
-          break;
-        case 1: SUB_DERIV(derivs.ddyfine); break;
-        case 2: SUB_DERIV(derivs.ddxfine); break;
-        case 3: break;
-        default: break;
-      }
-      break;
-    }
-    default: break;
-  }
-}
-
-uint32_t Debugger::ApplyDerivatives(uint32_t quadIndex, const Decorations &curDecorations,
-                                    uint32_t location, const DataType &inType, ShaderVariable &outVar)
-{
-  // only floats have derivatives
-  if(outVar.type == VarType::Float || outVar.type == VarType::Half || outVar.type == VarType::Double)
-  {
-    ShaderBuiltin builtin = ShaderBuiltin::Undefined;
-    if(curDecorations.flags & Decorations::HasBuiltIn)
-      builtin = MakeShaderBuiltin(stage, curDecorations.builtIn);
-
-    uint32_t component = 0;
-    for(const DecorationAndParamData &dec : curDecorations.others)
-    {
-      if(dec.value == Decoration::Component)
-      {
-        component = dec.component;
-        break;
-      }
-    }
-
-    if(curDecorations.flags & Decorations::HasLocation)
-      location = curDecorations.location;
-
-    DebugAPIWrapper::DerivativeDeltas derivs =
-        apiWrapper->GetDerivative(builtin, location, component, outVar.type);
-
-    if(outVar.type == VarType::Float)
-      ApplyDerivative<float>(activeLaneIndex, quadIndex, outVar.value.f32v.data(), derivs);
-    else if(outVar.type == VarType::Half)
-      ApplyDerivative<half_float::half>(activeLaneIndex, quadIndex,
-                                        (half_float::half *)outVar.value.f16v.data(), derivs);
-    else if(outVar.type == VarType::Double)
-      ApplyDerivative<double>(activeLaneIndex, quadIndex, outVar.value.f64v.data(), derivs);
-  }
-
-  // each row consumes a new location
-  return outVar.rows;
 }
 
 bool Debugger::IsDebugExtInstSet(Id id) const
@@ -3769,6 +3766,10 @@ void Debugger::PreParse(uint32_t maxId)
 void Debugger::PostParse()
 {
   Processor::PostParse();
+
+  for(std::function<void()> &f : m_DebugInfo.deferredMembers)
+    f();
+  m_DebugInfo.deferredMembers.clear();
 
   // declare pointerTypes for all declared physical pointer types. This will match the reflection
   for(auto it = dataTypes.begin(); it != dataTypes.end(); ++it)
@@ -3820,6 +3821,31 @@ void Debugger::PostParse()
   }
 
   memberNames.clear();
+}
+
+void Debugger::SetDebugTypeMember(const OpShaderDbg &member, TypeData &resultType, size_t memberIndex)
+{
+  rdcstr memberName;
+  Id memberType;
+  uint32_t memberOffset = 0;
+
+  switch(member.inst)
+  {
+    case ShaderDbg::TypeMember:
+      memberName = strings[member.arg<Id>(0)];
+      memberType = member.arg<Id>(1);
+      memberOffset = EvaluateConstant(member.arg<Id>(5), {}).value.u32v[0];
+      break;
+    case ShaderDbg::Function:
+      memberName = strings[member.arg<Id>(0)];
+      memberType = member.arg<Id>(1);
+      break;
+    case ShaderDbg::TypeInheritance: memberName = "Inheritence"; break;
+    default: RDCERR("Unhandled DebugTypeComposite entry %u", member.inst);
+  }
+
+  resultType.structMembers[memberIndex] = {memberName, memberType};
+  resultType.memberOffsets[memberIndex] = memberOffset;
 }
 
 void Debugger::RegisterOp(Iter it)
@@ -4018,30 +4044,28 @@ void Debugger::RegisterOp(Iter it)
           // ignore arg 7 size
           // ignore arg 8 flags
 
+          TypeData &resultType = m_DebugInfo.types[dbg.result];
           for(uint32_t i = 9; i < dbg.params.size(); i++)
           {
-            OpShaderDbg member(GetID(dbg.arg<Id>(i)));
+            resultType.structMembers.push_back({});
+            resultType.memberOffsets.push_back(0);
+            size_t memberIndex = resultType.structMembers.size() - 1;
 
-            rdcstr memberName;
-            Id memberType;
-            uint32_t memberOffset = 0;
-            switch(member.inst)
+            Id memberId = dbg.arg<Id>(i);
+            ConstIter memberIt = GetID(memberId);
+
+            if(!memberIt)
             {
-              case ShaderDbg::TypeMember:
-                memberName = strings[member.arg<Id>(0)];
-                memberType = member.arg<Id>(1);
-                memberOffset = EvaluateConstant(member.arg<Id>(5), {}).value.u32v[0];
-                break;
-              case ShaderDbg::TypeFunction:
-                memberName = strings[member.arg<Id>(0)];
-                memberType = member.arg<Id>(1);
-                break;
-              case ShaderDbg::TypeInheritance: memberName = "Inheritence"; break;
-              default: RDCERR("Unhandled DebugTypeComposite entry %u", member.inst);
+              m_DebugInfo.deferredMembers.push_back(
+                  [this, resultId = dbg.result, memberIndex, memberId]() {
+                    SetDebugTypeMember(OpShaderDbg(GetID(memberId)), m_DebugInfo.types[resultId],
+                                       memberIndex);
+                  });
+
+              continue;
             }
 
-            m_DebugInfo.types[dbg.result].structMembers.push_back({memberName, memberType});
-            m_DebugInfo.types[dbg.result].memberOffsets.push_back(memberOffset);
+            SetDebugTypeMember(OpShaderDbg(memberIt), resultType, memberIndex);
           }
 
           name = tagString[tag % 3] + name;

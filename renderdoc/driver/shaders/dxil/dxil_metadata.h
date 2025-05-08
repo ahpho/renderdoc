@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2024 Baldur Karlsson
+ * Copyright (c) 2019-2025 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -152,6 +152,13 @@ struct PSVData2 : public PSVData1
   static const size_t ExpectedSize = sizeof(PSVData1) + 3 * sizeof(uint32_t);
 };
 
+struct PSVData3 : public PSVData2
+{
+  rdcstr entryName;
+
+  static const size_t ExpectedSize = sizeof(PSVData2) + sizeof(uint32_t);
+};
+
 struct PSVResource0
 {
   DXILResourceType type;
@@ -200,14 +207,15 @@ struct PSVSignature0
 
 using PSVSignature = PSVSignature0;
 
-struct PSVData : public PSVData2
+struct PSVData : public PSVData3
 {
   enum class Version
   {
     Version0 = 0,
     Version1,
     Version2,
-    VersionLatest = Version2,
+    Version3,
+    VersionLatest = Version3,
   } version = Version::VersionLatest;
 
   enum class ResourceVersion
@@ -466,6 +474,16 @@ struct RDATData
   rdcarray<ResourceInfo> resourceInfo;
   rdcarray<FunctionInfo2> functionInfo;
   rdcarray<SubobjectInfo> subobjectsInfo;
+
+  rdcarray<ShaderEntryPoint> GetEntryPoints() const
+  {
+    rdcarray<ShaderEntryPoint> ret;
+    ret.reserve(functionInfo.size());
+    for(const FunctionInfo2 &func : functionInfo)
+      if(func.type != DXBC::ShaderType::Library)
+        ret.push_back({func.name, GetShaderStage(func.type)});
+    return ret;
+  }
 };
 
 };
