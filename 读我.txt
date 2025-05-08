@@ -1,0 +1,2 @@
+windows构建：visual studio=2022、platform toolset=v140、winsdk=10.0.18362
+android构建：ubuntu 20.04、ndk=android-ndk-r21e
