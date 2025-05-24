@@ -1,0 +1,16 @@
+# Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+.vs/
+.git/
+.github/
+build_arm64-v8a/
+build_armeabi-v7a/
+build_x86/
+build_x86_64/
+x64/
+x86/
+*.dll
+*.lib
+*.exp
+*.so
+*.a
+*.dylib
