@@ -92,9 +92,10 @@ void Editor::Prepare()
   // offsets by hand as addWords doesn't handle empty sections properly (it thinks we're inserting
   // into the later section by offset since the offsets overlap). That's why we're adding these
   // padding nops in the first place!
+  // Insert a nop at the start of the Types section to allow adding types at the start (after the nop)
   for(uint32_t s = 0; s < Section::Count; s++)
   {
-    if(m_Sections[s].startOffset == m_Sections[s].endOffset)
+    if((m_Sections[s].startOffset == m_Sections[s].endOffset) || (s == Section::Types))
     {
       m_SPIRV.insert(m_Sections[s].startOffset, OpNopWord);
       m_Sections[s].endOffset++;
@@ -159,6 +160,46 @@ Editor::~Editor()
     AddConstant(op);
   m_DeferredConstants.clear();
 
+  rdcarray<Operation> vectorTypes;
+  // Capture all existing vector types
+  // Do this before scalar types because creating a vector declaration will also add the scalar type
+  rdcarray<Id> idsToRemove;
+  for(auto it = vectorTypeToId.begin(); it != vectorTypeToId.end(); ++it)
+  {
+    Id id = it->second;
+    idsToRemove.push_back(id);
+
+    Vector type(it->first);
+    Operation op = MakeDeclaration(type);
+    op[1] = id.value();
+    vectorTypes.push_back(op);
+  }
+
+  rdcarray<Operation> scalarTypes;
+  // Capture all existing scalar types
+  for(auto it = scalarTypeToId.begin(); it != scalarTypeToId.end(); ++it)
+  {
+    Id id = it->second;
+    idsToRemove.push_back(id);
+
+    Scalar type(it->first);
+    Operation op = MakeDeclaration(type);
+    op[1] = id.value();
+    scalarTypes.push_back(op);
+  }
+
+  // Remove existing scalar and vector types
+  for(Id id : idsToRemove)
+    Remove(GetID(id));
+
+  // Add vector then scalar types to ensure that vector types are declared after scalar types
+  // scalar and vector types are added to the start of the type section
+  for(const Operation &op : vectorTypes)
+    AddType(op);
+
+  for(const Operation &op : scalarTypes)
+    AddType(op);
+
   m_ExternalSPIRV.clear();
   m_ExternalSPIRV.reserve(m_SPIRV.size());
 
@@ -211,6 +252,13 @@ void Editor::DecorateStorageBufferStruct(Id id)
   }
 }
 
+void Editor::InsertOperation(const Operation &op, size_t offset)
+{
+  op.insertInto(m_SPIRV, offset);
+  addWords(offset, op.size());
+  RegisterOp(Iter(m_SPIRV, offset));
+}
+
 void Editor::SetName(Id id, const rdcstr &name)
 {
   Operation op = OpName(id, name);
@@ -224,9 +272,7 @@ void Editor::SetName(Id id, const rdcstr &name)
       break;
   }
 
-  op.insertInto(m_SPIRV, it.offs());
-  RegisterOp(Iter(m_SPIRV, it.offs()));
-  addWords(it.offs(), op.size());
+  InsertOperation(op, it.offs());
 }
 
 void Editor::SetMemberName(Id id, uint32_t member, const rdcstr &name)
@@ -234,17 +280,13 @@ void Editor::SetMemberName(Id id, uint32_t member, const rdcstr &name)
   Operation op = OpMemberName(id, member, name);
 
   size_t offset = m_Sections[Section::DebugNames].endOffset;
-  op.insertInto(m_SPIRV, offset);
-  RegisterOp(Iter(m_SPIRV, offset));
-  addWords(offset, op.size());
+  InsertOperation(op, offset);
 }
 
 void Editor::AddDecoration(const Operation &op)
 {
   size_t offset = m_Sections[Section::Annotations].endOffset;
-  op.insertInto(m_SPIRV, offset);
-  RegisterOp(Iter(m_SPIRV, offset));
-  addWords(offset, op.size());
+  InsertOperation(op, offset);
 }
 
 void Editor::AddCapability(Capability cap)
@@ -255,9 +297,7 @@ void Editor::AddCapability(Capability cap)
 
   // insert the operation at the very start
   Operation op(Op::Capability, {(uint32_t)cap});
-  op.insertInto(m_SPIRV, FirstRealWord);
-  RegisterOp(Iter(m_SPIRV, FirstRealWord));
-  addWords(FirstRealWord, op.size());
+  InsertOperation(op, FirstRealWord);
 }
 
 bool Editor::HasCapability(Capability cap)
@@ -285,18 +325,13 @@ void Editor::AddExtension(const rdcstr &extension)
   memcpy(&uintName[0], extension.c_str(), sz);
 
   Operation op(Op::Extension, uintName);
-  op.insertInto(m_SPIRV, it.offs());
-  RegisterOp(it);
-  addWords(it.offs(), op.size());
+  InsertOperation(op, it.offs());
 }
 
 void Editor::AddExecutionMode(const Operation &mode)
 {
   size_t offset = m_Sections[Section::ExecutionMode].endOffset;
-
-  mode.insertInto(m_SPIRV, offset);
-  RegisterOp(Iter(m_SPIRV, offset));
-  addWords(offset, mode.size());
+  InsertOperation(mode, offset);
 }
 
 Id Editor::HasExtInst(const char *setname)
@@ -336,9 +371,7 @@ Id Editor::ImportExtInst(const char *setname)
   uintName.insert(0, ret.value());
 
   Operation op(Op::ExtInstImport, uintName);
-  op.insertInto(m_SPIRV, it.offs());
-  RegisterOp(it);
-  addWords(it.offs(), op.size());
+  InsertOperation(op, it.offs());
 
   extSets[ret] = setname;
 
@@ -349,10 +382,14 @@ Id Editor::AddType(const Operation &op)
 {
   size_t offset = m_Sections[Section::Types].endOffset;
 
+  // scalar and vector types are added to the start of the type section (after the nop)
+  OpDecoder opdata(op.AsIter());
+  if(opdata.op == Op::TypeVoid || opdata.op == Op::TypeBool || opdata.op == Op::TypeInt ||
+     opdata.op == Op::TypeFloat || opdata.op == Op::TypeVector)
+    offset = m_Sections[Section::Types].startOffset + 1;
+
   Id id = Id::fromWord(op[1]);
-  op.insertInto(m_SPIRV, offset);
-  RegisterOp(Iter(m_SPIRV, offset));
-  addWords(offset, op.size());
+  InsertOperation(op, offset);
   return id;
 }
 
@@ -361,9 +398,7 @@ Id Editor::AddVariable(const Operation &op)
   size_t offset = m_Sections[Section::Variables].endOffset;
 
   Id id = Id::fromWord(op[2]);
-  op.insertInto(m_SPIRV, offset);
-  RegisterOp(Iter(m_SPIRV, offset));
-  addWords(offset, op.size());
+  InsertOperation(op, offset);
   return id;
 }
 
@@ -372,9 +407,7 @@ Id Editor::AddConstant(const Operation &op)
   size_t offset = m_Sections[Section::Constants].endOffset;
 
   Id id = Id::fromWord(op[2]);
-  op.insertInto(m_SPIRV, offset);
-  RegisterOp(Iter(m_SPIRV, offset));
-  addWords(offset, op.size());
+  InsertOperation(op, offset);
   return id;
 }
 
@@ -1208,6 +1241,11 @@ void main() {
       // Functions
       {0x2a4, 0x374},
   };
+
+  // By default the editor will add a nop to the start of the Types section
+  offsets[rdcspv::Section::Types][1] += 4;
+  offsets[rdcspv::Section::Functions][0] += 4;
+  offsets[rdcspv::Section::Functions][1] += 4;
 
   SECTION("Check that SPIR-V is correct with no changes")
   {

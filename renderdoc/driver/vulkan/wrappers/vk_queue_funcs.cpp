@@ -281,8 +281,6 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
 {
   if(IsLoading(m_State))
   {
-    DoSubmit(queue, submitInfo);
-
     AddEvent();
 
     // we're adding multiple events, need to increment ourselves
@@ -290,6 +288,8 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
 
     if(submitInfo.commandBufferInfoCount == 0)
     {
+      DoSubmit(queue, submitInfo);
+
       rdcstr name = StringFormat::Fmt("=> %s: No Command Buffers", basename.c_str());
 
       ActionDescription action;
@@ -304,10 +304,18 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
       m_RootEventID++;
     }
 
-    for(uint32_t c = 0; c < submitInfo.commandBufferInfoCount; c++)
+    // submit command buffers one by one
+    uint32_t numCmds = submitInfo.commandBufferInfoCount;
+    submitInfo.commandBufferInfoCount = 1;
+    for(uint32_t c = 0; c < numCmds; c++)
     {
+      DoSubmit(queue, submitInfo);
+      FlushQ();
+
       ResourceId cmd = GetResourceManager()->GetOriginalID(
-          GetResID(submitInfo.pCommandBufferInfos[c].commandBuffer));
+          GetResID(submitInfo.pCommandBufferInfos[0].commandBuffer));
+
+      submitInfo.pCommandBufferInfos++;
 
       BakedCmdBufferInfo &cmdBufInfo = m_BakedCmdBufferInfo[cmd];
 
@@ -637,6 +645,18 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
   for(size_t i = 0; i < cmdBufNodes.size(); i++)
   {
     VulkanActionTreeNode n = cmdBufNodes[i];
+
+    for(VulkanActionTreeNode::DeferredResourceUsage &def : n.deferredResourceUsage)
+    {
+      if(def.descBufVersionIdx >= m_DescriptorBufferVersions.size())
+      {
+        RDCERR("Invalid deferred resource usage buffer reference");
+        continue;
+      }
+
+      AddUsageForDescriptorBuffers(n, cmdBufInfo.debugMessages, def);
+    }
+
     n.action.eventId += m_RootEventID;
     n.action.actionId += m_RootActionID;
 
@@ -1118,7 +1138,9 @@ void WrappedVulkan::CaptureQueueSubmit(VkQueue queue,
 
       for(auto refit = refs.sparseRefs.begin(); refit != refs.sparseRefs.end(); ++refit)
       {
-        GetResourceManager()->MarkSparseMapReferenced((*refit)->resInfo);
+        // for these which are added as image views, step up to the image (if it's not an identity
+        // pointer) - see declaration of parentResInfo
+        GetResourceManager()->MarkSparseMapReferenced((*refit)->resInfo->parentResInfo);
       }
 
       UpdateImageStates(refs.bindImageStates);

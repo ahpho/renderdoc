@@ -295,6 +295,8 @@ echo "Platform: $PLATFORM";
 echo "Build root: $BUILD_ROOT";
 echo "Repository root: $REPO_ROOT";
 
+export GITHASH=$(cd "${REPO_ROOT}" && git rev-parse HEAD)
+
 if [[ "$TYPE" == "official" ]]; then
 
 	sed -i.bak "s%RENDERDOC_OFFICIAL_BUILD 0%RENDERDOC_OFFICIAL_BUILD 1%" "${REPO_ROOT}"/renderdoc/api/replay/version.h
@@ -304,7 +306,7 @@ if [[ "$TYPE" == "official" ]]; then
 
 else # snapshot
 
-	export GITTAG=$(cd "${REPO_ROOT}" && git rev-parse HEAD)
+	export GITTAG=$GITHASH
 
 fi;
 

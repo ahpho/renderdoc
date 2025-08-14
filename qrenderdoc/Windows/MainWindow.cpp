@@ -1681,6 +1681,11 @@ void MainWindow::LoadInitialLayout()
   }
 }
 
+bool MainWindow::ErrorReportsAllowed()
+{
+  return ui->action_Send_Error_Report->isEnabled();
+}
+
 void MainWindow::RemoveRecentCapture(const QString &filename)
 {
   RemoveRecentFile(m_Ctx.Config().RecentCaptureFiles, filename);
@@ -2848,6 +2853,9 @@ void MainWindow::on_action_Send_Error_Report_triggered()
 
 void MainWindow::sendErrorReport(bool forceCaptureInclusion)
 {
+  if(!ErrorReportsAllowed())
+    return;
+
   rdcstr report;
   RENDERDOC_CreateBugReport(RENDERDOC_GetLogFile(), "", report);
 

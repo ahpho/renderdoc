@@ -923,6 +923,14 @@ void WrappedVulkan::vkCmdWaitEvents(VkCommandBuffer commandBuffer, uint32_t even
     {
       im[i] = pImageMemoryBarriers[i];
       im[i].image = Unwrap(im[i].image);
+
+      // descriptor buffers intercepts all swapchain images during capture so we change any
+      // reference to PRESENT layout into GENERAL since that's what is valid for our image
+      if(DescriptorBuffers())
+      {
+        SanitiseDescriptorBufferImageLayout(im[i].newLayout);
+        SanitiseDescriptorBufferImageLayout(im[i].newLayout);
+      }
     }
 
     SERIALISE_TIME_CALL(ObjDisp(commandBuffer)
@@ -1182,6 +1190,13 @@ void WrappedVulkan::vkCmdSetEvent2(VkCommandBuffer commandBuffer, VkEvent event,
   byte *tempMem = GetTempMemory(GetNextPatchSize(pDependencyInfo));
   VkDependencyInfo *unwrappedInfo = UnwrapStructAndChain(m_State, tempMem, pDependencyInfo);
 
+  for(uint32_t im = 0; im < unwrappedInfo->imageMemoryBarrierCount; im++)
+  {
+    VkImageMemoryBarrier2 &b = (VkImageMemoryBarrier2 &)unwrappedInfo->pImageMemoryBarriers[im];
+    SanitiseDescriptorBufferImageLayout(b.newLayout);
+    SanitiseDescriptorBufferImageLayout(b.newLayout);
+  }
+
   SERIALISE_TIME_CALL(
       ObjDisp(commandBuffer)->CmdSetEvent2(Unwrap(commandBuffer), Unwrap(event), unwrappedInfo));
 
@@ -1346,6 +1361,27 @@ bool WrappedVulkan::Serialise_vkCmdWaitEvents2(SerialiserType &ser, VkCommandBuf
 
       if(commandBuffer != VK_NULL_HANDLE)
       {
+        if(IsLoading(m_State) && evIdx == 0)
+        {
+          bool descBarrier = false;
+
+          for(uint32_t ev = 0; ev < eventCount; ev++)
+          {
+            for(uint32_t i = 0; i < pDependencyInfos[ev].bufferMemoryBarrierCount; i++)
+              if(pDependencyInfos[ev].pBufferMemoryBarriers[i].dstAccessMask &
+                 VK_ACCESS_2_DESCRIPTOR_BUFFER_READ_BIT_EXT)
+                descBarrier = true;
+
+            for(uint32_t i = 0; i < pDependencyInfos[ev].memoryBarrierCount; i++)
+              if(pDependencyInfos[ev].pMemoryBarriers[i].dstAccessMask &
+                 VK_ACCESS_2_DESCRIPTOR_BUFFER_READ_BIT_EXT)
+                descBarrier = true;
+          }
+
+          if(descBarrier)
+            VersionDescriptorBuffers(commandBuffer);
+        }
+
         VkEventCreateInfo evInfo = {
             VK_STRUCTURE_TYPE_EVENT_CREATE_INFO,
             NULL,
@@ -1431,6 +1467,13 @@ void WrappedVulkan::vkCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eve
     {
       ev[i] = Unwrap(pEvents[i]);
       depInfo[i] = *UnwrapStructAndChain(m_State, tempMem, &pDependencyInfos[i]);
+
+      for(uint32_t im = 0; im < depInfo[i].imageMemoryBarrierCount; im++)
+      {
+        VkImageMemoryBarrier2 &b = (VkImageMemoryBarrier2 &)depInfo[i].pImageMemoryBarriers[im];
+        SanitiseDescriptorBufferImageLayout(b.newLayout);
+        SanitiseDescriptorBufferImageLayout(b.newLayout);
+      }
     }
 
     SERIALISE_TIME_CALL(
@@ -1460,6 +1503,118 @@ void WrappedVulkan::vkCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eve
     for(uint32_t i = 0; i < eventCount; i++)
       record->MarkResourceFrameReferenced(GetResID(pEvents[i]), eFrameRef_Read);
   }
+}
+
+template <typename SerialiserType>
+bool WrappedVulkan::Serialise_vkTransitionImageLayoutEXT(
+    SerialiserType &ser, VkDevice device, uint32_t transitionCount,
+    const VkHostImageLayoutTransitionInfo *pTransitions)
+{
+  SERIALISE_ELEMENT(device);
+  SERIALISE_ELEMENT(transitionCount);
+  SERIALISE_ELEMENT_ARRAY(pTransitions, transitionCount);
+  if(transitionCount > 0)
+    ser.Important();
+
+  Serialise_DebugMessages(ser);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  rdcarray<VkHostImageLayoutTransitionInfo> imgBarriers;
+
+  if(IsReplayingAndReading())
+  {
+    for(uint32_t i = 0; i < transitionCount; i++)
+    {
+      if(pTransitions[i].image != VK_NULL_HANDLE)
+      {
+        VkImage image = pTransitions[i].image;
+
+        imgBarriers.push_back(pTransitions[i]);
+        imgBarriers.back().image = Unwrap(image);
+
+        SanitiseOldImageLayout(imgBarriers.back().oldLayout);
+        SanitiseReplayImageLayout(imgBarriers.back().newLayout);
+
+        if(IsActiveReplaying(m_State) &&
+           m_ReplayOptions.optimisation != ReplayOptimisationLevel::Fastest)
+        {
+          if(pTransitions[i].oldLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+          {
+            VkImageLayout newLayout = pTransitions[i].newLayout;
+            SanitiseNewImageLayout(newLayout);
+
+            GetDebugManager()->FillWithDiscardPatternOnHost(
+                device, DiscardType::UndefinedTransition, image, newLayout,
+                pTransitions[i].subresourceRange, {{0, 0}, {65536, 65536}});
+          }
+        }
+      }
+    }
+
+    ObjDisp(device)->TransitionImageLayoutEXT(Unwrap(device), (uint32_t)imgBarriers.size(),
+                                              imgBarriers.data());
+  }
+
+  return true;
+}
+
+VkResult WrappedVulkan::vkTransitionImageLayoutEXT(VkDevice device, uint32_t transitionCount,
+                                                   const VkHostImageLayoutTransitionInfo *pTransitions)
+{
+  SCOPED_DBG_SINK();
+
+  VkResult ret;
+  {
+    byte *memory = GetTempMemory(sizeof(VkHostImageLayoutTransitionInfo) * transitionCount);
+    VkHostImageLayoutTransitionInfo *im = (VkHostImageLayoutTransitionInfo *)memory;
+
+    for(uint32_t i = 0; i < transitionCount; i++)
+    {
+      im[i] = pTransitions[i];
+      im[i].image = Unwrap(im[i].image);
+    }
+
+    SERIALISE_TIME_CALL(
+        ret = ObjDisp(device)->TransitionImageLayoutEXT(Unwrap(device), transitionCount, im));
+  }
+
+  if(IsActiveCapturing(m_State))
+  {
+    CACHE_THREAD_SERIALISER();
+
+    SCOPED_SERIALISE_CHUNK(VulkanChunk::vkTransitionImageLayout);
+    Serialise_vkTransitionImageLayoutEXT(ser, device, transitionCount, pTransitions);
+
+    m_FrameCaptureRecord->AddChunk(scope.Get());
+
+    for(uint32_t i = 0; i < transitionCount; ++i)
+    {
+      const VkHostImageLayoutTransitionInfo &transition = pTransitions[i];
+
+      // Since this transition is done on the host, record a barrier for this image and immediately
+      // apply it.
+
+      // Convert the transition information to VkImageMemoryBarrier to use the existing helpers.
+      VkImageMemoryBarrier barrier;
+      barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+      // Access masks are unused by RecordBarriers() and UpdateImageStates().
+      barrier.srcAccessMask = 0;
+      barrier.dstAccessMask = 0;
+      barrier.oldLayout = transition.oldLayout;
+      barrier.newLayout = transition.newLayout;
+      barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      barrier.image = transition.image;
+      barrier.subresourceRange = transition.subresourceRange;
+
+      rdcflatmap<ResourceId, ImageState> imageStates;
+      GetResourceManager()->RecordBarriers(imageStates, VK_QUEUE_FAMILY_IGNORED, 1, &barrier);
+      UpdateImageStates(imageStates);
+    }
+  }
+
+  return ret;
 }
 
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
@@ -1559,3 +1714,7 @@ INSTANTIATE_FUNCTION_SERIALISED(void, vkCmdResetEvent2, VkCommandBuffer commandB
 INSTANTIATE_FUNCTION_SERIALISED(void, vkCmdWaitEvents2, VkCommandBuffer commandBuffer,
                                 uint32_t eventCount, const VkEvent *pEvents,
                                 const VkDependencyInfo *pDependencyInfos);
+
+INSTANTIATE_FUNCTION_SERIALISED(VkResult, vkTransitionImageLayoutEXT, VkDevice device,
+                                uint32_t transitionCount,
+                                const VkHostImageLayoutTransitionInfo *pTransitions);

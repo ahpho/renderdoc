@@ -1247,6 +1247,43 @@ void ThreadState::SetDst(ShaderDebugState *state, const Operand &dstoper, const 
   }
 }
 
+void ThreadState::GetGroupsharedSrc(uint32_t gsmIndex, const uint32_t byteOffset,
+                                    const uint32_t countBytes, uint32_t *data) const
+{
+  const uint32_t gsmStride = global.groupshared[gsmIndex].bytestride;
+
+  const uint32_t regIndex = byteOffset / gsmStride;
+  const uint32_t component = AlignUp4(byteOffset % gsmStride) / 4;
+
+  uint32_t idx = program->GetRegisterIndex(TYPE_THREAD_GROUP_SHARED_MEMORY, gsmIndex);
+  if(idx < variables.size())
+  {
+    const ShaderVariable &var = variables[idx].members[regIndex];
+    if(gsmStride <= 16)
+    {
+      RDCASSERT((component + countBytes / sizeof(uint32_t)) <= 4, component, countBytes);
+      // if the stride is less than a float4, the groupshared storage is a simple array of N
+      // float4 registers so we can just assign
+      for(uint32_t i = 0; i < countBytes / sizeof(uint32_t); i++)
+        data[i] = var.value.u32v[component + i];
+    }
+    else
+    {
+      // otherwise each entry in the groupshared storage array is a series of N component-sized registers
+      for(uint32_t i = 0; i < countBytes / sizeof(uint32_t); i++)
+        data[i] = var.members[component + i].value.u32v[0];
+    }
+  }
+  else
+  {
+    RDCERR("Couldn't find groupshared register %u", gsmIndex);
+    data[0] = 0U;
+    data[1] = 0U;
+    data[2] = 0U;
+    data[3] = 0U;
+  }
+}
+
 void ThreadState::SetGroupsharedDst(ShaderDebugState *state, uint32_t gsmIndex,
                                     const uint32_t byteOffset, ShaderVariable &val)
 {
@@ -2644,9 +2681,10 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
             {
               // otherwise each entry in the groupshared storage array is a series of N
               // component-sized registers so unroll that here and copy into each's first component
-              RDCASSERT(gsmStride <= v->members[i].members.size(), gsmStride,
+              uint32_t countElems = gsmStride / sizeof(uint32_t);
+              RDCASSERT(countElems <= v->members[i].members.size(), countElems,
                         v->members[i].members.size());
-              for(uint32_t c = 0; c < gsmStride; c += sizeof(uint32_t))
+              for(uint32_t c = 0; c < countElems; ++c)
               {
                 memcpy(v->members[i].members[c].value.u32v.data(), data, sizeof(uint32_t));
 
@@ -3365,6 +3403,9 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
           fmt.stride = 0;
         }
         texData = false;
+
+        if(op.operation == OPCODE_LD_RAW || op.operation == OPCODE_STORE_RAW)
+          stride = 1;
       }
       else
       {
@@ -3540,6 +3581,14 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
 
         if(load)
         {
+          uint32_t gsmData[4];
+          if(gsm && state)
+          {
+            // The active thread reads GSM data from the local GSM cache
+            GetGroupsharedSrc(resIndex, uint32_t(data - gsm_base), fmt.numComps * fmt.byteWidth,
+                              gsmData);
+            data = (byte *)gsmData;
+          }
           ShaderVariable result = TypedUAVLoad(fmt, data);
 
           // clamp the result to any out of bounds loads so that we don't fill in with w=1
@@ -4557,6 +4606,7 @@ BindingSlot GetBindingSlotForIdentifier(const Program &program, OperandType decl
   // register space (which can be any value, as specified in HLSL and the root signature).
 
   // TODO: Need to test resource arrays to ensure correct behavior with SM 5.1 here
+  // TODO: writes to GSM could update local GSM and then the global cache (currently the other way around)
 
   if(program.IsShaderModel51())
   {
@@ -5330,7 +5380,10 @@ rdcarray<ShaderDebugState> InterpretDebugger::ContinueDebug(DXBCDebug::DebugAPIW
     steps++;
   }
 
-  rdcarray<DXBCDebug::ThreadState> oldworkgroup = workgroup;
+  rdcarray<DXBCDebug::ThreadState> oldworkgroup;
+
+  if(active.GetType() == DXBC::ShaderType::Pixel)
+    oldworkgroup = workgroup;
 
   rdcarray<bool> activeMask;
 
@@ -5344,8 +5397,11 @@ rdcarray<ShaderDebugState> InterpretDebugger::ContinueDebug(DXBCDebug::DebugAPIW
     // set up the old workgroup so that cross-workgroup/cross-quad operations (e.g. DDX/DDY) get
     // consistent results even when we step the quad out of order. Otherwise if an operation reads
     // and writes from the same register we'd trash data needed for other workgroup elements.
-    for(size_t i = 0; i < oldworkgroup.size(); i++)
-      oldworkgroup[i].variables = workgroup[i].variables;
+    if(active.GetType() == DXBC::ShaderType::Pixel)
+    {
+      for(size_t i = 0; i < oldworkgroup.size(); i++)
+        oldworkgroup[i].variables = workgroup[i].variables;
+    }
 
     // calculate the current mask of which threads are active
     CalcActiveMask(activeMask);

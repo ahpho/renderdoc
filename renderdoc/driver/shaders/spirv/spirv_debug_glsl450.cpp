@@ -413,8 +413,8 @@ ShaderVariable ModfStruct(ThreadState &state, uint32_t, const rdcarray<Id> &para
   ShaderVariable var = state.GetSrc(params[0]);
 
   ShaderVariable ret;
-  ret.rows = 1;
-  ret.columns = 1;
+  ret.rows = 0;
+  ret.columns = 0;
   ret.type = VarType::Struct;
   ret.members = {var, var};
   ret.members[0].name = "_child0";
@@ -786,8 +786,8 @@ ShaderVariable FrexpStruct(ThreadState &state, uint32_t, const rdcarray<Id> &par
   ShaderVariable var = state.GetSrc(params[0]);
 
   ShaderVariable ret;
-  ret.rows = 1;
-  ret.columns = 1;
+  ret.rows = 0;
+  ret.columns = 0;
   ret.type = VarType::Struct;
   ret.members = {var, var};
   ret.members[0].name = "_child0";

@@ -2416,7 +2416,7 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
 
   m_Output = NULL;
 
-  memset(&m_Config, 0, sizeof(m_Config));
+  m_Config = MeshDisplay();
   m_Config.type = MeshDataStage::VSIn;
   m_Config.wireframeDraw = true;
   m_Config.exploderScale = 1.0f;

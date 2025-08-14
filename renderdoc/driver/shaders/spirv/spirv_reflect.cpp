@@ -831,10 +831,7 @@ void Reflector::PostParse()
           case Dim::Max: name = "Invalid"; break;
         }
 
-        name = ToStr(img.retType.Type()) + name;
-
-        if(img.sampled == 2 && img.dim != Dim::SubpassData)
-          name = "Storage" + name;
+        name = ToStr(img.retType.Type()) + ", " + name;
 
         if(img.ms)
           name += "MS";
@@ -842,6 +839,8 @@ void Reflector::PostParse()
           name += "Array";
 
         type.name = StringFormat::Fmt("Image<%s>", name.c_str());
+        if(img.sampled == 2 && img.dim != Dim::SubpassData)
+          type.name = "Storage" + type.name;
       }
       else if(type.type == DataType::SamplerType)
       {

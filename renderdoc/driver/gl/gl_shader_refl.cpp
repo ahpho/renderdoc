@@ -293,6 +293,13 @@ GLuint MakeSeparableShaderProgram(WrappedOpenGL &drv, GLenum type, const rdcarra
           src.assign(outstr.c_str(), outstr.size());
         }
 
+        int idx = src.find("\nout float gl_CullDistance");
+        if(idx > 0)
+          src.insert(idx + 1, "//");
+        idx = src.find("\nout float gl_ClipDistance");
+        if(idx > 0)
+          src.insert(idx + 1, "//");
+
         if(!success)
         {
           RDCLOG("glslang failed:\n\n%s\n\n%s", sh.getInfoLog(), sh.getInfoDebugLog());

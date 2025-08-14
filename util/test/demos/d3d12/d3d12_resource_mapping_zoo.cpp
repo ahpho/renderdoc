@@ -256,8 +256,10 @@ float4 main(float4 pos : SV_Position) : SV_Target0
                                  .InitialState(D3D12_RESOURCE_STATE_COPY_DEST)
                                  .UAV();
     MakeSRV(res1).CreateGPU(56);
-    ID3D12ResourcePtr res2 =
-        MakeTexture(DXGI_FORMAT_R8G8B8A8_UNORM, 2, 2).Mips(1).InitialState(D3D12_RESOURCE_STATE_COPY_DEST);
+    ID3D12ResourcePtr res2 = MakeTexture(DXGI_FORMAT_R8G8B8A8_UNORM, 2, 2)
+                                 .Mips(1)
+                                 .InitialState(D3D12_RESOURCE_STATE_COPY_DEST)
+                                 .UAV();
     D3D12ViewCreator srvRes2 = MakeSRV(res2);
     srvRes2.CreateGPU(57);
     ID3D12ResourcePtr res3 =
@@ -265,6 +267,7 @@ float4 main(float4 pos : SV_Position) : SV_Target0
     D3D12ViewCreator srvRes3 = MakeSRV(res3);
     srvRes3.CreateGPU(58);
     MakeUAV(res1).CreateGPU(20);
+    MakeUAV(res2).CreateGPU(21);
 
     // Create a few unused SRVs so that a bindless descriptor table has a lot of things to report
     srvRes2.CreateGPU(500);
@@ -327,8 +330,8 @@ float4 main(float4 pos : SV_Position) : SV_Target0
         tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 0, 1, 56),
         tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 1, 2, 57),
         tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, UINT_MAX, 30),
-        tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 0, 1, 56),
-        tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 1, 1, 57),
+        tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 0, 1, 20),
+        tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 1, 1, 21),
         cbvParam(D3D12_SHADER_VISIBILITY_PIXEL, 0, 0),
         cbvParam(D3D12_SHADER_VISIBILITY_PIXEL, 0, 1),
         tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 8, 0),

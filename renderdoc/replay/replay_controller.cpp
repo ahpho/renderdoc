@@ -529,7 +529,7 @@ rdcarray<EventUsage> ReplayController::GetUsage(ResourceId id)
 
   id = m_pDevice->GetLiveID(id);
   if(id == ResourceId())
-    return rdcarray<EventUsage>();
+    return {EventUsage(0, ResourceUsage::Unused)};
   return m_pDevice->GetUsage(id);
 }
 
@@ -1754,7 +1754,8 @@ rdcarray<ShaderVariable> ReplayController::GetCBufferVariableContents(
     buffer = m_pDevice->GetLiveID(buffer);
     if(buffer != ResourceId())
     {
-      m_pDevice->GetBufferData(buffer, offset, length, data);
+      if(length > 0)
+        m_pDevice->GetBufferData(buffer, offset, length, data);
       FatalErrorCheck();
     }
   }
@@ -2315,30 +2316,31 @@ void ReplayController::FetchPipelineState(uint32_t eventId)
     {
       if(store != ResourceId())
       {
+        store = m_pDevice->GetLiveID(store);
         descs.append(m_pDevice->GetDescriptors(store, ranges));
         samps.append(m_pDevice->GetSamplerDescriptors(store, ranges));
       }
 
-      store = m_pDevice->GetLiveID(acc.descriptorStore);
+      store = acc.descriptorStore;
       ranges.clear();
     }
 
     // if the last range is contiguous with this access, append this access as a new range to query
     if(!ranges.empty() && ranges.back().descriptorSize == acc.byteSize &&
-       ranges.back().offset + ranges.back().descriptorSize == acc.byteOffset)
+       ranges.back().offset + ranges.back().descriptorSize == acc.byteOffset &&
+       ranges.back().type == acc.type)
     {
       ranges.back().count++;
       continue;
     }
 
-    DescriptorRange range;
-    range.offset = acc.byteOffset;
-    range.descriptorSize = acc.byteSize;
+    DescriptorRange range = acc;
     ranges.push_back(range);
   }
 
   if(store != ResourceId())
   {
+    store = m_pDevice->GetLiveID(store);
     descs.append(m_pDevice->GetDescriptors(store, ranges));
     samps.append(m_pDevice->GetSamplerDescriptors(store, ranges));
   }

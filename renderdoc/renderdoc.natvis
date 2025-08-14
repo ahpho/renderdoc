@@ -73,6 +73,32 @@
       <Item Name="second" ExcludeView="simple">second</Item>
     </Expand>
   </Type>
+  <Type Name="rdcbytetrie&lt;*&gt;::NodeOrLeaf">
+    <DisplayString Condition="(v._trie &amp; 0xC000)==0xC000 &amp;&amp; (v._trie &amp; 0x2000)">FatNode = {v}</DisplayString>
+    <DisplayString Condition="(v._trie &amp; 0xC000)==0x8000 &amp;&amp; (v._trie &amp; 0x2000)">Node8 = {v}</DisplayString>
+    <DisplayString Condition="(v._trie &amp; 0xC000)==0x4000 &amp;&amp; (v._trie &amp; 0x2000)">Node2 = {v}</DisplayString>
+    <DisplayString Condition="(v._trie &amp; 0xC000)==0xC000 &amp;&amp; (v._trie &amp; 0x2000)==0">FatNode without value</DisplayString>
+    <DisplayString Condition="(v._trie &amp; 0xC000)==0x8000 &amp;&amp; (v._trie &amp; 0x2000)==0">Node8 without value</DisplayString>
+    <DisplayString Condition="(v._trie &amp; 0xC000)==0x4000 &amp;&amp; (v._trie &amp; 0x2000)==0">Node2 without value</DisplayString>
+    <DisplayString Condition="(v._trie &amp; 0xC000) == 0">Leaf = {v}</DisplayString>
+    <Expand>
+      <Synthetic Name="prefix">
+        <DisplayString>{v._trie &amp; 0x1FFF} prefix bytes</DisplayString>
+        <Expand>
+          <ArrayItems>
+            <Size>v._trie &amp; 0x1FFF</Size>
+            <ValuePointer>(byte *)(this+1)</ValuePointer>
+          </ArrayItems>
+        </Expand>
+      </Synthetic>
+      <Item Name="v" ExcludeView="simple" Condition="v._trie &amp; 0x2000">v</Item>
+      <Item Name="children" Condition="(v._trie &amp; 0xC000)==0xC000">((FatNode *)this)->children</Item>
+      <Item Name="children" Condition="(v._trie &amp; 0xC000)==0x8000">((SmallNode&lt;8&gt; *)this)->children</Item>
+      <Item Name="childBytes" Condition="(v._trie &amp; 0xC000)==0x8000">((SmallNode&lt;8&gt; *)this)->childBytes</Item>
+      <Item Name="children" Condition="(v._trie &amp; 0xC000)==0x4000">((SmallNode&lt;2&gt; *)this)->children</Item>
+      <Item Name="childBytes" Condition="(v._trie &amp; 0xC000)==0x4000">((SmallNode&lt;2&gt; *)this)->childBytes</Item>
+    </Expand>
+  </Type>
   <Type Name="SDType">
     <DisplayString>{name}</DisplayString>
     <Expand>

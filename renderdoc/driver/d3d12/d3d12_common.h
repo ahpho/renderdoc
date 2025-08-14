@@ -84,8 +84,10 @@ inline void SetObjName(ID3D12Object *obj, const rdcstr &utf8name)
 #define PIX_EVENT_UNICODE_VERSION 0
 #define PIX_EVENT_ANSI_VERSION 1
 #define PIX_EVENT_PIX3BLOB_VERSION 2
+#define PIX_EVENT_PIX3BLOB_V2_VERSION 6345127
 
 rdcstr PIX3DecodeEventString(const UINT64 *pData, UINT64 &color);
+rdcstr PIX3DecodeEventStringV2(const UINT64 *pData, UINT Size, UINT64 &color);
 
 inline rdcstr DecodeMarkerString(UINT Metadata, const void *pData, UINT Size, UINT64 &color)
 {
@@ -113,9 +115,14 @@ inline rdcstr DecodeMarkerString(UINT Metadata, const void *pData, UINT Size, UI
   {
     MarkerText = PIX3DecodeEventString((UINT64 *)pData, color);
   }
+  else if(Metadata == PIX_EVENT_PIX3BLOB_V2_VERSION)
+  {
+    MarkerText = PIX3DecodeEventStringV2((UINT64 *)pData, Size, color);
+  }
   else
   {
     RDCERR("Unexpected/unsupported Metadata value %u in marker text", Metadata);
+    return "<UnknownMarkerType>";
   }
 
   return MarkerText;

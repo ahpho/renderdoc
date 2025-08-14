@@ -88,5 +88,5 @@ private:
   bool m_allowAddition = true;
 
   void addNewItemRow();
-  QWidget *makeCellWidget(int row, OrderedItemExtras extra);
+  QWidget *makeCellWidget(int col, OrderedItemExtras extra);
 };

@@ -401,7 +401,7 @@ private:
 
   struct FSNode
   {
-    FSNode() { memset(&file, 0, sizeof(file)); }
+    FSNode() {}
     ~FSNode()
     {
       for(FSNode *n : children)

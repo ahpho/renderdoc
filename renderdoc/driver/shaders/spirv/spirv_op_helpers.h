@@ -774,6 +774,21 @@ struct ExecutionModeParam<ExecutionMode::RoundingModeRTZ>
 };
 
 template<>
+struct ExecutionModeParam<ExecutionMode::TileShadingRateQCOM>
+{
+  TileShadingRateQCOMParams tileShadingRateQCOM;
+  ExecutionModeParam(uint32_t xrate, uint32_t yrate, uint32_t zrate) {  tileShadingRateQCOM.xrate = xrate; tileShadingRateQCOM.yrate = yrate; tileShadingRateQCOM.zrate = zrate; }
+  operator ExecutionModeAndParamData()
+  {
+    ExecutionModeAndParamData ret(ExecutionMode::TileShadingRateQCOM);
+    ret.tileShadingRateQCOM.xrate = tileShadingRateQCOM.xrate;
+    ret.tileShadingRateQCOM.yrate = tileShadingRateQCOM.yrate;
+    ret.tileShadingRateQCOM.zrate = tileShadingRateQCOM.zrate;
+    return ret;
+  }
+};
+
+template<>
 struct ExecutionModeParam<ExecutionMode::IsApiEntryAMDX>
 {
   Id isApiEntryAMDX;
@@ -1159,6 +1174,12 @@ inline ExecutionModeAndParamData DecodeParam(const ConstIter &it, uint32_t &word
       ret.roundingModeRTZ = (uint32_t)it.word(word);
       word += 1;
       break;
+    case ExecutionMode::TileShadingRateQCOM:
+      ret.tileShadingRateQCOM.xrate = (uint32_t)it.word(word+0);
+      ret.tileShadingRateQCOM.yrate = (uint32_t)it.word(word+1);
+      ret.tileShadingRateQCOM.zrate = (uint32_t)it.word(word+2);
+      word += 3;
+      break;
     case ExecutionMode::IsApiEntryAMDX:
       ret.isApiEntryAMDX = Id::fromWord(it.word(word));
       word += 1;
@@ -1322,6 +1343,11 @@ inline void EncodeParam(rdcarray<uint32_t> &words, const ExecutionModeAndParamDa
     case ExecutionMode::RoundingModeRTZ:
       words.push_back((uint32_t)param.roundingModeRTZ);
       break;
+    case ExecutionMode::TileShadingRateQCOM:
+      words.push_back((uint32_t)param.tileShadingRateQCOM.xrate);
+      words.push_back((uint32_t)param.tileShadingRateQCOM.yrate);
+      words.push_back((uint32_t)param.tileShadingRateQCOM.zrate);
+      break;
     case ExecutionMode::IsApiEntryAMDX:
       words.push_back(param.isApiEntryAMDX.value());
       break;
@@ -1422,6 +1448,7 @@ inline uint16_t ExtraWordCount(const ExecutionMode executionMode)
     case ExecutionMode::SignedZeroInfNanPreserve: return 1;
     case ExecutionMode::RoundingModeRTE: return 1;
     case ExecutionMode::RoundingModeRTZ: return 1;
+    case ExecutionMode::TileShadingRateQCOM: return 3;
     case ExecutionMode::IsApiEntryAMDX: return 1;
     case ExecutionMode::MaxNodeRecursionAMDX: return 1;
     case ExecutionMode::StaticNumWorkgroupsAMDX: return 3;
@@ -3013,6 +3040,60 @@ inline uint16_t OptionalWordCount(const FPEncoding val) { return val != FPEncodi
 inline uint16_t OptionalWordCount(const CooperativeVectorMatrixLayout val) { return val != CooperativeVectorMatrixLayout::Invalid ? 1 : 0; }
 
 inline uint16_t OptionalWordCount(const ComponentType val) { return val != ComponentType::Invalid ? 1 : 0; }
+
+template<>
+inline TensorOperandsAndParamDatas DecodeParam(const ConstIter &it, uint32_t &word)
+{
+  if(word >= it.size()) return TensorOperandsAndParamDatas();
+
+  TensorOperandsAndParamDatas ret((TensorOperands)it.word(word));
+  word++;
+  if(ret.flags & TensorOperands::OutOfBoundsValueARM)
+  {
+    ret.outOfBoundsValueARM = Id::fromWord(it.word(word));
+    word += 1;
+  }
+  if(ret.flags & TensorOperands::MakeElementAvailableARM)
+  {
+    ret.makeElementAvailableARM = Id::fromWord(it.word(word));
+    word += 1;
+  }
+  if(ret.flags & TensorOperands::MakeElementVisibleARM)
+  {
+    ret.makeElementVisibleARM = Id::fromWord(it.word(word));
+    word += 1;
+  }
+  return ret;
+}
+
+inline void EncodeParam(rdcarray<uint32_t> &words, const TensorOperandsAndParamDatas &param)
+{
+  words.push_back((uint32_t)param.flags);
+  if(param.flags & TensorOperands::OutOfBoundsValueARM)
+  {
+    words.push_back(param.outOfBoundsValueARM.value());
+  }
+  if(param.flags & TensorOperands::MakeElementAvailableARM)
+  {
+    words.push_back(param.makeElementAvailableARM.value());
+  }
+  if(param.flags & TensorOperands::MakeElementVisibleARM)
+  {
+    words.push_back(param.makeElementVisibleARM.value());
+  }
+}
+
+inline uint16_t ExtraWordCount(const TensorOperands tensorOperands)
+{
+  switch(tensorOperands)
+  {
+    case TensorOperands::OutOfBoundsValueARM: return 1;
+    case TensorOperands::MakeElementAvailableARM: return 1;
+    case TensorOperands::MakeElementVisibleARM: return 1;
+    default: break;
+  }
+  return 0;
+}
 
 
 inline uint16_t ExtraWordCount(const rdcstr &val)
@@ -13426,6 +13507,164 @@ struct OpStencilAttachmentReadEXT
   bool HasSample() const { return wordCount > 3; }
 };
 
+struct OpTypeTensorARM
+{
+  OpTypeTensorARM(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->result = Id::fromWord(it.word(1));
+    this->elementType = Id::fromWord(it.word(2));
+    this->rank = (it.size() > 3) ? Id::fromWord(it.word(3)) : Id();
+    this->shape = (it.size() > 4) ? Id::fromWord(it.word(4)) : Id();
+  }
+  OpTypeTensorARM(IdResult result, Id elementType, Id rank = Id(), Id shape = Id())
+      : op(Op::TypeTensorARM)
+      , wordCount(MinWordSize + OptionalWordCount(rank) + OptionalWordCount(shape))
+  {
+    this->result = result;
+    this->elementType = elementType;
+    this->rank = rank;
+    this->shape = shape;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(result.value());
+    words.push_back(elementType.value());
+    if(rank != Id()) words.push_back(rank.value());
+    if(shape != Id()) words.push_back(shape.value());
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::TypeTensorARM;
+  static constexpr uint16_t MinWordSize = 3U;
+  Op op;
+  uint16_t wordCount;
+  IdResult result;
+  Id elementType;
+  Id rank;
+  Id shape;
+
+  bool HasRank() const { return wordCount > 3; }
+  bool HasShape() const { return wordCount > 4; }
+};
+
+struct OpTensorReadARM
+{
+  OpTensorReadARM(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->resultType = Id::fromWord(it.word(1));
+    this->result = Id::fromWord(it.word(2));
+    this->tensor = Id::fromWord(it.word(3));
+    this->coordinates = Id::fromWord(it.word(4));
+    word = 5;
+    this->tensorOperands = DecodeParam<TensorOperandsAndParamDatas>(it, word);
+  }
+  OpTensorReadARM(IdResultType resultType, IdResult result, Id tensor, Id coordinates, TensorOperandsAndParamDatas tensorOperands = TensorOperands::NoneARM)
+      : op(Op::TensorReadARM)
+      , wordCount(MinWordSize + ExtraWordCount(tensorOperands))
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->tensor = tensor;
+    this->coordinates = coordinates;
+    this->tensorOperands = tensorOperands;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(resultType.value());
+    words.push_back(result.value());
+    words.push_back(tensor.value());
+    words.push_back(coordinates.value());
+    EncodeParam(words, tensorOperands);
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::TensorReadARM;
+  static constexpr uint16_t MinWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id tensor;
+  Id coordinates;
+  TensorOperandsAndParamDatas tensorOperands;
+};
+
+struct OpTensorWriteARM
+{
+  OpTensorWriteARM(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->tensor = Id::fromWord(it.word(1));
+    this->coordinates = Id::fromWord(it.word(2));
+    this->object = Id::fromWord(it.word(3));
+    word = 4;
+    this->tensorOperands = DecodeParam<TensorOperandsAndParamDatas>(it, word);
+  }
+  OpTensorWriteARM(Id tensor, Id coordinates, Id object, TensorOperandsAndParamDatas tensorOperands = TensorOperands::NoneARM)
+      : op(Op::TensorWriteARM)
+      , wordCount(MinWordSize + ExtraWordCount(tensorOperands))
+  {
+    this->tensor = tensor;
+    this->coordinates = coordinates;
+    this->object = object;
+    this->tensorOperands = tensorOperands;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(tensor.value());
+    words.push_back(coordinates.value());
+    words.push_back(object.value());
+    EncodeParam(words, tensorOperands);
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::TensorWriteARM;
+  static constexpr uint16_t MinWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  Id tensor;
+  Id coordinates;
+  Id object;
+  TensorOperandsAndParamDatas tensorOperands;
+};
+
+struct OpTensorQuerySizeARM
+{
+  OpTensorQuerySizeARM(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpTensorQuerySizeARM(IdResultType resultType, IdResult result, Id tensor, Id dimension)
+      : op(Op::TensorQuerySizeARM)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->tensor = tensor;
+    this->dimension = dimension;
+  }
+
+  static constexpr Op OpCode = Op::TensorQuerySizeARM;
+  static constexpr uint16_t FixedWordSize = 5U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id tensor;
+  Id dimension;
+};
+
 struct OpTerminateInvocation
 {
   OpTerminateInvocation(const ConstIter &it)
@@ -19853,23 +20092,21 @@ struct OpFPGARegINTEL
   {
     memcpy(this, it.words(), sizeof(*this));
   }
-  OpFPGARegINTEL(IdResultType resultType, IdResult result0, Id result1, Id input)
+  OpFPGARegINTEL(IdResultType resultType, IdResult result, Id input)
       : op(Op::FPGARegINTEL)
       , wordCount(FixedWordSize)
   {
     this->resultType = resultType;
-    this->result0 = result0;
-    this->result1 = result1;
+    this->result = result;
     this->input = input;
   }
 
   static constexpr Op OpCode = Op::FPGARegINTEL;
-  static constexpr uint16_t FixedWordSize = 5U;
+  static constexpr uint16_t FixedWordSize = 4U;
   Op op;
   uint16_t wordCount;
   IdResultType resultType;
-  IdResult result0;
-  Id result1;
+  IdResult result;
   Id input;
 };
 
@@ -20617,6 +20854,139 @@ struct OpArithmeticFenceEXT
   Id target;
 };
 
+struct OpTaskSequenceCreateINTEL
+{
+  OpTaskSequenceCreateINTEL(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpTaskSequenceCreateINTEL(IdResultType resultType, IdResult result, Id function, uint32_t pipelined, uint32_t useStallEnableClusters, uint32_t getCapacity, uint32_t asyncCapacity)
+      : op(Op::TaskSequenceCreateINTEL)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->function = function;
+    this->pipelined = pipelined;
+    this->useStallEnableClusters = useStallEnableClusters;
+    this->getCapacity = getCapacity;
+    this->asyncCapacity = asyncCapacity;
+  }
+
+  static constexpr Op OpCode = Op::TaskSequenceCreateINTEL;
+  static constexpr uint16_t FixedWordSize = 8U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id function;
+  uint32_t pipelined;
+  uint32_t useStallEnableClusters;
+  uint32_t getCapacity;
+  uint32_t asyncCapacity;
+};
+
+struct OpTaskSequenceAsyncINTEL
+{
+  OpTaskSequenceAsyncINTEL(const ConstIter &it)
+  {
+    uint32_t word = 0;(void)word;
+    this->op = OpCode;
+    this->wordCount = (uint16_t)it.size();
+    this->sequence = Id::fromWord(it.word(1));
+    word = 2;
+    this->arguments = MultiParam<Id>(it, word);
+  }
+  OpTaskSequenceAsyncINTEL(Id sequence, const rdcarray<Id> &arguments = {})
+      : op(Op::TaskSequenceAsyncINTEL)
+      , wordCount(MinWordSize + MultiWordCount(arguments))
+  {
+    this->sequence = sequence;
+    this->arguments = arguments;
+  }
+  operator Operation() const
+  {
+    rdcarray<uint32_t> words;
+    words.push_back(sequence.value());
+    for(size_t i=0; i < arguments.size(); i++)
+    {
+      words.push_back(arguments[i].value());
+    }
+    return Operation(OpCode, words);
+  }
+
+  static constexpr Op OpCode = Op::TaskSequenceAsyncINTEL;
+  static constexpr uint16_t MinWordSize = 2U;
+  Op op;
+  uint16_t wordCount;
+  Id sequence;
+  rdcarray<Id> arguments;
+};
+
+struct OpTaskSequenceGetINTEL
+{
+  OpTaskSequenceGetINTEL(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpTaskSequenceGetINTEL(IdResultType resultType, IdResult result, Id sequence)
+      : op(Op::TaskSequenceGetINTEL)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->sequence = sequence;
+  }
+
+  static constexpr Op OpCode = Op::TaskSequenceGetINTEL;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id sequence;
+};
+
+struct OpTaskSequenceReleaseINTEL
+{
+  OpTaskSequenceReleaseINTEL(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpTaskSequenceReleaseINTEL(Id sequence)
+      : op(Op::TaskSequenceReleaseINTEL)
+      , wordCount(FixedWordSize)
+  {
+    this->sequence = sequence;
+  }
+
+  static constexpr Op OpCode = Op::TaskSequenceReleaseINTEL;
+  static constexpr uint16_t FixedWordSize = 2U;
+  Op op;
+  uint16_t wordCount;
+  Id sequence;
+};
+
+struct OpTypeTaskSequenceINTEL
+{
+  OpTypeTaskSequenceINTEL(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpTypeTaskSequenceINTEL(IdResult result)
+      : op(Op::TypeTaskSequenceINTEL)
+      , wordCount(FixedWordSize)
+  {
+    this->result = result;
+  }
+
+  static constexpr Op OpCode = Op::TypeTaskSequenceINTEL;
+  static constexpr uint16_t FixedWordSize = 2U;
+  Op op;
+  uint16_t wordCount;
+  IdResult result;
+};
+
 struct OpSubgroupBlockPrefetchINTEL
 {
   OpSubgroupBlockPrefetchINTEL(const ConstIter &it)
@@ -20898,6 +21268,36 @@ struct OpSubgroupMatrixMultiplyAccumulateINTEL
   bool HasMatrixMultiplyAccumulateOperands() const { return wordCount > 7; }
 };
 
+struct OpBitwiseFunctionINTEL
+{
+  OpBitwiseFunctionINTEL(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpBitwiseFunctionINTEL(IdResultType resultType, IdResult result, Id a, Id b, Id c, Id lUTIndex)
+      : op(Op::BitwiseFunctionINTEL)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->a = a;
+    this->b = b;
+    this->c = c;
+    this->lUTIndex = lUTIndex;
+  }
+
+  static constexpr Op OpCode = Op::BitwiseFunctionINTEL;
+  static constexpr uint16_t FixedWordSize = 7U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id a;
+  Id b;
+  Id c;
+  Id lUTIndex;
+};
+
 struct OpGroupIMulKHR
 {
   OpGroupIMulKHR(const ConstIter &it)
@@ -21122,6 +21522,30 @@ struct OpGroupLogicalXorKHR
   Id x;
 };
 
+struct OpRoundFToTF32INTEL
+{
+  OpRoundFToTF32INTEL(const ConstIter &it)
+  {
+    memcpy(this, it.words(), sizeof(*this));
+  }
+  OpRoundFToTF32INTEL(IdResultType resultType, IdResult result, Id floatValue)
+      : op(Op::RoundFToTF32INTEL)
+      , wordCount(FixedWordSize)
+  {
+    this->resultType = resultType;
+    this->result = result;
+    this->floatValue = floatValue;
+  }
+
+  static constexpr Op OpCode = Op::RoundFToTF32INTEL;
+  static constexpr uint16_t FixedWordSize = 4U;
+  Op op;
+  uint16_t wordCount;
+  IdResultType resultType;
+  IdResult result;
+  Id floatValue;
+};
+
 struct OpMaskedGatherINTEL
 {
   OpMaskedGatherINTEL(const ConstIter &it)
@@ -21194,12 +21618,20 @@ template<>
 rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const PairIdRefIdRef &el);
 
 template<>
-rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::ImageOperandsAndParamDatas &el);template<>
-rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::LoopControlAndParamDatas &el);template<>
-rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::MemoryAccessAndParamDatas &el);template<>
-rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::ExecutionModeAndParamData &el);template<>
-rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::DecorationAndParamData &el);template<>
+rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::ImageOperandsAndParamDatas &el);
+template<>
+rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::LoopControlAndParamDatas &el);
+template<>
+rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::MemoryAccessAndParamDatas &el);
+template<>
+rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::ExecutionModeAndParamData &el);
+template<>
+rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::DecorationAndParamData &el);
+template<>
 rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::TensorAddressingOperandsAndParamDatas &el);
+template<>
+rdcstr ParamToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcspv::TensorOperandsAndParamDatas &el);
+
 
 template<typename U>
 inline rdcstr ParamsToStr(const std::function<rdcstr(rdcspv::Id)> &idName, const rdcarray<U> &ids)

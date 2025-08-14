@@ -1,16 +1,45 @@
 import renderdoc as rd
 import rdtest
 import struct
-
+from typing import List
 
 class D3D12_Execute_Indirect(rdtest.TestCase):
     demos_test_name = 'D3D12_Execute_Indirect'
 
+    def check_pixel_history_succeeds(self):
+        pipe: rd.PipeState = self.controller.GetPipelineState()
+        rt = pipe.GetOutputTargets()[0]
+        tex = rt.resource
+        sub = rd.Subresource()
+        x = 200
+        y = 150
+        modifs: List[rd.PixelModification] = self.controller.PixelHistory(tex, x, y, sub, rt.format.compType)
+        if len(modifs) == 0:
+            raise rdtest.TestFailureException("No pixel history found")
+        rdtest.log.success("Pixel History Worked")
+
+    def check_root_consts(self, expected: List[float]):
+        pipe: rd.PipeState = self.controller.GetPipelineState()
+        root_consts = pipe.GetConstantBlock(rd.ShaderStage.Vertex, 1, 0)
+        if root_consts is None:
+            raise rdtest.TestFailureException('rootConsts not found in pipeline state')
+        bytes = self.controller.GetBufferData(root_consts.descriptor.resource, 0, root_consts.descriptor.byteSize)   
+        self.check(len(bytes) == 16)  # 4 floats
+        data = struct.unpack("ffff", bytes)
+        for i in range(len(expected)):
+            if not rdtest.value_compare(expected[i], data[i]):
+                raise rdtest.TestFailureException(f'rootConsts[i] does not match expected:{expected[i]} got:{data[i]}')
+        rdtest.log.success("rootConsts is as expected")
+
     def check_capture(self):
         from_eid = self.find_action("Multiple draws").eventId
+        ei_eid = self.find_action("ExecuteIndirect", from_eid).eventId
+        self.controller.SetFrameEvent(ei_eid - 1, False)
+        self.check_root_consts([10.0, 9.0, 8.0, 7.0])
         for i in range(8):
             action = self.find_action("IndirectDraw", from_eid)
             self.controller.SetFrameEvent(action.eventId, False)
+            self.check_root_consts([123.0, 9.0, 8.0, 7.0])
 
             self.check_triangle(back=[0.0, 0.0, 0.0, 1.0])
 
@@ -60,6 +89,8 @@ class D3D12_Execute_Indirect(rdtest.TestCase):
             }
             self.check_mesh_data(postvs_ref, postvs_data)
 
+            self.check_pixel_history_succeeds()
+
             from_eid = action.eventId + 1
 
             pipe = self.controller.GetPipelineState()
@@ -91,6 +122,8 @@ class D3D12_Execute_Indirect(rdtest.TestCase):
 
         rdtest.log.success("State is reset after execute")
 
+        self.check_pixel_history_succeeds()
+
         action = self.find_action("Post Single dispatch")
         self.controller.SetFrameEvent(action.eventId, False)
 
@@ -109,6 +142,8 @@ class D3D12_Execute_Indirect(rdtest.TestCase):
                             "buffer at {},{},{}: {} doesn't match expected {}".format(x, y, z, value, expect))
 
         rdtest.log.success("Dispatch buffer output is correct")
+
+        self.check_pixel_history_succeeds()
 
         # The final draw is in indeterminate order because the parameters are defined by a compute shader in
         # indeterminate order
@@ -172,6 +207,8 @@ class D3D12_Execute_Indirect(rdtest.TestCase):
                     raise rdtest.TestFailureException(
                         "Detected an exploded polygon with {} selected".format(action.GetName(sdfile)))
 
+                self.check_pixel_history_succeeds()
+
             rdtest.log.success(f"Pass {passNum} of unordered draw was correct")
 
         # This does not draw anything but its argument buffer is fully used with no spare bytes
@@ -184,6 +221,7 @@ class D3D12_Execute_Indirect(rdtest.TestCase):
             if len(pipe.GetOutputTargets()) != 1:
                 raise rdtest.TestFailureException(
                     f"With event {action.eventId + drawNum} selected we should have one output target but there is {len(pipe.GetOutputTargets())}")
+            self.check_pixel_history_succeeds()
         rdtest.log.success("Fully used argument buffer with multiple draws replayed")
 
         # This does not draw anything but its argument buffer is fully used with no spare bytes
@@ -191,9 +229,11 @@ class D3D12_Execute_Indirect(rdtest.TestCase):
         action = self.find_action("Full Arg Buffer: State + Draw")
         action = self.find_action("IndirectDraw", action.eventId)
         for drawNum in range(3):
-            self.controller.SetFrameEvent(action.eventId + drawNum, False)
+            self.controller.SetFrameEvent(action.eventId, False)
             pipe = self.controller.GetPipelineState()
             if len(pipe.GetOutputTargets()) != 1:
                 raise rdtest.TestFailureException(
                     f"With event {action.eventId + drawNum} selected we should have one output target but there is {len(pipe.GetOutputTargets())}")
+            self.check_pixel_history_succeeds()
+            action = action.next
         rdtest.log.success("Fully used argument buffer with multiple states + draws replayed")

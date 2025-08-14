@@ -528,15 +528,14 @@ void D3D12PipelineStateViewer::OnEventChanged(uint32_t eventId)
 
       // if the last range is contiguous with this access, append this access as a new range to query
       if(!ranges.empty() && ranges.back().descriptorSize == acc.byteSize &&
-         ranges.back().offset + ranges.back().descriptorSize == acc.byteOffset)
+         ranges.back().offset + ranges.back().descriptorSize == acc.byteOffset &&
+         ranges.back().type == acc.type)
       {
         ranges.back().count++;
         continue;
       }
 
-      DescriptorRange range;
-      range.offset = acc.byteOffset;
-      range.descriptorSize = acc.byteSize;
+      DescriptorRange range = acc;
       ranges.push_back(range);
     }
 
@@ -2144,8 +2143,17 @@ void D3D12PipelineStateViewer::setState()
   {
     ui->depthEnabled->setPixmap(tick);
     ui->depthFunc->setText(ToQStr(state.outputMerger.depthStencilState.depthFunction));
-    ui->depthWrite->setPixmap(state.outputMerger.depthStencilState.depthWrites ? tick : cross);
-    ui->depthWrite->setText(QString());
+
+    if(state.outputMerger.depthReadOnly)
+    {
+      ui->depthWrite->setPixmap(QPixmap());
+      ui->depthWrite->setText(tr("Read-Only DSV"));
+    }
+    else
+    {
+      ui->depthWrite->setPixmap(state.outputMerger.depthStencilState.depthWrites ? tick : cross);
+      ui->depthWrite->setText(QString());
+    }
   }
   else
   {
@@ -2183,8 +2191,16 @@ void D3D12PipelineStateViewer::setState()
         QVariant(),
     }));
 
-    m_Common.SetStencilTreeItemValue(ui->stencils->topLevelItem(0), 5,
-                                     state.outputMerger.depthStencilState.frontFace.writeMask);
+    if(state.outputMerger.stencilReadOnly)
+    {
+      ui->stencils->topLevelItem(0)->setText(5, tr("Read-Only DSV"));
+      ui->stencils->topLevelItem(0)->setToolTip(QString());
+    }
+    else
+    {
+      m_Common.SetStencilTreeItemValue(ui->stencils->topLevelItem(0), 5,
+                                       state.outputMerger.depthStencilState.frontFace.writeMask);
+    }
     m_Common.SetStencilTreeItemValue(ui->stencils->topLevelItem(0), 6,
                                      state.outputMerger.depthStencilState.frontFace.compareMask);
     m_Common.SetStencilTreeItemValue(ui->stencils->topLevelItem(0), 7,

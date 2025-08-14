@@ -43,11 +43,13 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_EXT_depth_clip_control`
 * `VK_EXT_depth_clip_enable`
 * `VK_EXT_depth_range_unrestricted`
+* `VK_EXT_descriptor_buffer`
 * `VK_EXT_descriptor_indexing`
 * `VK_EXT_direct_mode_display`
 * `VK_EXT_discard_rectangles`
 * `VK_EXT_display_control`
 * `VK_EXT_display_surface_counter`
+* `VK_EXT_dynamic_rendering_unused_attachments`
 * `VK_EXT_extended_dynamic_state`
 * `VK_EXT_extended_dynamic_state2`
 * `VK_EXT_extended_dynamic_state3`
@@ -62,6 +64,7 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_EXT_graphics_pipeline_library`
 * `VK_EXT_hdr_metadata`
 * `VK_EXT_headless_surface`
+* `VK_EXT_host_image_copy`
 * `VK_EXT_host_query_reset`
 * `VK_EXT_image_2d_view_of_3d`
 * `VK_EXT_image_compression_control`
@@ -194,6 +197,7 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_KHR_ray_tracing_pipeline`
 * `VK_KHR_ray_tracing_position_fetch`
 * `VK_KHR_relaxed_block_layout`
+* `VK_KHR_robustness2`
 * `VK_KHR_sampler_mirror_clamp_to_edge`
 * `VK_KHR_sampler_ycbcr_conversion`
 * `VK_KHR_separate_depth_stencil_layouts`
@@ -218,8 +222,10 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_KHR_storage_buffer_storage_class`
 * `VK_KHR_surface_protected_capabilities`
 * `VK_KHR_surface`
+* `VK_KHR_surface_maintenance1`
 * `VK_KHR_swapchain_mutable_format`
 * `VK_KHR_swapchain`
+* `VK_KHR_swapchain_maintenance1`
 * `VK_KHR_synchronization2`
 * `VK_KHR_timeline_semaphore`
 * `VK_KHR_uniform_buffer_standard_layout`
@@ -261,8 +267,14 @@ KHR extensions will definitely be implemented at some point, though KHR extensio
 * `VK_KHR_maintenance6`
 * `VK_KHR_maintenance7`
 * `VK_KHR_maintenance8`
+* `VK_KHR_maintenance9`
 * `VK_KHR_map_memory2`
 * `VK_KHR_pipeline_binary`
+* `VK_KHR_present_id2`
+* `VK_KHR_present_mode_fifo_latest_ready`
+* `VK_KHR_present_wait2`
+* `VK_KHR_shader_bfloat16`
+* `VK_KHR_unified_image_layouts`
 
 ## KHR Portability
 
@@ -276,16 +288,14 @@ The portability subset is only relevant on mac, which is not a supported platfor
 * `VK_EXT_blend_operation_advanced`
 * `VK_EXT_depth_bias_control`
 * `VK_EXT_depth_clamp_control`
-* `VK_EXT_descriptor_buffer`
 * `VK_EXT_device_address_binding_report`
 * `VK_EXT_device_fault`
 * `VK_EXT_device_generated_commands`
 * `VK_EXT_device_memory_report`
-* `VK_EXT_dynamic_rendering_unused_attachments`
 * `VK_EXT_external_memory_acquire_unmodified`
 * `VK_EXT_external_memory_host`
 * `VK_EXT_external_memory_metal`
-* `VK_EXT_host_image_copy`
+* `VK_EXT_fragment_density_map_offset`
 * `VK_EXT_image_drm_format_modifier`
 * `VK_EXT_image_sliced_view_of_3d`
 * `VK_EXT_layer_settings`
@@ -300,11 +310,13 @@ The portability subset is only relevant on mac, which is not a supported platfor
 * `VK_EXT_pipeline_protected_access`
 * `VK_EXT_pipeline_robustness`
 * `VK_EXT_present_mode_fifo_latest_ready`
+* `VK_EXT_shader_float8`
 * `VK_EXT_shader_module_identifier`
 * `VK_EXT_shader_replicated_composites`
 * `VK_EXT_shader_tile_image`
 * `VK_EXT_subpass_merge_feedback`
 * `VK_EXT_vertex_attribute_robustness`
+* `VK_EXT_zero_initialize_device_memory`
 
 ## Platform/IHV Extensions
 
@@ -314,12 +326,15 @@ The portability subset is only relevant on mac, which is not a supported platfor
 
 ### ARM
 
+* `VK_ARM_data_graph`
+* `VK_ARM_format_pack`
 * `VK_ARM_pipeline_opacity_micromap`
 * `VK_ARM_rasterization_order_attachment_access`
 * `VK_ARM_render_pass_striped`
 * `VK_ARM_scheduling_controls`
 * `VK_ARM_shader_core_builtins`
 * `VK_ARM_shader_core_properties`
+* `VK_ARM_tensors`
 
 ### AMD
 
@@ -381,6 +396,7 @@ The portability subset is only relevant on mac, which is not a supported platfor
 * `VK_NV_displacement_micromap`
 * `VK_NV_display_stereo`
 * `VK_NV_extended_sparse_address_space`
+* `VK_NV_external_compute_queue`
 * `VK_NV_external_memory_rdma`
 * `VK_NV_fill_rectangle`
 * `VK_NV_fragment_coverage_to_color`
@@ -419,16 +435,20 @@ The portability subset is only relevant on mac, which is not a supported platfor
 * `VK_QCOM_multiview_per_view_viewports`
 * `VK_QCOM_render_pass_transform`
 * `VK_QCOM_rotated_copy_commands`
+* `VK_QCOM_tile_memory_heap`
 * `VK_QCOM_tile_properties`
+* `VK_QCOM_tile_shading`
 * `VK_QCOM_ycbcr_degamma`
 
 ### Samsung
 
 * `VK_SEC_amigo_profiling`
+* `VK_SEC_pipeline_cache_incremental_mode`
 
 ### Valve
 
 * `VK_VALVE_descriptor_set_host_mapping`
+* `VK_VALVE_fragment_density_map_layered`
 
 ## WSI for other platforms
 
@@ -451,9 +471,11 @@ These are expected to never be implemented in their current form.
 * `VK_KHR_video_decode_h264`
 * `VK_KHR_video_decode_h265`
 * `VK_KHR_video_decode_queue`
+* `VK_KHR_video_decode_vp9`
 * `VK_KHR_video_encode_av1`
 * `VK_KHR_video_encode_h264`
 * `VK_KHR_video_encode_h265`
+* `VK_KHR_video_encode_intra_refresh`
 * `VK_KHR_video_encode_quantization_map`
 * `VK_KHR_video_encode_queue`
 * `VK_KHR_video_maintenance1`
@@ -468,6 +490,7 @@ These are expected to never be implemented in their current form.
 ### Deprecated / experimental / IHV / non-Vulkan
 
 * `VK_AMD_draw_indirect_count`
+* `VK_AMDX_dense_geometry_format`
 * `VK_AMDX_shader_enqueue`
 * `VK_GGP_frame_token`
 * `VK_GGP_stream_descriptor_surface`
@@ -482,3 +505,4 @@ These are expected to never be implemented in their current form.
 * `VK_NVX_binary_import`
 * `VK_NVX_multiview_per_view_attributes`
 * `VK_NVX_image_view_handle`
+* `VK_OHOS_surface`

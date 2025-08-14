@@ -191,6 +191,8 @@ public:
     uint32_t isFrontFace;
   } semantics;
 
+  DXBC::ShaderType GetType() { return program->GetShaderType(); }
+
   uint32_t nextInstruction;
   GlobalState &global;
   rdcarray<ShaderVariable> inputs;
@@ -214,6 +216,8 @@ private:
   // file and applying any masking or swizzling
   void SetDst(ShaderDebugState *state, const DXBCBytecode::Operand &dstoper,
               const DXBCBytecode::Operation &op, const ShaderVariable &val);
+  void GetGroupsharedSrc(uint32_t gsmIndex, const uint32_t byteOffset, const uint32_t countBytes,
+                         uint32_t *gsmData) const;
   void SetGroupsharedDst(ShaderDebugState *state, uint32_t gsmIndex, const uint32_t byteOffset,
                          ShaderVariable &val);
 

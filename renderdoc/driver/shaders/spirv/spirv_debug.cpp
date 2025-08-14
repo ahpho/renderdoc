@@ -371,13 +371,21 @@ void ThreadState::WritePointerValue(Id pointer, const ShaderVariable &val)
 
     // for every other pointer, evaluate its value now before
     for(size_t i = 0; i < pointers.size(); i++)
-      changes[i].before = debugger.GetPointerValue(ids[pointers[i]]);
+    {
+      Id id = pointers[i];
+      if(id != ptrid && live.contains(id))
+        changes[i].before = debugger.GetPointerValue(ids[id]);
+    }
 
     debugger.WriteThroughPointer(var, val);
 
     // now evaluate the value after
     for(size_t i = 0; i < pointers.size(); i++)
-      changes[i].after = debugger.GetPointerValue(ids[pointers[i]]);
+    {
+      Id id = pointers[i];
+      if(id != ptrid && live.contains(id))
+        changes[i].after = debugger.GetPointerValue(ids[id]);
+    }
 
     // if the pointer we're writing is one of the aliased pointers, be sure we add it even if
     // it's a no-op change
@@ -385,8 +393,11 @@ void ThreadState::WritePointerValue(Id pointer, const ShaderVariable &val)
 
     if(ptrIdx >= 0)
     {
-      m_State->changes.push_back(changes[ptrIdx]);
-      changes.erase(ptrIdx);
+      if(pointer != ptrid)
+      {
+        m_State->changes.push_back(changes[ptrIdx]);
+        changes.erase(ptrIdx);
+      }
     }
 
     // remove any no-op changes. Some pointers might point to the same ID but a child that
@@ -403,7 +414,7 @@ void ThreadState::WritePointerValue(Id pointer, const ShaderVariable &val)
     // if this is the first local write, mark this variable as becoming alive here, instead of at
     // its declaration
     if(firstLocalWrite)
-      basechange.before.name = "";
+      basechange.before = {};
 
     m_State->changes.push_back(basechange);
 
@@ -414,6 +425,11 @@ void ThreadState::WritePointerValue(Id pointer, const ShaderVariable &val)
 
     for(size_t i = 0; i < pointers.size(); i++)
       lastWrite[pointers[i]] = m_State ? m_State->stepIndex : nextInstruction;
+
+    // For GSM memory update the global data as well as the local cache, do not send the changes to the UI
+    auto gsmPtrIt = gsmPointers.find(pointer);
+    if(gsmPtrIt != gsmPointers.end())
+      debugger.WriteThroughPointer(gsmPtrIt->second, val);
   }
 }
 
@@ -439,8 +455,14 @@ void ThreadState::SetDst(Id id, const ShaderVariable &val)
 
   lastWrite[id] = m_State ? m_State->stepIndex : nextInstruction;
 
-  auto it = std::lower_bound(live.begin(), live.end(), id);
-  live.insert(it - live.begin(), id);
+  bool wasLive = false;
+  if(m_State)
+  {
+    auto it = std::lower_bound(live.begin(), live.end(), id);
+    wasLive = (it != live.end() && *it == id);
+    if(!wasLive)
+      live.insert(it - live.begin(), id);
+  }
 
   if(val.type == VarType::GPUPointer && !debugger.IsPhysicalPointer(val))
   {
@@ -455,7 +477,8 @@ void ThreadState::SetDst(Id id, const ShaderVariable &val)
   if(m_State)
   {
     ShaderVariableChange change;
-    change.before = debugger.GetPointerValue(prev);
+    if(wasLive)
+      change.before = debugger.GetPointerValue(prev);
     change.after = debugger.GetPointerValue(ids[id]);
     m_State->changes.push_back(change);
   }
@@ -832,8 +855,20 @@ void ThreadState::StepNext(ShaderDebugState *state, const rdcarray<ThreadState> 
       for(Id id : chain.indexes)
         indices.push_back(uintComp(GetSrc(id), 0));
 
-      SetDst(chain.result, debugger.MakeCompositePointer(
-                               ids[chain.base], debugger.GetPointerBaseId(ids[chain.base]), indices));
+      Id baseId = debugger.GetPointerBaseId(ids[chain.base]);
+      SetDst(chain.result, debugger.MakeCompositePointer(ids[chain.base], baseId, indices));
+
+      // create duplicate GSM pointers for the active thread which point to the global GSM not the local GSM cache
+      if(m_State)
+      {
+        auto gsmPtrIt = gsmPointers.find(chain.base);
+        if(gsmPtrIt != gsmPointers.end())
+        {
+          ShaderVariable gsmGlobal = debugger.MakeCompositePointer(gsmPtrIt->second, baseId, indices);
+          gsmGlobal.name = GetRawName(chain.result);
+          gsmPointers[chain.result] = gsmGlobal;
+        }
+      }
       break;
     }
     case Op::PtrAccessChain:
@@ -852,10 +887,26 @@ void ThreadState::StepNext(ShaderDebugState *state, const rdcarray<ThreadState> 
       int32_t element = intComp(GetSrc(chain.element), 0);
       // adjust the address by the element. We should have the array stride since the base pointer
       // must point into an array and we can't go outside it.
-      base.SetTypedPointer(val.pointer + element * debugger.GetPointerArrayStride(base), val.shader,
-                           val.pointerTypeID);
-      SetDst(chain.result,
-             debugger.MakeCompositePointer(base, debugger.GetPointerBaseId(base), indices));
+      uint64_t byteOffset = element * debugger.GetPointerArrayStride(base);
+      base.SetTypedPointer(val.pointer + byteOffset, val.shader, val.pointerTypeID);
+      Id baseId = debugger.GetPointerBaseId(ids[chain.base]);
+      SetDst(chain.result, debugger.MakeCompositePointer(base, baseId, indices));
+
+      // create duplicate GSM pointers for the active thread which point to the global GSM not the local GSM cache
+      if(m_State)
+      {
+        auto gsmPtrIt = gsmPointers.find(chain.base);
+        if(gsmPtrIt != gsmPointers.end())
+        {
+          ShaderVariable gsmBase = gsmPtrIt->second;
+          PointerVal gsmVal = gsmBase.GetPointer();
+          gsmBase.SetTypedPointer(gsmVal.pointer + byteOffset, gsmVal.shader, gsmVal.pointerTypeID);
+
+          ShaderVariable gsmGlobal = debugger.MakeCompositePointer(gsmBase, baseId, indices);
+          gsmGlobal.name = GetRawName(chain.result);
+          gsmPointers[chain.result] = gsmGlobal;
+        }
+      }
       break;
     }
     case Op::ArrayLength:
@@ -2427,8 +2478,8 @@ void ThreadState::StepNext(ShaderDebugState *state, const rdcarray<ThreadState> 
       }
 
       ShaderVariable result;
-      result.rows = 1;
-      result.columns = 1;
+      result.rows = 0;
+      result.columns = 0;
       result.type = VarType::Struct;
       result.members = {lsb, msb};
       result.members[0].name = "lsb";
@@ -3448,8 +3499,8 @@ void ThreadState::StepNext(ShaderDebugState *state, const rdcarray<ThreadState> 
       // we make a little struct out of the combination
 
       ShaderVariable result;
-      result.rows = 1;
-      result.columns = 1;
+      result.rows = 0;
+      result.columns = 0;
       result.type = VarType::Struct;
       result.members = {GetSrc(sampled.image), GetSrc(sampled.sampler)};
       result.members[0].name = "image";
@@ -3762,11 +3813,14 @@ void ThreadState::StepNext(ShaderDebugState *state, const rdcarray<ThreadState> 
 
     case Op::MemoryBarrier:
     {
-      // do nothing for now
+      OpMemoryBarrier barrier(it);
+      ExecuteMemoryBarrier(barrier.semantics);
       break;
     }
     case Op::ControlBarrier:
     {
+      OpControlBarrier barrier(it);
+      ExecuteMemoryBarrier(barrier.semantics);
       // For thread barriers the threads must be converged
       RDCASSERT(!WorkgroupIsDiverged(workgroup));
       break;
@@ -3940,8 +3994,10 @@ void ThreadState::StepNext(ShaderDebugState *state, const rdcarray<ThreadState> 
       }
       else
       {
-        SetDst(call.result, returnValue);
-        returnValue.name.clear();
+        if(hasReturnValueData)
+          SetDst(call.result, returnValue);
+        returnValue = ShaderVariable();
+        hasReturnValueData = false;
         // The instruction after a function call is defined to be a convergence point, mark that we entered it
         enteredPoints.push_back(nextInstruction);
       }
@@ -3986,10 +4042,12 @@ void ThreadState::StepNext(ShaderDebugState *state, const rdcarray<ThreadState> 
       else
       {
         returnValue.name = "<return value>";
+        hasReturnValueData = false;
         if(opdata.op == Op::ReturnValue)
         {
           OpReturnValue ret(it);
 
+          hasReturnValueData = true;
           returnValue = GetSrc(ret.value);
         }
 
@@ -4023,8 +4081,8 @@ void ThreadState::StepNext(ShaderDebugState *state, const rdcarray<ThreadState> 
       OpImageTexelPointer ptr(it);
 
       ShaderVariable result;
-      result.rows = 1;
-      result.columns = 1;
+      result.rows = 0;
+      result.columns = 0;
       result.type = VarType::Struct;
       result.members = {ReadPointerValue(ptr.image), GetSrc(ptr.coordinate), GetSrc(ptr.sample)};
       result.members[0].name = "image";
@@ -4863,6 +4921,17 @@ void ThreadState::StepNext(ShaderDebugState *state, const rdcarray<ThreadState> 
     case Op::CooperativeVectorMatrixMulNV:
     case Op::CooperativeVectorOuterProductAccumulateNV:
     case Op::CooperativeVectorReduceSumAccumulateNV:
+    case Op::TypeTensorARM:
+    case Op::TensorReadARM:
+    case Op::TensorWriteARM:
+    case Op::TensorQuerySizeARM:
+    case Op::TaskSequenceAsyncINTEL:
+    case Op::TaskSequenceCreateINTEL:
+    case Op::TaskSequenceGetINTEL:
+    case Op::TaskSequenceReleaseINTEL:
+    case Op::TypeTaskSequenceINTEL:
+    case Op::BitwiseFunctionINTEL:
+    case Op::RoundFToTF32INTEL:
     {
       // these are kernel only
       RDCERR("Encountered unexpected kernel SPIR-V operation %s", ToStr(opdata.op).c_str());
@@ -4917,4 +4986,44 @@ void ThreadState::StepNext(ShaderDebugState *state, const rdcarray<ThreadState> 
   m_State = NULL;
 }
 
+void ThreadState::ExecuteMemoryBarrier(Id semanticsId)
+{
+  // ignore if not the acitve thread
+  if(!m_State)
+    return;
+
+  ShaderVariable var = GetSrc(semanticsId);
+  MemorySemantics semantics = (MemorySemantics)var.value.u32v[0];
+  // only workgroup memory barriers are supported
+  if(!(semantics & MemorySemantics::WorkgroupMemory))
+    return;
+
+  // copy the global GSM memory into the local GSM cache
+  for(const GSMIndex &gsmIndex : gsmIndexes)
+  {
+    const int32_t globalIndex = gsmIndex.global;
+    const int32_t localIndex = gsmIndex.local;
+    if(globalIndex < global.workgroups.count())
+    {
+      if(localIndex < privates.count())
+      {
+        ShaderVariableChange change;
+        const ShaderVariable &globalData = global.workgroups[globalIndex];
+        change.before = privates[localIndex];
+        AssignValue(privates[localIndex], globalData);
+        change.after = privates[localIndex];
+        if(!(change.after == change.before))
+          m_State->changes.push_back(change);
+      }
+      else
+      {
+        RDCERR("Invalid GSM local index %u MAX %u", localIndex, privates.count());
+      }
+    }
+    else
+    {
+      RDCERR("Invalid GSM index %u MAX %u", globalIndex, global.workgroups.count());
+    }
+  }
+}
 };    // namespace rdcspv

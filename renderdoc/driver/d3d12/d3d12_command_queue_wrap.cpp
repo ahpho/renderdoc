@@ -1248,7 +1248,7 @@ bool WrappedID3D12CommandQueue::Serialise_SetMarker(SerialiserType &ser, UINT Me
     if(IsLoading(m_State))
     {
       ActionDescription action;
-      action.customName = MarkerText;
+      action.customName = MarkerText.empty() ? "<empty>" : MarkerText;
       if(Color != 0)
       {
         action.markerColor = DecodePIXColor(Color);
@@ -1306,7 +1306,7 @@ bool WrappedID3D12CommandQueue::Serialise_BeginEvent(SerialiserType &ser, UINT M
     if(IsLoading(m_State))
     {
       ActionDescription action;
-      action.customName = MarkerText;
+      action.customName = MarkerText.empty() ? "<empty>" : MarkerText;
       if(Color != 0)
       {
         action.markerColor = DecodePIXColor(Color);

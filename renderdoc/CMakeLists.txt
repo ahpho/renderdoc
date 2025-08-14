@@ -148,6 +148,7 @@ set(sources
     core/remote_server.h
     core/settings.cpp
     core/settings.h
+    core/rdcbytetrie.h
     core/replay_proxy.cpp
     core/replay_proxy.h
     core/intervals.h

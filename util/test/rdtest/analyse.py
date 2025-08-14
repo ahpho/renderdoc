@@ -1,6 +1,7 @@
 import struct
 from typing import List
 import renderdoc
+from . import util
 
 # Alias for convenience - we need to import as-is so types don't get confused
 rd = renderdoc
@@ -24,27 +25,39 @@ def open_capture(filename="", cap: rd.CaptureFile=None, opts: rd.ReplayOptions=N
     own_cap = False
     api = "Unknown"
 
-    if cap is None:
-        own_cap = True
+    result = None
+    controller = None
+    if util.get_remote_server() is None:
+        if cap is None:
+            own_cap = True
 
-        cap = rd.OpenCaptureFile()
+            cap = rd.OpenCaptureFile()
 
-        # Open a particular file
-        result = cap.OpenFile(filename, '', None)
+            # Open a particular file
+            result = cap.OpenFile(filename, '', None)
 
-        # Make sure the file opened successfully
-        if result != rd.ResultCode.Succeeded:
-            cap.Shutdown()
-            raise RuntimeError("Couldn't open '{}': {}".format(filename, str(result)))
+            # Make sure the file opened successfully
+            if result != rd.ResultCode.Succeeded:
+                cap.Shutdown()
+                raise RuntimeError("Couldn't open '{}': {}".format(filename, str(result)))
 
-        api = cap.DriverName()
+            api = cap.DriverName()
 
-        # Make sure we can replay
-        if not cap.LocalReplaySupport():
-            cap.Shutdown()
-            raise RuntimeError("{} capture cannot be replayed".format(api))
+            # Make sure we can replay
+            if not cap.LocalReplaySupport():
+                cap.Shutdown()
+                raise RuntimeError("{} capture cannot be replayed".format(api))
 
-    result, controller = cap.OpenCapture(opts, None)
+        result, controller = cap.OpenCapture(opts, None)
+    else:
+        if not cap is None:
+            raise ValueError("Cannot call analyse.open_capture() with capture handle for remote {}"
+                        .format(util.get_remote_server().remote))
+
+        result, controller = util.get_remote_server().OpenCapture(rd.RemoteServer.NoPreference,
+                                                                  filename, opts, None)
+        if result == rd.ResultCode.Succeeded:
+            api = util.get_remote_server().remote.DriverName()
 
     if own_cap:
         cap.Shutdown()
@@ -323,3 +336,40 @@ def decode_mesh_data(controller: rd.ReplayController, indices: List[int], displa
         ret.append(vertex)
 
     return ret
+
+def shadervariable_equal(a: rd.ShaderVariable, b : rd.ShaderVariable):
+    if a.rows != b.rows:
+        return False
+    if a.columns != b.columns:
+        return False
+    if a.name != b.name:
+        return False
+    if a.type != b.type:
+        return False
+    if a.flags != b.flags:
+        return False
+    if len(a.members) != len(b.members):
+        return False
+
+    for i in range(a.rows * a.columns):
+        if a.type == rd.VarType.UByte or a.type == rd.VarType.SByte:
+            if a.value.u8v[i] != b.value.u8v[i]:
+                return False
+        elif a.type == rd.VarType.Half or a.type == rd.VarType.UShort or a.type == rd.VarType.SShort:
+            if a.value.u16v[i] != b.value.u16v[i]:
+                return False
+        elif a.type == rd.VarType.Float or a.type == rd.VarType.UInt or a.type == rd.VarType.SInt or a.type == rd.VarType.Bool or a.type == rd.VarType.Enum:
+            if a.value.u32v[i] != b.value.u32v[i]:
+                return False
+        elif a.type == rd.VarType.Double or a.type == rd.VarType.ULong or a.type == rd.VarType.SLong or a.type == rd.VarType.GPUPointer:
+            if a.value.u64v[i] != b.value.u64v[i]:
+                return False
+        else:
+            if a.value.u64v[i] != b.value.u64v[i]:
+                return False
+
+    for m in range(len(a.members)):
+        if not shadervariable_equal(a.members[m], b.members[m]):
+            return False
+
+    return True

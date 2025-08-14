@@ -108,9 +108,11 @@ set(VULKAN_SRC
         vk/vk_counters.cpp
         vk/vk_custom_border_color.cpp
         vk/vk_dedicated_allocation.cpp
+        vk/vk_descriptor_buffer.cpp
         vk/vk_descriptor_index.cpp
         vk/vk_descriptor_reuse.cpp
         vk/vk_descriptor_variable_count.cpp
+        vk/vk_descriptor_buffer_analyse.cpp
         vk/vk_discard_rects.cpp
         vk/vk_discard_zoo.cpp
         vk/vk_draw_zoo.cpp

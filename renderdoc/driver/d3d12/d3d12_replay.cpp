@@ -734,6 +734,11 @@ ResourceId D3D12Replay::GetLiveID(ResourceId id)
 
 rdcarray<EventUsage> D3D12Replay::GetUsage(ResourceId id)
 {
+  if(m_pDevice->GetResourceList().find(id) == m_pDevice->GetResourceList().end())
+  {
+    return {EventUsage(0, ResourceUsage::Unused)};
+  }
+
   return m_pDevice->GetQueue()->GetUsage(id);
 }
 
@@ -1409,6 +1414,8 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
           case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS:
           {
             dst.constants.resize(src.Constants.Num32BitValues * 4);
+            dst.space = src.Constants.RegisterSpace;
+            dst.reg = src.Constants.ShaderRegister;
 
             if(i < rootElems.size())
             {
@@ -1421,27 +1428,32 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
           case D3D12_ROOT_PARAMETER_TYPE_CBV:
           {
             dst.descriptor.type = DescriptorType::ConstantBuffer;
+            dst.space = src.Descriptor.RegisterSpace;
+            dst.reg = src.Descriptor.ShaderRegister;
 
             if(i < rootElems.size())
               FillRootDescriptor(dst.descriptor, rootElems[i]);
             break;
+          }
+          case D3D12_ROOT_PARAMETER_TYPE_SRV:
+          {
+            dst.descriptor.type = DescriptorType::Buffer;
+            dst.space = src.Descriptor.RegisterSpace;
+            dst.reg = src.Descriptor.ShaderRegister;
 
-            case D3D12_ROOT_PARAMETER_TYPE_SRV:
-            {
-              dst.descriptor.type = DescriptorType::Buffer;
+            if(i < rootElems.size())
+              FillRootDescriptor(dst.descriptor, rootElems[i]);
+            break;
+          }
+          case D3D12_ROOT_PARAMETER_TYPE_UAV:
+          {
+            dst.descriptor.type = DescriptorType::ReadWriteBuffer;
+            dst.space = src.Descriptor.RegisterSpace;
+            dst.reg = src.Descriptor.ShaderRegister;
 
-              if(i < rootElems.size())
-                FillRootDescriptor(dst.descriptor, rootElems[i]);
-              break;
-            }
-            case D3D12_ROOT_PARAMETER_TYPE_UAV:
-            {
-              dst.descriptor.type = DescriptorType::ReadWriteBuffer;
-
-              if(i < rootElems.size())
-                FillRootDescriptor(dst.descriptor, rootElems[i]);
-              break;
-            }
+            if(i < rootElems.size())
+              FillRootDescriptor(dst.descriptor, rootElems[i]);
+            break;
           }
         }
 
@@ -3818,6 +3830,13 @@ void D3D12Replay::GetTextureData(ResourceId tex, const Subresource &sub,
 
   if(wasms && (isDepth || isStencil))
     resolve = false;
+
+  // don't resolve integer textures.
+  if(resolve && (IsIntFormat(resDesc.Format) || IsUIntFormat(resDesc.Format)))
+  {
+    resolve = false;
+    s.sample = 0;
+  }
 
   uint32_t slice3DCopy = 0;
 

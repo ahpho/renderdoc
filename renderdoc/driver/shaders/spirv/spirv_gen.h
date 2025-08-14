@@ -437,6 +437,8 @@ enum class ExecutionMode : uint32_t
   SignedZeroInfNanPreserve = 4461,
   RoundingModeRTE = 4462,
   RoundingModeRTZ = 4463,
+  NonCoherentTileAttachmentReadQCOM = 4489,
+  TileShadingRateQCOM = 4490,
   EarlyAndLateFragmentTestsAMD = 5017,
   StencilRefReplacingEXT = 5027,
   CoalescingAMDX = 5069,
@@ -503,6 +505,7 @@ enum class StorageClass : uint32_t
   Image = 11,
   StorageBuffer = 12,
   TileImageEXT = 4172,
+  TileAttachmentQCOM = 4491,
   NodePayloadAMDX = 5068,
   CallableDataKHR = 5328,
   IncomingCallableDataKHR = 5329,
@@ -646,9 +649,15 @@ enum class ImageChannelDataType : uint32_t
   Float = 14,
   UnormInt24 = 15,
   UnormInt101010_2 = 16,
+  UnormInt10X6EXT = 17,
   UnsignedIntRaw10EXT = 19,
   UnsignedIntRaw12EXT = 20,
   UnormInt2_101010EXT = 21,
+  UnsignedInt10X6EXT = 22,
+  UnsignedInt12X4EXT = 23,
+  UnsignedInt14X2EXT = 24,
+  UnormInt12X4EXT = 25,
+  UnormInt14X2EXT = 26,
   Max,
   Invalid = ~0U,
 };
@@ -954,6 +963,9 @@ enum class BuiltIn : uint32_t
   DeviceIndex = 4438,
   ViewIndex = 4440,
   ShadingRateKHR = 4444,
+  TileOffsetQCOM = 4492,
+  TileDimensionQCOM = 4493,
+  TileApronSizeQCOM = 4494,
   BaryCoordNoPerspAMD = 4992,
   BaryCoordNoPerspCentroidAMD = 4993,
   BaryCoordNoPerspSampleAMD = 4994,
@@ -1134,6 +1146,9 @@ enum class Capability : uint32_t
   TileImageColorReadAccessEXT = 4166,
   TileImageDepthReadAccessEXT = 4167,
   TileImageStencilReadAccessEXT = 4168,
+  TensorsARM = 4174,
+  StorageTensorArrayDynamicIndexingARM = 4175,
+  StorageTensorArrayNonUniformIndexingARM = 4176,
   CooperativeMatrixLayoutsARM = 4201,
   FragmentShadingRateKHR = 4422,
   SubgroupBallotKHR = 4423,
@@ -1168,6 +1183,7 @@ enum class Capability : uint32_t
   TextureSampleWeightedQCOM = 4484,
   TextureBoxFilterQCOM = 4485,
   TextureBlockMatchQCOM = 4486,
+  TileShadingQCOM = 4495,
   TextureBlockMatch2QCOM = 4498,
   Float16ImageAMD = 5008,
   ImageGatherBiasLodAMD = 5009,
@@ -1178,6 +1194,11 @@ enum class Capability : uint32_t
   ShaderClockKHR = 5055,
   ShaderEnqueueAMDX = 5067,
   QuadControlKHR = 5087,
+  Int4TypeINTEL = 5112,
+  Int4CooperativeMatrixINTEL = 5114,
+  BFloat16TypeKHR = 5116,
+  BFloat16DotProductKHR = 5117,
+  BFloat16CooperativeMatrixKHR = 5118,
   SampleMaskOverrideCoverageNV = 5249,
   GeometryShaderPassthroughNV = 5251,
   ShaderViewportIndexLayerEXT = 5254,
@@ -1300,6 +1321,7 @@ enum class Capability : uint32_t
   ArithmeticFenceEXT = 6144,
   FPGAClusterAttributesV2INTEL = 6150,
   FPGAKernelAttributesv2INTEL = 6161,
+  TaskSequenceINTEL = 6162,
   FPMaxErrorINTEL = 6169,
   FPGALatencyControlINTEL = 6171,
   FPGAArgumentInterfacesINTEL = 6174,
@@ -1310,7 +1332,9 @@ enum class Capability : uint32_t
   Subgroup2DBlockTransformINTEL = 6229,
   Subgroup2DBlockTransposeINTEL = 6230,
   SubgroupMatrixMultiplyAccumulateINTEL = 6236,
+  TernaryBitwiseFunctionINTEL = 6241,
   GroupUniformArithmeticKHR = 6400,
+  TensorFloat32RoundingINTEL = 6425,
   MaskedGatherScatterINTEL = 6427,
   CacheControlsINTEL = 6441,
   RegisterLimitsINTEL = 6460,
@@ -1477,7 +1501,7 @@ BITMASK_OPERATORS(MatrixMultiplyAccumulateOperands);
 
 enum class FPEncoding : uint32_t
 {
-
+  BFloat16KHR = 0,
   Max,
   Invalid = ~0U,
 };
@@ -1520,6 +1544,20 @@ using IdResult = Id;
 using IdMemorySemantics = Id;
 
 using IdScope = Id;
+
+enum class TensorOperands : uint32_t
+{
+  NoneARM = 0x0000,
+  NontemporalARM = 0x0001,
+  OutOfBoundsValueARM = 0x0002,
+  MakeElementAvailableARM = 0x0004,
+  MakeElementVisibleARM = 0x0008,
+  NonPrivateElementARM = 0x0010,
+  Max,
+  Invalid = ~0U,
+};
+
+BITMASK_OPERATORS(TensorOperands);
 
 struct GradParams
 {
@@ -1705,6 +1743,13 @@ struct LocalSizeHintIdParams
   Id zsizehint;
 };
 
+struct TileShadingRateQCOMParams
+{
+  uint32_t xrate;
+  uint32_t yrate;
+  uint32_t zrate;
+};
+
 struct StaticNumWorkgroupsAMDXParams
 {
   Id xsize;
@@ -1760,6 +1805,7 @@ struct ExecutionModeAndParamData
     uint32_t signedZeroInfNanPreserve;
     uint32_t roundingModeRTE;
     uint32_t roundingModeRTZ;
+    TileShadingRateQCOMParams tileShadingRateQCOM;
     Id isApiEntryAMDX;
     Id maxNodeRecursionAMDX;
     StaticNumWorkgroupsAMDXParams staticNumWorkgroupsAMDX;
@@ -1926,6 +1972,30 @@ struct TensorAddressingOperandsAndParamDatas
   void unsetTensorView() { flags &= ~TensorAddressingOperands::TensorView; }
   void setDecodeFunc(Id decodeFuncParam) { flags |= TensorAddressingOperands::DecodeFunc; decodeFunc = decodeFuncParam; }
   void unsetDecodeFunc() { flags &= ~TensorAddressingOperands::DecodeFunc; }
+};
+
+struct TensorOperandsAndParamDatas
+{
+  TensorOperandsAndParamDatas(TensorOperands f = TensorOperands::NoneARM) : flags(f) {}
+  TensorOperands flags;
+  Id outOfBoundsValueARM = {};
+  Id makeElementAvailableARM = {};
+  Id makeElementVisibleARM = {};
+  
+  operator TensorOperands() const { return flags; }
+  bool operator &(const TensorOperands v) const { return bool(flags & v); }
+  void setNoneARM() { flags |= TensorOperands::NoneARM; }
+  void unsetNoneARM() { flags &= ~TensorOperands::NoneARM; }
+  void setNontemporalARM() { flags |= TensorOperands::NontemporalARM; }
+  void unsetNontemporalARM() { flags &= ~TensorOperands::NontemporalARM; }
+  void setOutOfBoundsValueARM(Id outOfBoundsValueARMParam) { flags |= TensorOperands::OutOfBoundsValueARM; outOfBoundsValueARM = outOfBoundsValueARMParam; }
+  void unsetOutOfBoundsValueARM() { flags &= ~TensorOperands::OutOfBoundsValueARM; }
+  void setMakeElementAvailableARM(Id makeElementAvailableARMParam) { flags |= TensorOperands::MakeElementAvailableARM; makeElementAvailableARM = makeElementAvailableARMParam; }
+  void unsetMakeElementAvailableARM() { flags &= ~TensorOperands::MakeElementAvailableARM; }
+  void setMakeElementVisibleARM(Id makeElementVisibleARMParam) { flags |= TensorOperands::MakeElementVisibleARM; makeElementVisibleARM = makeElementVisibleARMParam; }
+  void unsetMakeElementVisibleARM() { flags &= ~TensorOperands::MakeElementVisibleARM; }
+  void setNonPrivateElementARM() { flags |= TensorOperands::NonPrivateElementARM; }
+  void unsetNonPrivateElementARM() { flags &= ~TensorOperands::NonPrivateElementARM; }
 };
 
 enum class Op : uint16_t
@@ -2277,6 +2347,10 @@ enum class Op : uint16_t
   ColorAttachmentReadEXT = 4160,
   DepthAttachmentReadEXT = 4161,
   StencilAttachmentReadEXT = 4162,
+  TypeTensorARM = 4163,
+  TensorReadARM = 4164,
+  TensorWriteARM = 4165,
+  TensorQuerySizeARM = 4166,
   TerminateInvocation = 4416,
   TypeUntypedPointerKHR = 4417,
   UntypedVariableKHR = 4418,
@@ -2517,6 +2591,11 @@ enum class Op : uint16_t
   ControlBarrierArriveINTEL = 6142,
   ControlBarrierWaitINTEL = 6143,
   ArithmeticFenceEXT = 6145,
+  TaskSequenceCreateINTEL = 6163,
+  TaskSequenceAsyncINTEL = 6164,
+  TaskSequenceGetINTEL = 6165,
+  TaskSequenceReleaseINTEL = 6166,
+  TypeTaskSequenceINTEL = 6199,
   SubgroupBlockPrefetchINTEL = 6221,
   Subgroup2DBlockLoadINTEL = 6231,
   Subgroup2DBlockLoadTransformINTEL = 6232,
@@ -2524,6 +2603,7 @@ enum class Op : uint16_t
   Subgroup2DBlockPrefetchINTEL = 6234,
   Subgroup2DBlockStoreINTEL = 6235,
   SubgroupMatrixMultiplyAccumulateINTEL = 6237,
+  BitwiseFunctionINTEL = 6242,
   GroupIMulKHR = 6401,
   GroupFMulKHR = 6402,
   GroupBitwiseAndKHR = 6403,
@@ -2532,6 +2612,7 @@ enum class Op : uint16_t
   GroupLogicalAndKHR = 6406,
   GroupLogicalOrKHR = 6407,
   GroupLogicalXorKHR = 6408,
+  RoundFToTF32INTEL = 6426,
   MaskedGatherINTEL = 6428,
   MaskedScatterINTEL = 6429,
 
@@ -2739,3 +2820,4 @@ DECLARE_STRINGISE_TYPE(rdcspv::MatrixMultiplyAccumulateOperands);
 DECLARE_STRINGISE_TYPE(rdcspv::FPEncoding);
 DECLARE_STRINGISE_TYPE(rdcspv::CooperativeVectorMatrixLayout);
 DECLARE_STRINGISE_TYPE(rdcspv::ComponentType);
+DECLARE_STRINGISE_TYPE(rdcspv::TensorOperands);

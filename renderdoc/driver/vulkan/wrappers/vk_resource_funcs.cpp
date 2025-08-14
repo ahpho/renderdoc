@@ -320,14 +320,15 @@ bool WrappedVulkan::Serialise_vkAllocateMemory(SerialiserType &ser, VkDevice dev
         {
           RDCDEBUG("Patching dedicated allocation for incompatible size");
 
-          // if acceleration structures are used, we promote all non-dedicated memory to be BDA as
-          // we can't know if it will be used for an AS or not during capture. That means that
-          // during self-capture if we just remove the dedicated allocation structure here without
-          // any other changes the self-capture layer will promote it to BDA and potentially cause
-          // clashes with reserved addresses elsewhere.
+          // if acceleration structures or descriptor buffers are used, we promote all non-dedicated
+          // memory to be BDA as we can't know if it will be used for an AS or not during capture.
+          // That means that during self-capture if we just remove the dedicated allocation
+          // structure here without any other changes the self-capture layer will promote it to BDA
+          // and potentially cause clashes with reserved addresses elsewhere.
+          //
           // instead we do the more dangerous thing of adjusting the allocation size to match the
           // image's memory requirements and keep the dedicated allocation.
-          if(AccelerationStructures())
+          if(AccelerationStructures() || DescriptorBuffers())
             patched.allocationSize = mrq.size;
           else
             RemoveNextStruct(&patched, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO);
@@ -348,6 +349,13 @@ bool WrappedVulkan::Serialise_vkAllocateMemory(SerialiserType &ser, VkDevice dev
       return false;
     }
 
+    // apply workaround for presumed windows bug
+    if(GetDriverInfo().NVUnalignedBDAIssue())
+    {
+      // all memory allocations must be 64kB aligned. The rest of the workaround only applies during capture
+      patched.allocationSize = AlignUp(patched.allocationSize, VkDeviceSize(64 * 1024));
+    }
+
     VkResult ret = ObjDisp(device)->AllocateMemory(Unwrap(device), &patched, NULL, &mem);
 
     if(ret != VK_SUCCESS)
@@ -362,6 +370,28 @@ bool WrappedVulkan::Serialise_vkAllocateMemory(SerialiserType &ser, VkDevice dev
       GetResourceManager()->AddLiveResource(Memory, mem);
 
       m_CreationInfo.m_Memory[live].Init(GetResourceManager(), m_CreationInfo, &AllocateInfo);
+
+      if(m_CreationInfo.m_Memory[live].opaqueAddr != 0)
+      {
+        VkDeviceMemoryOpaqueCaptureAddressInfo getInfo = {
+            VK_STRUCTURE_TYPE_DEVICE_MEMORY_OPAQUE_CAPTURE_ADDRESS_INFO,
+            NULL,
+            Unwrap(mem),
+        };
+
+        uint64_t opaque =
+            ObjDisp(device)->GetDeviceMemoryOpaqueCaptureAddress(Unwrap(device), &getInfo);
+
+        if(m_CreationInfo.m_Memory[live].opaqueAddr != opaque)
+        {
+          SET_ERROR_RESULT(
+              m_FailedReplayResult, ResultCode::APIReplayFailed,
+              "Allocating memory failed, opaque address 0x%llx has changed on replay to 0x%llx."
+              "This is illegal and indicates a potential driver bug.",
+              m_CreationInfo.m_Memory[live].opaqueAddr, opaque);
+          return false;
+        }
+      }
 
       VkMemoryDedicatedAllocateInfo *dedicated = (VkMemoryDedicatedAllocateInfo *)FindNextStruct(
           &AllocateInfo, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO);
@@ -414,10 +444,15 @@ bool WrappedVulkan::Serialise_vkAllocateMemory(SerialiserType &ser, VkDevice dev
         VkBufferCreateInfo bufInfo = {
             VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             NULL,
-            0,
+            DefaultBufferCreateFlags(),
             AllocateInfo.allocationSize,
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         };
+
+        if(DescriptorBuffers())
+        {
+          bufInfo.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        }
 
         ret = ObjDisp(device)->CreateBuffer(Unwrap(device), &bufInfo, NULL, &buf);
         RDCASSERTEQUAL(ret, VK_SUCCESS);
@@ -481,10 +516,16 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
     VkBufferCreateInfo bufInfo = {
         VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         NULL,
-        0,
+        DefaultBufferCreateFlags(),
         info.allocationSize,
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
     };
+
+    if(DescriptorBuffers())
+    {
+      bufInfo.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+      bufInfo.flags |= VK_BUFFER_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
+    }
 
     // since this is very short lived, it's not wrapped
     VkBuffer buf;
@@ -526,30 +567,22 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
   // will be bound against since there's no requirement for the buffer to be marked as BDA. This
   // means that when RT is enabled ALL MEMORY IN THE ENTIRE PROGRAM must be marked as BDA just in
   // case.
-  //
-  // we don't force this on for memory allocations that are going to be used for dedicated images
   bool forceBDA = false;
-  if(IsCaptureMode(m_State) && AccelerationStructures())
+  if(IsCaptureMode(m_State) && (AccelerationStructures() || DescriptorBuffers()))
   {
-    const VkMemoryDedicatedAllocateInfo *dedicated =
-        (const VkMemoryDedicatedAllocateInfo *)FindNextStruct(
-            pAllocateInfo, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO);
-    if(dedicated == NULL || dedicated->image == VK_NULL_HANDLE)
-    {
-      // force BDA flag when creating, by adding the struct if needed
-      forceBDA = true;
+    // force BDA flag when creating, by adding the struct if needed
+    forceBDA = true;
 
-      if(memFlags)
-      {
-        memFlags->flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-      }
-      else
-      {
-        rtForcedFlags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT |
-                              VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
-        rtForcedFlags.pNext = unwrapped.pNext;
-        unwrapped.pNext = &rtForcedFlags;
-      }
+    if(memFlags)
+    {
+      memFlags->flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+    }
+    else
+    {
+      rtForcedFlags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT |
+                            VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
+      rtForcedFlags.pNext = unwrapped.pNext;
+      unwrapped.pNext = &rtForcedFlags;
     }
   }
 
@@ -571,6 +604,27 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
 
       if(imageRecord->resInfo->banDedicated)
         RemoveNextStruct(&unwrapped, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO);
+    }
+  }
+
+  // apply workaround for presumed windows bug
+  if(GetDriverInfo().NVUnalignedBDAIssue())
+  {
+    const VkDeviceSize kb64 = 64 * 1024;
+    const VkDeviceSize mb2 = 2 * 1024 * 1024;
+
+    // all memory allocations must be 64kB aligned. We do this silently, not affecting the serialised size
+    unwrapped.allocationSize = AlignUp(unwrapped.allocationSize, kb64);
+
+    // <2 MB allocations must have an extra 64kB
+    if(unwrapped.allocationSize < mb2)
+    {
+      unwrapped.allocationSize += kb64;
+    }
+    else
+    {
+      // >= 2MB allocations must be aligned to 2MB
+      unwrapped.allocationSize = AlignUp(unwrapped.allocationSize, mb2);
     }
   }
 
@@ -609,7 +663,7 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
     VkBufferCreateInfo bufInfo = {
         VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         NULL,
-        0,
+        IsCaptureMode(m_State) ? DefaultBufferCreateFlags() : 0,
         info.allocationSize,
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
     };
@@ -1523,23 +1577,7 @@ bool WrappedVulkan::Serialise_vkBindBufferMemory(SerialiserType &ser, VkDevice d
     // for buffers created with device addresses, fetch it now as that's possible for both EXT and
     // KHR variants now.
     if(bufInfo.usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
-    {
-      VkBufferDeviceAddressInfo getInfo = {
-          VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-          NULL,
-          Unwrap(buffer),
-      };
-
-      RDCCOMPILE_ASSERT(VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO ==
-                            VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_EXT,
-                        "KHR and EXT buffer_device_address should be interchangeable here.");
-
-      if(GetExtensions(GetRecord(device)).ext_KHR_buffer_device_address)
-        bufInfo.gpuAddress = ObjDisp(device)->GetBufferDeviceAddress(Unwrap(device), &getInfo);
-      else if(GetExtensions(GetRecord(device)).ext_EXT_buffer_device_address)
-        bufInfo.gpuAddress = ObjDisp(device)->GetBufferDeviceAddressEXT(Unwrap(device), &getInfo);
-      m_CreationInfo.m_BufferAddresses[bufInfo.gpuAddress] = GetResID(buffer);
-    }
+      TrackReplayBufferAddress(device, buffer, memory, memoryOffset);
 
     m_CreationInfo.m_Memory[GetResID(memory)].BindMemory(memoryOffset, mrq.size,
                                                          VulkanCreationInfo::Memory::Linear);
@@ -1665,6 +1703,40 @@ bool WrappedVulkan::Serialise_vkBindImageMemory(SerialiserType &ser, VkDevice de
     m_CreationInfo.m_Memory[GetResID(memory)].BindMemory(
         memoryOffset, mrq.size,
         imgInfo.linear ? VulkanCreationInfo::Memory::Linear : VulkanCreationInfo::Memory::Tiled);
+
+    // try to determine image's address via best effort for descriptor buffer lookups if needed
+    if(DescriptorBuffers() && m_DescriptorLookup.sampled != ImageDescriptorFormat::Indexed2012)
+    {
+      VkDeviceAddress addr = imgInfo.address;
+
+      if(addr == 0)
+      {
+        const VulkanCreationInfo::Memory &memInfo = m_CreationInfo.m_Memory[GetResID(memory)];
+
+        if(memInfo.wholeMemBuf != VK_NULL_HANDLE)
+        {
+          VkBufferDeviceAddressInfo getInfo = {
+              VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+              NULL,
+              Unwrap(memInfo.wholeMemBuf),
+          };
+
+          addr = ObjDisp(device)->GetBufferDeviceAddress(Unwrap(device), &getInfo) + memoryOffset;
+        }
+        else if(memInfo.opaqueAddr)
+        {
+          addr = memInfo.opaqueAddr + memoryOffset;
+          RDCWARN("Using opaque address %llx to estimate as base address for image %s", addr,
+                  ToStr(GetResID(image)).c_str());
+        }
+      }
+
+      if(addr != 0)
+        m_DescriptorLookup.imageAddresses.AddTo(
+            {addr, addr + mrq.size, addr + mrq.size, GetResID(image)});
+      else
+        RDCLOG("Couldn't get base address for image %s", ToStr(GetResID(image)).c_str());
+    }
   }
 
   return true;
@@ -1742,6 +1814,15 @@ VkResult WrappedVulkan::vkBindImageMemory(VkDevice device, VkImage image, VkDevi
 
     record->AddParent(memrecord);
 
+    // if the image was force-referenced, do the same with the memory
+    if(IsForcedReference(record))
+    {
+      // AddForcedReference will also call MarkResourceFrameReferenced() on the image in case
+      // we're currently capturing, do the same with the memory with the correct semantics.
+      GetResourceManager()->MarkMemoryFrameReferenced(
+          GetResID(mem), memOffset, record->resInfo->memreqs.size, eFrameRef_ReadBeforeWrite);
+    }
+
     // images are a base resource but we want to track where their memory comes from.
     // Anything that looks up a baseResource for an image knows not to chase further
     // than the image.
@@ -1808,7 +1889,19 @@ bool WrappedVulkan::Serialise_vkCreateBuffer(SerialiserType &ser, VkDevice devic
         queueFamiles[q] = m_QueueRemapping[queueFamiles[q]][0].family;
     }
 
+    CreateInfo.flags |= DefaultBufferCreateFlags();
+
     VkBufferCreateInfo patched = CreateInfo;
+
+    // inflate all resource descriptor buffers, so that we have room for internal
+    // descriptors wherever they are bound. We only do this once at the point of original capturing
+    // - one we have captured and are then self-capturing we re-use the same reservation space to
+    // ensure we don't keep trying to add more and more reservation
+    if(patchedusage & VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT)
+    {
+      if(!m_InitParams.DescriptorsReserved)
+        patched.size += m_ResourceDescriptorBufferReserveSize;
+    }
 
     byte *tempMem = GetTempMemory(GetNextPatchSize(patched.pNext));
 
@@ -1831,7 +1924,22 @@ bool WrappedVulkan::Serialise_vkCreateBuffer(SerialiserType &ser, VkDevice devic
 
       m_CreationInfo.m_Buffer[live].Init(GetResourceManager(), m_CreationInfo, &CreateInfo,
                                          memoryRequirements);
+
+      if(patchedusage & VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT)
+      {
+        ResourceId inlineDescriptorId = m_CreationInfo.m_Buffer[live].inlineDescriptorId =
+            ResourceIDGen::GetNewUniqueID();
+        m_InlineBuffers[inlineDescriptorId] = live;
+      }
     }
+
+    if(patchedusage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
+    {
+      m_DeviceAddressResources.IDs.push_back(GetResID(buf));
+    }
+
+    if(patchedusage & VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT)
+      m_ResourceDescBuffers.push_back(GetResID(buf));
 
     if(CreateInfo.flags &
        (VK_BUFFER_CREATE_SPARSE_BINDING_BIT | VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT))
@@ -1839,26 +1947,8 @@ bool WrappedVulkan::Serialise_vkCreateBuffer(SerialiserType &ser, VkDevice devic
       APIProps.SparseResources = true;
 
       // for sparse BDA buffers we can and must request the address now since it won't be queried on memory bind
-      if(CreateInfo.usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
-      {
-        VulkanCreationInfo::Buffer &bufInfo = m_CreationInfo.m_Buffer[GetResID(buf)];
-
-        VkBufferDeviceAddressInfo getInfo = {
-            VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-            NULL,
-            Unwrap(buf),
-        };
-
-        RDCCOMPILE_ASSERT(VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO ==
-                              VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_EXT,
-                          "KHR and EXT buffer_device_address should be interchangeable here.");
-
-        if(GetExtensions(GetRecord(device)).ext_KHR_buffer_device_address)
-          bufInfo.gpuAddress = ObjDisp(device)->GetBufferDeviceAddress(Unwrap(device), &getInfo);
-        else if(GetExtensions(GetRecord(device)).ext_EXT_buffer_device_address)
-          bufInfo.gpuAddress = ObjDisp(device)->GetBufferDeviceAddressEXT(Unwrap(device), &getInfo);
-        m_CreationInfo.m_BufferAddresses[bufInfo.gpuAddress] = GetResID(buf);
-      }
+      if(patchedusage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
+        TrackReplayBufferAddress(device, buf, VK_NULL_HANDLE, 0);
     }
 
     AddResource(Buffer, ResourceType::Buffer, "Buffer");
@@ -1897,6 +1987,19 @@ VkResult WrappedVulkan::vkCreateBuffer(VkDevice device, const VkBufferCreateInfo
       adjusted_info.flags |= VK_BUFFER_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
   }
 
+  if(IsCaptureMode(m_State))
+    adjusted_info.flags |= DefaultBufferCreateFlags();
+
+  // inflate all resource descriptor buffers, so that we have room for internal
+  // descriptors wherever they are bound. We only do this once at the point of original capturing -
+  // one we have captured and are then self-capturing we re-use the same reservation space to ensure
+  // we don't keep trying to add more and more reservation
+  if(adjusted_usage & VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT)
+  {
+    if(!m_InitParams.DescriptorsReserved)
+      adjusted_info.size += m_ResourceDescriptorBufferReserveSize;
+  }
+
   SetBufferUsageFlags(&adjusted_info, adjusted_usage);
 
   byte *tempMem = GetTempMemory(GetNextPatchSize(adjusted_info.pNext));
@@ -1931,6 +2034,8 @@ VkResult WrappedVulkan::vkCreateBuffer(VkDevice device, const VkBufferCreateInfo
       if(serialisedUsage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR)
         serialisedUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
       SetBufferUsageFlags(&serialisedCreateInfo, serialisedUsage);
+
+      OpaqueDataForSerialising opaqueData;
 
       // if we're using VK_[KHR|EXT]_buffer_device_address, we fetch the device address that's been
       // allocated and insert it into the next chain and patch the flags so that it replays
@@ -1997,6 +2102,12 @@ VkResult WrappedVulkan::vkCreateBuffer(VkDevice device, const VkBufferCreateInfo
           SCOPED_LOCK(m_DeviceAddressResourcesLock);
           m_DeviceAddressResources.IDs.push_back(record->GetResourceID());
         }
+
+        if(DescriptorBuffers())
+        {
+          opaqueData.fill(device, *pBuffer, m_DescriptorBufferProperties);
+          opaqueData.addForSerialising((VkBaseInStructure *)&serialisedCreateInfo);
+        }
       }
 
       {
@@ -2030,7 +2141,7 @@ VkResult WrappedVulkan::vkCreateBuffer(VkDevice device, const VkBufferCreateInfo
 
       record->resInfo = NULL;
 
-      if(isSparse || isExternal)
+      if(isSparse || isExternal || m_DescriptorBuffers)
       {
         record->resInfo = new ResourceInfo();
 
@@ -2300,6 +2411,8 @@ bool WrappedVulkan::Serialise_vkCreateImage(SerialiserType &ser, VkDevice device
     // create non-subsampled image to be able to copy its content
     CreateInfo.flags &= ~VK_IMAGE_CREATE_SUBSAMPLED_BIT_EXT;
 
+    CreateInfo.flags |= DefaultImageCreateFlags();
+
     APIProps.YUVTextures |= IsYUVFormat(CreateInfo.format);
 
     const bool isSparse = (CreateInfo.flags & (VK_IMAGE_CREATE_SPARSE_BINDING_BIT |
@@ -2399,6 +2512,20 @@ bool WrappedVulkan::Serialise_vkCreateImage(SerialiserType &ser, VkDevice device
 
       m_CreationInfo.m_Image[live].Init(GetResourceManager(), m_CreationInfo, &CreateInfo,
                                         memoryRequirements);
+
+      // if we have opaque capture data that's 8 bytes and isn't 0, assume it's the image's address.
+      // If we guess wrong here this won't be bad necessarily it would just break the fast
+      // descriptor lookup for images
+      VkOpaqueCaptureDescriptorDataCreateInfoEXT *opaque =
+          (VkOpaqueCaptureDescriptorDataCreateInfoEXT *)FindNextStruct(
+              &CreateInfo, VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT);
+      if(opaque && m_DescriptorBufferProperties.imageCaptureReplayDescriptorDataSize == 8)
+      {
+        uint64_t *ptr = (uint64_t *)opaque->opaqueCaptureDescriptorData;
+
+        if(*ptr != 0)
+          m_CreationInfo.m_Image[live].address = *ptr;
+      }
 
       bool inserted = false;
       auto state = InsertImageState(img, live, CreateInfo, eFrameRef_Unknown, &inserted);
@@ -2519,6 +2646,9 @@ VkResult WrappedVulkan::vkCreateImage(VkDevice device, const VkImageCreateInfo *
   // create non-subsampled image to be able to copy its content
   createInfo_adjusted.flags &= ~VK_IMAGE_CREATE_SUBSAMPLED_BIT_EXT;
 
+  if(IsCaptureMode(m_State))
+    createInfo_adjusted.flags |= DefaultImageCreateFlags();
+
   size_t tempMemSize = GetNextPatchSize(createInfo_adjusted.pNext);
 
   // reserve space for a patched view format list if necessary
@@ -2615,11 +2745,21 @@ VkResult WrappedVulkan::vkCreateImage(VkDevice device, const VkImageCreateInfo *
     {
       Chunk *chunk = NULL;
 
+      VkImageCreateInfo serialisedCreateInfo = *pCreateInfo;
+
+      OpaqueDataForSerialising opaqueData;
+
+      if(DescriptorBuffers())
+      {
+        opaqueData.fill(device, *pImage, m_DescriptorBufferProperties);
+        opaqueData.addForSerialising((VkBaseInStructure *)&serialisedCreateInfo);
+      }
+
       {
         CACHE_THREAD_SERIALISER();
 
         SCOPED_SERIALISE_CHUNK(VulkanChunk::vkCreateImage);
-        Serialise_vkCreateImage(ser, device, pCreateInfo, NULL, pImage);
+        Serialise_vkCreateImage(ser, device, &serialisedCreateInfo, NULL, pImage);
 
         chunk = scope.Get();
       }
@@ -2627,7 +2767,13 @@ VkResult WrappedVulkan::vkCreateImage(VkDevice device, const VkImageCreateInfo *
       VkResourceRecord *record = GetResourceManager()->AddResourceRecord(*pImage);
       record->AddChunk(chunk);
 
+      // can't differentiate whether this image will be used with descriptor buffers, must force
+      // reference all images
+      if(DescriptorBuffers())
+        AddForcedReference(record);
+
       record->resInfo = new ResourceInfo();
+      record->resInfo->parentResInfo = record->resInfo;
       ResourceInfo &resInfo = *record->resInfo;
       resInfo.imageInfo = ImageInfo(*pCreateInfo);
 
@@ -2911,6 +3057,8 @@ bool WrappedVulkan::Serialise_vkCreateImageView(SerialiserType &ser, VkDevice de
       PatchImageViewUsage(usageInfo, CreateInfo.format, samples);
     }
 
+    unwrappedInfo->flags |= DefaultImageViewCreateFlags();
+
     VkResult ret = ObjDisp(device)->CreateImageView(Unwrap(device), unwrappedInfo, NULL, &view);
 
     APIProps.YUVTextures |= IsYUVFormat(CreateInfo.format);
@@ -2945,6 +3093,37 @@ bool WrappedVulkan::Serialise_vkCreateImageView(SerialiserType &ser, VkDevice de
       }
     }
 
+    // if we're using indexed descriptors then look for the opaque info
+    if(DescriptorBuffers() && m_DescriptorLookup.sampled == ImageDescriptorFormat::Indexed2012)
+    {
+      // if we have opaque capture data that's 8 bytes and isn't 0, assume it's the image's address.
+      // If we guess wrong here this won't be bad necessarily it would just break the fast
+      // descriptor lookup for images
+      VkOpaqueCaptureDescriptorDataCreateInfoEXT *opaque =
+          (VkOpaqueCaptureDescriptorDataCreateInfoEXT *)FindNextStruct(
+              &CreateInfo, VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT);
+      if(opaque && m_DescriptorBufferProperties.imageViewCaptureReplayDescriptorDataSize >= 4)
+      {
+        const uint32_t numIndices =
+            uint32_t(m_DescriptorBufferProperties.imageViewCaptureReplayDescriptorDataSize / 4);
+        uint32_t *ptr = (uint32_t *)opaque->opaqueCaptureDescriptorData;
+
+        // these would be expected to be sampled, storage (if possible), input (if possible)
+        // but we only need to know the image view itself as we always know the descriptor type when
+        // decoding due to varying size etc
+        for(uint32_t i = 0; i < numIndices; i++)
+        {
+          if(ptr[i])
+          {
+            if(ptr[0] < m_DescriptorLookup.imageViewPalette.size())
+              m_DescriptorLookup.imageViewPalette[ptr[i]] = GetResID(view);
+            else
+              RDCERR("Invalid saved index %u", ptr[i]);
+          }
+        }
+      }
+    }
+
     AddResource(View, ResourceType::View, "Image View");
     DerivedResource(device, View);
     DerivedResource(CreateInfo.image, View);
@@ -2973,6 +3152,8 @@ VkResult WrappedVulkan::vkCreateImageView(VkDevice device, const VkImageViewCrea
     PatchImageViewUsage(usageInfo, pCreateInfo->format, samples);
   }
 
+  unwrappedInfo->flags |= DefaultImageViewCreateFlags();
+
   VkResult ret;
   SERIALISE_TIME_CALL(
       ret = ObjDisp(device)->CreateImageView(Unwrap(device), unwrappedInfo, NULL, pView));
@@ -2985,11 +3166,21 @@ VkResult WrappedVulkan::vkCreateImageView(VkDevice device, const VkImageViewCrea
     {
       Chunk *chunk = NULL;
 
+      VkImageViewCreateInfo serialisedCreateInfo = *pCreateInfo;
+
+      OpaqueDataForSerialising opaqueData;
+
+      if(DescriptorBuffers())
+      {
+        opaqueData.fill(device, *pView, m_DescriptorBufferProperties);
+        opaqueData.addForSerialising((VkBaseInStructure *)&serialisedCreateInfo);
+      }
+
       {
         CACHE_THREAD_SERIALISER();
 
         SCOPED_SERIALISE_CHUNK(VulkanChunk::vkCreateImageView);
-        Serialise_vkCreateImageView(ser, device, pCreateInfo, NULL, pView);
+        Serialise_vkCreateImageView(ser, device, &serialisedCreateInfo, NULL, pView);
 
         chunk = scope.Get();
       }
@@ -3000,12 +3191,25 @@ VkResult WrappedVulkan::vkCreateImageView(VkDevice device, const VkImageViewCrea
       record->AddChunk(chunk);
       record->AddParent(imageRecord);
 
+      // can't differentiate whether this image will be used with descriptor buffers, must force
+      // reference all images
+      if(DescriptorBuffers())
+        AddForcedReference(record);
+
       // store the base resource. Note images have a baseResource pointing
       // to their memory, which we will also need so we store that separately
       record->baseResource = imageRecord->GetResourceID();
       record->baseResourceMem = imageRecord->baseResourceMem;
       record->dedicated = imageRecord->dedicated;
-      record->resInfo = imageRecord->resInfo;
+      if(m_DescriptorBuffers)
+      {
+        record->resInfo = new ResourceInfo(*imageRecord->resInfo);
+        record->resInfo->parentResInfo = imageRecord->resInfo;
+      }
+      else
+      {
+        record->resInfo = imageRecord->resInfo;
+      }
       record->viewRange = pCreateInfo->subresourceRange;
       record->viewRange.setViewType(pCreateInfo->viewType);
     }
@@ -3073,19 +3277,7 @@ bool WrappedVulkan::Serialise_vkBindBufferMemory2(SerialiserType &ser, VkDevice 
       // for buffers created with device addresses, fetch it now as that's possible for both EXT and
       // KHR variants now.
       if(bufInfo.usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
-      {
-        VkBufferDeviceAddressInfo getInfo = {
-            VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-            NULL,
-            Unwrap(bindInfo.buffer),
-        };
-
-        if(GetExtensions(GetRecord(device)).ext_KHR_buffer_device_address)
-          bufInfo.gpuAddress = ObjDisp(device)->GetBufferDeviceAddress(Unwrap(device), &getInfo);
-        else if(GetExtensions(GetRecord(device)).ext_EXT_buffer_device_address)
-          bufInfo.gpuAddress = ObjDisp(device)->GetBufferDeviceAddressEXT(Unwrap(device), &getInfo);
-        m_CreationInfo.m_BufferAddresses[bufInfo.gpuAddress] = GetResID(bindInfo.buffer);
-      }
+        TrackReplayBufferAddress(device, bindInfo.buffer, bindInfo.memory, bindInfo.memoryOffset);
 
       // the memory is immediately dirty because we don't use dirty tracking, it's too expensive to
       // follow all frame refs in the background and it's pointless because memory almost always
@@ -3261,6 +3453,42 @@ bool WrappedVulkan::Serialise_vkBindImageMemory2(SerialiserType &ser, VkDevice d
         m_CreationInfo.m_Memory[GetResID(bindInfo.memory)].BindMemory(
             bindInfo.memoryOffset, mrq.size,
             imgInfo.linear ? VulkanCreationInfo::Memory::Linear : VulkanCreationInfo::Memory::Tiled);
+
+        // try to determine image's address via best effort for descriptor buffer lookups if needed
+        if(DescriptorBuffers() && m_DescriptorLookup.sampled != ImageDescriptorFormat::Indexed2012)
+        {
+          VkDeviceAddress addr = imgInfo.address;
+
+          if(addr == 0)
+          {
+            const VulkanCreationInfo::Memory &memInfo =
+                m_CreationInfo.m_Memory[GetResID(bindInfo.memory)];
+
+            if(memInfo.wholeMemBuf != VK_NULL_HANDLE)
+            {
+              VkBufferDeviceAddressInfo getInfo = {
+                  VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+                  NULL,
+                  Unwrap(memInfo.wholeMemBuf),
+              };
+
+              addr = ObjDisp(device)->GetBufferDeviceAddress(Unwrap(device), &getInfo) +
+                     bindInfo.memoryOffset;
+            }
+            else if(memInfo.opaqueAddr)
+            {
+              addr = memInfo.opaqueAddr + bindInfo.memoryOffset;
+              RDCWARN("Using opaque address to estimate as base address for image %s",
+                      ToStr(GetResID(bindInfo.image)).c_str());
+            }
+          }
+
+          if(addr != 0)
+            m_DescriptorLookup.imageAddresses.AddTo(
+                {addr, addr + mrq.size, addr + mrq.size, GetResID(bindInfo.image)});
+          else
+            RDCLOG("Couldn't get base address for image %s", ToStr(GetResID(bindInfo.image)).c_str());
+        }
       }
     }
 
@@ -3344,6 +3572,16 @@ VkResult WrappedVulkan::vkBindImageMemory2(VkDevice device, uint32_t bindInfoCou
       // so this can always go into the record, even if a resource is created and bound
       // to memory mid-frame
       imgrecord->AddChunk(chunk);
+
+      // if the image was force-referenced, do the same with the memory
+      if(IsForcedReference(imgrecord))
+      {
+        // AddForcedReference will also call MarkResourceFrameReferenced() on the buffer in case
+        // we're currently capturing, do the same with the memory with the correct semantics.
+        GetResourceManager()->MarkMemoryFrameReferenced(
+            GetResID(pBindInfos[i].memory), pBindInfos[i].memoryOffset,
+            imgrecord->resInfo->memreqs.size, eFrameRef_ReadBeforeWrite);
+      }
 
       const VkBindImageMemorySwapchainInfoKHR *swapBind =
           (const VkBindImageMemorySwapchainInfoKHR *)FindNextStruct(
@@ -3456,8 +3694,8 @@ bool WrappedVulkan::Serialise_vkCreateAccelerationStructureKHR(
     const VkAllocationCallbacks *pAllocator, VkAccelerationStructureKHR *pAccelerationStructure)
 {
   SERIALISE_ELEMENT(device);
-  SERIALISE_ELEMENT_LOCAL(CreateInfo, *pCreateInfo).Important();
-  SERIALISE_ELEMENT_OPT(pAllocator);
+  SERIALISE_ELEMENT_LOCAL(CreateInfo, *pCreateInfo).Hidden();
+  SERIALISE_ELEMENT_OPT(pAllocator).Hidden();
   SERIALISE_ELEMENT_LOCAL(AccelerationStructure, GetResID(*pAccelerationStructure))
       .TypedAs("VkAccelerationStructureKHR"_lit);
 
@@ -3467,6 +3705,10 @@ bool WrappedVulkan::Serialise_vkCreateAccelerationStructureKHR(
   {
     VkAccelerationStructureCreateInfoKHR unwrappedInfo = CreateInfo;
     unwrappedInfo.buffer = Unwrap(unwrappedInfo.buffer);
+
+    if(m_DescriptorBuffers)
+      unwrappedInfo.createFlags |=
+          VK_ACCELERATION_STRUCTURE_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT;
 
     VkAccelerationStructureKHR acc = VK_NULL_HANDLE;
     VkResult ret =
@@ -3501,6 +3743,16 @@ bool WrappedVulkan::Serialise_vkCreateAccelerationStructureKHR(
 
         m_CreationInfo.m_AccelerationStructure[live].Init(GetResourceManager(), m_CreationInfo,
                                                           &CreateInfo);
+
+        const VkAccelerationStructureDeviceAddressInfoKHR getInfo = {
+            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
+            NULL,
+            Unwrap(acc),
+        };
+        const VkDeviceAddress addr =
+            ObjDisp(device)->GetAccelerationStructureDeviceAddressKHR(Unwrap(device), &getInfo);
+
+        m_ASLookupByAddr[addr] = live;
       }
     }
 
@@ -3523,6 +3775,10 @@ VkResult WrappedVulkan::vkCreateAccelerationStructureKHR(
   if(IsCaptureMode(m_State))
     unwrappedInfo.createFlags |=
         VK_ACCELERATION_STRUCTURE_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT_KHR;
+
+  if(m_DescriptorBuffers)
+    unwrappedInfo.createFlags |=
+        VK_ACCELERATION_STRUCTURE_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT;
 
   unwrappedInfo.buffer = Unwrap(unwrappedInfo.buffer);
   VkResult ret;
@@ -3549,6 +3805,14 @@ VkResult WrappedVulkan::vkCreateAccelerationStructureKHR(
           ObjDisp(device)->GetAccelerationStructureDeviceAddressKHR(Unwrap(device), &getInfo);
       serialisedCreateInfo.deviceAddress = addr;
 
+      OpaqueDataForSerialising opaqueData;
+
+      if(DescriptorBuffers())
+      {
+        opaqueData.fill(device, *pAccelerationStructure, m_DescriptorBufferProperties);
+        opaqueData.addForSerialising((VkBaseInStructure *)&serialisedCreateInfo);
+      }
+
       Chunk *chunk = NULL;
 
       {
@@ -3568,6 +3832,7 @@ VkResult WrappedVulkan::vkCreateAccelerationStructureKHR(
       record->AddParent(bufferRecord);
 
       record->accelerationStructureInfo = new VkAccelerationStructureInfo();
+      record->accelerationStructureInfo->address = addr;
 
       // store the base resource
       record->baseResource = bufferRecord->GetResourceID();
@@ -3579,15 +3844,33 @@ VkResult WrappedVulkan::vkCreateAccelerationStructureKHR(
 
       GetResourceManager()->MarkDirtyResource(id);
       if(pCreateInfo->type == VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR ||
-         pCreateInfo->type == VK_ACCELERATION_STRUCTURE_TYPE_GENERIC_KHR)
+         pCreateInfo->type == VK_ACCELERATION_STRUCTURE_TYPE_GENERIC_KHR || DescriptorBuffers())
       {
         // We force reference BLASs as it is not feasible to track at the API level which TLASs
         // reference them.  We force ref generics too as they could bottom or top level so we
         // conservatively assume they are bottom
+        // when descriptor buffers are enabled, we must force reference all ASs
         AddForcedReference(record);
 
         // in case we're currently capturing, immediately consider the AS as referenced
         GetResourceManager()->MarkResourceFrameReferenced(record->GetResourceID(), eFrameRef_Read);
+      }
+
+      if(m_DescriptorBuffers)
+      {
+        {
+          SCOPED_LOCK(m_ASLookupByAddrLock);
+          m_ASLookupByAddr[addr] = id;
+        }
+
+        VkDescriptorGetInfoEXT getDesc = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+        };
+        byte dummy[256];
+        getDesc.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+        getDesc.data.accelerationStructure = addr;
+        vkGetDescriptorEXT(device, &getDesc,
+                           m_DescriptorBufferProperties.accelerationStructureDescriptorSize, dummy);
       }
     }
     else

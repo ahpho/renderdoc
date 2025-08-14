@@ -1111,6 +1111,10 @@ bool RichResourceTextMouseEvent(const QWidget *owner, const QVariant &var, QRect
             formatter = BufferFormatter::DeclareStruct(pack, ResourceId(), ptrType.name,
                                                        ptrType.members, ptrType.arrayByteStride);
           }
+          else if(!ptrType.name.empty() && ptrType.name[0] != '<')
+          {
+            formatter = ptrType.name;
+          }
 
           IBufferViewer *view = ctx.ViewBuffer(ptr->offset, ~0ULL, ptr->base, formatter);
 
@@ -1957,6 +1961,13 @@ QVariant SDObject2Variant(const SDObject *obj, bool inlineImportant)
   {
     param = QVariant::fromValue(obj->data.basic.id);
   }
+  else if(obj->type.basetype == SDBasic::GPUAddress)
+  {
+    PointerVal p;
+    p.pointerTypeID = ~0U;
+    p.pointer = obj->data.basic.u;
+    param = ToQStr(p);
+  }
   else if(obj->type.flags & SDTypeFlags::NullString)
   {
     param = lit("NULL");
@@ -2081,7 +2092,10 @@ QVariant SDObject2Variant(const SDObject *obj, bool inlineImportant)
         param = trimmedStr.trimmed();
         break;
       }
+      // won't be hit, these are handled above
       case SDBasic::Resource:
+      case SDBasic::GPUAddress:
+        // normal cases
       case SDBasic::Enum:
       case SDBasic::UnsignedInteger:
         param = Formatter::HumanFormat(obj->data.basic.u, flags);

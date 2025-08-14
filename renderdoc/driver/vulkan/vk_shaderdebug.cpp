@@ -171,15 +171,14 @@ public:
 
       // if the last range is contiguous with this access, append this access as a new range to query
       if(!ranges.empty() && ranges.back().descriptorSize == acc.byteSize &&
-         ranges.back().offset + ranges.back().descriptorSize == acc.byteOffset)
+         ranges.back().offset + ranges.back().descriptorSize == acc.byteOffset &&
+         ranges.back().type == acc.type)
       {
         ranges.back().count++;
         continue;
       }
 
-      DescriptorRange range;
-      range.offset = acc.byteOffset;
-      range.descriptorSize = acc.byteSize;
+      DescriptorRange range = acc;
       ranges.push_back(range);
     }
 
@@ -204,6 +203,7 @@ public:
         ResourceId sourceSet = srcData.descSet;
         const uint32_t *srcOffset = srcData.offsets.begin();
 
+        // this could be either an unbound set, or descriptor buffers (which can't use dynamic offsets anyway)
         if(sourceSet == ResourceId())
           continue;
 
@@ -347,7 +347,33 @@ public:
     ShaderVariable input;
     input.columns = data.fmt.compCount;
 
-    if(data.fmt.compType == CompType::UInt)
+    // the only 'irregular' format we need to worry about handling for integer types is 10:10:10:2.
+    // All others are float/uint
+    if(data.fmt.type == ResourceFormatType::R10G10B10A2)
+    {
+      PixelValue val;
+      DecodePixelData(data.fmt, data.texel(coords, sample), val);
+
+      if(data.fmt.compType == CompType::UInt)
+        input.type = VarType::UInt;
+      else if(data.fmt.compType == CompType::SInt)
+        input.type = VarType::SInt;
+      else
+        input.type = VarType::Float;
+
+      memcpy(input.value.u32v.data(), val.uintValue.data(), val.uintValue.byteSize());
+
+      for(uint8_t c = 0; c < RDCMIN(output.columns, input.columns); c++)
+      {
+        if(data.fmt.compType == CompType::UInt)
+          setUintComp(output, c, uintComp(input, c));
+        else if(data.fmt.compType == CompType::SInt)
+          setIntComp(output, c, intComp(input, c));
+        else
+          setFloatComp(output, c, input.value.f32v[c]);
+      }
+    }
+    else if(data.fmt.compType == CompType::UInt)
     {
       RDCASSERT(varComp == CompType::UInt, varComp);
 
@@ -435,7 +461,28 @@ public:
     ShaderVariable output;
     output.columns = data.fmt.compCount;
 
-    if(data.fmt.compType == CompType::UInt)
+    // the only 'irregular' format we need to worry about handling for integer types is 10:10:10:2.
+    // All others are float/uint
+    if(data.fmt.type == ResourceFormatType::R10G10B10A2)
+    {
+      // image writes are required to write a whole texel so we know we should have 4 components
+      RDCASSERTEQUAL(input.columns, 4);
+
+      uint32_t encoded = 0;
+
+      if(data.fmt.compType == CompType::SNorm)
+        encoded = ConvertToR10G10B10A2SNorm(Vec4f(input.value.f32v[0], input.value.f32v[1],
+                                                  input.value.f32v[2], input.value.f32v[3]));
+      else if(data.fmt.compType == CompType::UInt)
+        encoded = ConvertToR10G10B10A2(Vec4u(input.value.u32v[0], input.value.u32v[1],
+                                             input.value.u32v[2], input.value.u32v[3]));
+      else
+        encoded = ConvertToR10G10B10A2(Vec4f(input.value.f32v[0], input.value.f32v[1],
+                                             input.value.f32v[2], input.value.f32v[3]));
+
+      memcpy(data.texel(coords, sample), &encoded, sizeof(uint32_t));
+    }
+    else if(data.fmt.compType == CompType::UInt)
     {
       RDCASSERT(varComp == CompType::UInt, varComp);
 
@@ -708,18 +755,31 @@ public:
 
         if(buffer)
         {
-          const VulkanCreationInfo::BufferView &bufViewProps =
-              m_Creation.m_BufferView[GetResID(bufferView)];
-
-          VkDeviceSize size = bufViewProps.size;
-
-          if(size == VK_WHOLE_SIZE)
+          VkDeviceSize size;
+          VkFormat format;
+          if(bufferView == VK_NULL_HANDLE)
           {
-            const VulkanCreationInfo::Buffer &bufProps = m_Creation.m_Buffer[bufViewProps.buffer];
-            size = bufProps.size - bufViewProps.offset;
+            // descriptor buffer case - there is no buffer view so read directly out of the determined descriptor
+            format = MakeVkFormat(bufferViewDescriptor.format);
+            // size is not allowed to be VK_WHOLE_SIZE
+            size = bufferViewDescriptor.byteSize;
+          }
+          else
+          {
+            const VulkanCreationInfo::BufferView &bufViewProps =
+                m_Creation.m_BufferView[GetResID(bufferView)];
+
+            size = bufViewProps.size;
+            format = bufViewProps.format;
+
+            if(size == VK_WHOLE_SIZE)
+            {
+              const VulkanCreationInfo::Buffer &bufProps = m_Creation.m_Buffer[bufViewProps.buffer];
+              size = bufProps.size - bufViewProps.offset;
+            }
           }
 
-          setUintComp(output, 0, uint32_t(size / GetByteSize(1, 1, 1, bufViewProps.format, 0)));
+          setUintComp(output, 0, uint32_t(size / GetByteSize(1, 1, 1, format, 0)));
         }
 
         return true;
@@ -1191,6 +1251,33 @@ public:
 
     if(buffer)
     {
+      if(bufferView == VK_NULL_HANDLE)
+      {
+        // descriptor buffer, must create our own
+
+        BufViewKey key = {bufferViewDescriptor.resource, bufferViewDescriptor.byteOffset,
+                          bufferViewDescriptor.byteSize, MakeVkFormat(bufferViewDescriptor.format)};
+
+        bufferView = m_SampleBufViews[key];
+        if(bufferView == VK_NULL_HANDLE)
+        {
+          VkBufferViewCreateInfo viewInfo = {
+              VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO,
+              NULL,
+              0,
+              m_pDriver->GetResourceManager()->GetLiveHandle<VkBuffer>(bufferViewDescriptor.resource),
+              key.format,
+              bufferViewDescriptor.byteOffset,
+              bufferViewDescriptor.byteSize,
+          };
+
+          VkResult vkr = m_pDriver->vkCreateBufferView(dev, &viewInfo, NULL, &bufferView);
+          CHECK_VKR(m_pDriver, vkr);
+
+          m_SampleBufViews[key] = bufferView;
+        }
+      }
+
       writeSets[1].pTexelBufferView = UnwrapPtr(bufferView);
       writeSets[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
     }
@@ -1488,6 +1575,29 @@ private:
   rdcarray<SamplerDescriptor> m_SamplerDescriptors;
 
   std::map<ResourceId, VkImageView> m_SampleViews;
+  struct BufViewKey
+  {
+    ResourceId buf;
+    VkDeviceSize offs, size;
+    VkFormat format;
+    bool operator==(const BufViewKey &o) const
+    {
+      return buf == o.buf && offs == o.offs && size == o.size && format == o.format;
+    }
+    bool operator<(const BufViewKey &o) const
+    {
+      if(buf != o.buf)
+        return buf < o.buf;
+      if(offs != o.offs)
+        return offs < o.offs;
+      if(size != o.size)
+        return size < o.size;
+      if(format != o.format)
+        return format < o.format;
+      return false;
+    }
+  };
+  rdcflatmap<BufViewKey, VkBufferView> m_SampleBufViews;
 
   typedef rdcpair<ResourceId, float> SamplerBiasKey;
   std::map<SamplerBiasKey, VkSampler> m_BiasSamplers;
@@ -1582,52 +1692,25 @@ private:
   {
     // pick a non-overlapping bind namespace for direct pointer access
     ShaderBindIndex bind;
-    uint64_t base;
-    uint64_t end;
     ResourceId id;
-    bool valid = false;
-    if(m_Creation.m_BufferAddresses.empty())
+    uint64_t ptrOffs;
+
+    m_pDriver->GetResIDFromAddr(address, id, ptrOffs);
+    if(id == ResourceId())
     {
       bind.arrayElement = 0;
       auto insertIt = bufferCache.insert(std::make_pair(bind, bytebuf()));
-      m_pDriver->AddDebugMessage(
-          MessageCategory::Execution, MessageSeverity::High, MessageSource::RuntimeWarning,
-          StringFormat::Fmt("pointer access detected but no address-capable buffers allocated."));
+      m_pDriver->AddDebugMessage(MessageCategory::Execution, MessageSeverity::High,
+                                 MessageSource::RuntimeWarning,
+                                 StringFormat::Fmt("invalid or OOB pointer access detected ."));
       return insertIt.first->second;
     }
-    else
-    {
-      auto it = m_Creation.m_BufferAddresses.lower_bound(address);
-      // lower_bound puts us at the same or next item. Since we want the buffer that contains
-      // this address, we go to the previous iter unless we're already on the first or
-      // it's an exact match
-      if(it == m_Creation.m_BufferAddresses.end() ||
-         (address != it->first && it != m_Creation.m_BufferAddresses.begin()))
-        it--;
-      // use the index in the map as a unique buffer identifier that's not 64-bit
-      bind.arrayElement = uint32_t(it - m_Creation.m_BufferAddresses.begin());
-      {
-        base = it->first;
-        id = it->second;
-        end = base + m_Creation.m_Buffer[id].size;
-        if(base <= address && address < end)
-        {
-          offs = (size_t)(address - base);
-          valid = true;
-        }
-      }
-    }
-    if(!valid)
-    {
-      m_pDriver->AddDebugMessage(
-          MessageCategory::Execution, MessageSeverity::High, MessageSource::RuntimeWarning,
-          StringFormat::Fmt("out of bounds pointer access of address %#18llx detected.Closest "
-                            "buffer is address range %#18llx -> %#18llx (%s)",
-                            address, base, end, ToStr(id).c_str()));
-    }
+    bind.arrayElement = (address - offs) & 0xFFFFFFFFU;
+    offs = size_t(ptrOffs);
+
     auto insertIt = bufferCache.insert(std::make_pair(bind, bytebuf()));
     bytebuf &data = insertIt.first->second;
-    if(insertIt.second && valid)
+    if(insertIt.second)
     {
       // if the resources might be dirty from side-effects from the action, replay back to right
       // before it.
@@ -1692,7 +1775,53 @@ private:
           m_ResourcesDirty = false;
         }
 
-        if(imgData.view != ResourceId())
+        if(imgData.type == DescriptorType::TypedBuffer ||
+           imgData.type == DescriptorType::ReadWriteTypedBuffer)
+        {
+          VkFormat format;
+          VkDeviceSize byteWidth;
+          VkDeviceSize offset;
+          ResourceId buffer;
+
+          if(imgData.view == ResourceId())
+          {
+            // descriptor buffer, no buffer view
+            buffer = imgData.resource;
+            offset = imgData.byteOffset;
+            format = MakeVkFormat(imgData.format);
+            byteWidth = imgData.byteSize;
+          }
+          else
+          {
+            const VulkanCreationInfo::BufferView &viewProps =
+                m_Creation.m_BufferView[m_pDriver->GetResourceManager()->GetLiveID(imgData.view)];
+            buffer = viewProps.buffer;
+            offset = viewProps.offset;
+            format = viewProps.format;
+            byteWidth = viewProps.size;
+          }
+
+          const VulkanCreationInfo::Buffer &bufferProps = m_Creation.m_Buffer[buffer];
+
+          // width in bytes, either from the view or from the remainder of the buffer
+          if(byteWidth == VK_WHOLE_SIZE)
+            byteWidth = bufferProps.size - offset;
+
+          data.fmt = MakeResourceFormat(format);
+          data.texelSize = (uint32_t)GetByteSize(1, 1, 1, format, 0);
+
+          // convert to a texel width, rounding down as per spec (only possible from VK_WHOLE_SIZE)
+          data.width = uint32_t(byteWidth / data.texelSize);
+          data.height = 1;
+          data.depth = 1;
+
+          data.samplePitch = data.slicePitch = data.rowPitch = data.width * data.texelSize;
+
+          m_pDriver->GetReplay()->GetBufferData(
+              m_pDriver->GetResourceManager()->GetLiveID(imgData.resource), offset, data.rowPitch,
+              data.bytes);
+        }
+        else if(imgData.view != ResourceId())
         {
           const VulkanCreationInfo::ImageView &viewProps =
               m_Creation.m_ImageView[m_pDriver->GetResourceManager()->GetLiveID(imgData.view)];

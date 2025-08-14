@@ -1701,6 +1701,9 @@ void WrappedID3D12Device::ReleaseSwapchainResources(IDXGISwapper *swapper, UINT 
                                                     IUnknown *const *ppPresentQueue,
                                                     IUnknown **unwrappedQueues)
 {
+  if(m_LastSwap == swapper)
+    m_LastSwap = NULL;
+
   if(ppPresentQueue)
   {
     for(UINT i = 0; i < QueueCount; i++)
@@ -5592,6 +5595,7 @@ void WrappedID3D12Device::ReplayDraw(ID3D12GraphicsCommandListX *cmd, const Acti
     // TODO: support replay of draws not in callback
     D3D12CommandData *cmdData = m_Queue->GetCommandData();
     RDCASSERT(cmdData->m_IndirectData.commandSig != NULL);
+    RDCASSERT(cmdData->m_IndirectData.argsBuffer != NULL);
     cmd->ExecuteIndirect(cmdData->m_IndirectData.commandSig, 1, cmdData->m_IndirectData.argsBuffer,
                          cmdData->m_IndirectData.argsOffset, NULL, 0);
   }

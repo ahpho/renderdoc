@@ -156,18 +156,6 @@ static void MakeSubpassLoadRP(RPCreateInfo &info, const RPCreateInfo *origInfo, 
   }
 }
 
-template <typename type>
-bool RemoveForcedRef()
-{
-  return false;
-}
-
-template <>
-bool RemoveForcedRef<VkAccelerationStructureKHR>()
-{
-  return true;
-}
-
 // note, for threading reasons we ensure to release the wrappers before
 // releasing the underlying object. Otherwise after releasing the vulkan object
 // that same handle could be returned by create on another thread, and we
@@ -178,11 +166,6 @@ bool RemoveForcedRef<VkAccelerationStructureKHR>()
     if(obj == VK_NULL_HANDLE)                                                            \
       return;                                                                            \
     type unwrappedObj = Unwrap(obj);                                                     \
-    if(RemoveForcedRef<type>())                                                          \
-    {                                                                                    \
-      SCOPED_LOCK(m_ForcedReferencesLock);                                               \
-      m_ForcedReferences.removeOne(GetRecord(obj));                                      \
-    }                                                                                    \
     if(IsReplayMode(m_State))                                                            \
       m_CreationInfo.erase(GetResID(obj));                                               \
     GetResourceManager()->ReleaseWrappedResource(obj, true);                             \
@@ -190,12 +173,10 @@ bool RemoveForcedRef<VkAccelerationStructureKHR>()
   }
 
 DESTROY_IMPL(VkBufferView, DestroyBufferView)
-DESTROY_IMPL(VkImageView, DestroyImageView)
 DESTROY_IMPL(VkShaderModule, DestroyShaderModule)
 DESTROY_IMPL(VkPipeline, DestroyPipeline)
 DESTROY_IMPL(VkPipelineCache, DestroyPipelineCache)
 DESTROY_IMPL(VkPipelineLayout, DestroyPipelineLayout)
-DESTROY_IMPL(VkSampler, DestroySampler)
 DESTROY_IMPL(VkDescriptorSetLayout, DestroyDescriptorSetLayout)
 DESTROY_IMPL(VkDescriptorPool, DestroyDescriptorPool)
 DESTROY_IMPL(VkSemaphore, DestroySemaphore)
@@ -205,10 +186,59 @@ DESTROY_IMPL(VkCommandPool, DestroyCommandPool)
 DESTROY_IMPL(VkQueryPool, DestroyQueryPool)
 DESTROY_IMPL(VkDescriptorUpdateTemplate, DestroyDescriptorUpdateTemplate)
 DESTROY_IMPL(VkSamplerYcbcrConversion, DestroySamplerYcbcrConversion)
-DESTROY_IMPL(VkAccelerationStructureKHR, DestroyAccelerationStructureKHR)
 DESTROY_IMPL(VkShaderEXT, DestroyShaderEXT)
 
 #undef DESTROY_IMPL
+
+void WrappedVulkan::vkDestroyImageView(VkDevice device, VkImageView obj, const VkAllocationCallbacks *)
+{
+  if(obj == VK_NULL_HANDLE)
+    return;
+  VkImageView unwrappedObj = Unwrap(obj);
+  {
+    SCOPED_LOCK(m_ForcedReferencesLock);
+    m_ForcedReferences.removeOne(GetRecord(obj));
+  }
+  if(IsReplayMode(m_State))
+    m_CreationInfo.erase(GetResID(obj));
+  GetResourceManager()->ReleaseWrappedResource(obj, true);
+  ObjDisp(device)->DestroyImageView(Unwrap(device), unwrappedObj, NULL);
+}
+
+void WrappedVulkan::vkDestroySampler(VkDevice device, VkSampler obj, const VkAllocationCallbacks *)
+{
+  if(obj == VK_NULL_HANDLE)
+    return;
+  VkSampler unwrappedObj = Unwrap(obj);
+  {
+    SCOPED_LOCK(m_ForcedReferencesLock);
+    m_ForcedReferences.removeOne(GetRecord(obj));
+  }
+  if(IsReplayMode(m_State))
+    m_CreationInfo.erase(GetResID(obj));
+  GetResourceManager()->ReleaseWrappedResource(obj, true);
+  ObjDisp(device)->DestroySampler(Unwrap(device), unwrappedObj, NULL);
+}
+
+void WrappedVulkan::vkDestroyAccelerationStructureKHR(VkDevice device, VkAccelerationStructureKHR obj,
+                                                      const VkAllocationCallbacks *)
+{
+  if(obj == VK_NULL_HANDLE)
+    return;
+  VkAccelerationStructureKHR unwrappedObj = Unwrap(obj);
+  {
+    SCOPED_LOCK(m_ASLookupByAddrLock);
+    m_ASLookupByAddr.erase(GetRecord(obj)->accelerationStructureInfo->address);
+  }
+  {
+    SCOPED_LOCK(m_ForcedReferencesLock);
+    m_ForcedReferences.removeOne(GetRecord(obj));
+  }
+  if(IsReplayMode(m_State))
+    m_CreationInfo.erase(GetResID(obj));
+  GetResourceManager()->ReleaseWrappedResource(obj, true);
+  ObjDisp(device)->DestroyAccelerationStructureKHR(Unwrap(device), unwrappedObj, NULL);
+}
 
 void WrappedVulkan::vkDestroyFramebuffer(VkDevice device, VkFramebuffer obj,
                                          const VkAllocationCallbacks *)
@@ -318,15 +348,18 @@ void WrappedVulkan::vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR obj,
     for(size_t i = 0; i < info.images.size(); i++)
     {
       VkFramebuffer unwrappedFB = Unwrap(info.images[i].fb);
+      VkImage unwrappedImage = Unwrap(info.images[i].userSwapImage);
       VkImageView unwrappedView = Unwrap(info.images[i].view);
       VkSemaphore unwrappedSem = Unwrap(info.images[i].overlaydone);
       VkFence unwrappedFence = Unwrap(info.images[i].fence);
       GetResourceManager()->ReleaseWrappedResource(info.images[i].fb, true);
-      // note, image doesn't have to be destroyed, just untracked
-      GetResourceManager()->ReleaseWrappedResource(info.images[i].im, true);
+      GetResourceManager()->ReleaseWrappedResource(info.images[i].userSwapImage, true);
       GetResourceManager()->ReleaseWrappedResource(info.images[i].view, true);
       GetResourceManager()->ReleaseWrappedResource(info.images[i].overlaydone);
       GetResourceManager()->ReleaseWrappedResource(info.images[i].fence);
+      // if we had a separate real image, then the unwrappedImage is a fake one we  created and must be destroyed
+      if(info.images[i].unwrappedRealSwapImage != VK_NULL_HANDLE)
+        ObjDisp(device)->DestroyImage(Unwrap(device), unwrappedImage, NULL);
       ObjDisp(device)->DestroyFramebuffer(Unwrap(device), unwrappedFB, NULL);
       ObjDisp(device)->DestroyImageView(Unwrap(device), unwrappedView, NULL);
       ObjDisp(device)->DestroySemaphore(Unwrap(device), unwrappedSem, NULL);
@@ -334,6 +367,12 @@ void WrappedVulkan::vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR obj,
 
       // return the command buffers to the pool
       AddFreeCommandBuffer(info.images[i].cmd);
+    }
+
+    if(info.imageMemory != VK_NULL_HANDLE)
+    {
+      ObjDisp(device)->FreeMemory(Unwrap(device), Unwrap(info.imageMemory), NULL);
+      GetResourceManager()->ReleaseWrappedResource(info.imageMemory, true);
     }
   }
 
@@ -347,6 +386,11 @@ void WrappedVulkan::vkDestroyImage(VkDevice device, VkImage obj, const VkAllocat
 {
   if(obj == VK_NULL_HANDLE)
     return;
+
+  {
+    SCOPED_LOCK(m_ForcedReferencesLock);
+    m_ForcedReferences.removeOne(GetRecord(obj));
+  }
 
   VkImage unwrappedObj = Unwrap(obj);
   GetResourceManager()->ReleaseWrappedResource(obj, true);
@@ -631,6 +675,8 @@ bool WrappedVulkan::Serialise_vkCreateSampler(SerialiserType &ser, VkDevice devi
 
     VkSamplerCreateInfo patched = CreateInfo;
 
+    patched.flags |= DefaultSamplerCreateFlags();
+
     byte *tempMem = GetTempMemory(GetNextPatchSize(patched.pNext));
 
     UnwrapNextChain(m_State, "VkSamplerCreateInfo", tempMem, (VkBaseInStructure *)&patched);
@@ -665,6 +711,29 @@ bool WrappedVulkan::Serialise_vkCreateSampler(SerialiserType &ser, VkDevice devi
 
         m_CreationInfo.m_Sampler[live].Init(GetResourceManager(), m_CreationInfo, &CreateInfo);
       }
+
+      // if we're using indexed descriptors then look for the opaque info
+      if(DescriptorBuffers() && m_DescriptorLookup.sampled == ImageDescriptorFormat::Indexed2012)
+      {
+        // if we have opaque capture data that's 8 bytes and isn't 0, assume it's the image's
+        // address. If we guess wrong here this won't be bad necessarily it would just break the
+        // fast descriptor lookup for images
+        VkOpaqueCaptureDescriptorDataCreateInfoEXT *opaque =
+            (VkOpaqueCaptureDescriptorDataCreateInfoEXT *)FindNextStruct(
+                &CreateInfo, VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT);
+        if(opaque && m_DescriptorBufferProperties.samplerCaptureReplayDescriptorDataSize == 4)
+        {
+          uint32_t idx = *(uint32_t *)opaque->opaqueCaptureDescriptorData;
+
+          if(idx)
+          {
+            if(idx < m_DescriptorLookup.samplerPalette.size())
+              m_DescriptorLookup.samplerPalette[idx] = GetResID(samp);
+            else
+              RDCERR("Invalid saved index %u", idx);
+          }
+        }
+      }
     }
 
     AddResource(Sampler, ResourceType::Sampler, "Sampler");
@@ -689,6 +758,8 @@ VkResult WrappedVulkan::vkCreateSampler(VkDevice device, const VkSamplerCreateIn
   info_adjusted.flags &= ~VK_SAMPLER_CREATE_SUBSAMPLED_BIT_EXT;
   info_adjusted.flags &= ~VK_SAMPLER_CREATE_SUBSAMPLED_COARSE_RECONSTRUCTION_BIT_EXT;
 
+  info_adjusted.flags |= DefaultSamplerCreateFlags();
+
   byte *tempMem = GetTempMemory(GetNextPatchSize(info_adjusted.pNext));
 
   UnwrapNextChain(m_State, "VkSamplerCreateInfo", tempMem, (VkBaseInStructure *)&info_adjusted);
@@ -705,17 +776,32 @@ VkResult WrappedVulkan::vkCreateSampler(VkDevice device, const VkSamplerCreateIn
     {
       Chunk *chunk = NULL;
 
+      VkSamplerCreateInfo serialisedCreateInfo = *pCreateInfo;
+
+      OpaqueDataForSerialising opaqueData;
+
+      if(DescriptorBuffers())
+      {
+        opaqueData.fill(device, *pSampler, m_DescriptorBufferProperties);
+        opaqueData.addForSerialising((VkBaseInStructure *)&serialisedCreateInfo);
+      }
+
       {
         CACHE_THREAD_SERIALISER();
 
         SCOPED_SERIALISE_CHUNK(VulkanChunk::vkCreateSampler);
-        Serialise_vkCreateSampler(ser, device, pCreateInfo, NULL, pSampler);
+        Serialise_vkCreateSampler(ser, device, &serialisedCreateInfo, NULL, pSampler);
 
         chunk = scope.Get();
       }
 
       VkResourceRecord *record = GetResourceManager()->AddResourceRecord(*pSampler);
       record->AddChunk(chunk);
+
+      // can't differentiate whether this sampler will be used with descriptor buffers, must force
+      // reference all samplers
+      if(DescriptorBuffers())
+        AddForcedReference(record);
 
       const VkSamplerYcbcrConversionInfo *ycbcr =
           (const VkSamplerYcbcrConversionInfo *)FindNextStruct(
@@ -724,6 +810,18 @@ VkResult WrappedVulkan::vkCreateSampler(VkDevice device, const VkSamplerCreateIn
       {
         VkResourceRecord *ycbcrRecord = GetRecord(ycbcr->conversion);
         record->AddParent(ycbcrRecord);
+      }
+
+      if(m_DescriptorBuffers)
+      {
+        VkDescriptorGetInfoEXT getDesc = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+        };
+        byte dummy[256];
+        getDesc.type = VK_DESCRIPTOR_TYPE_SAMPLER;
+        getDesc.data.pSampler = pSampler;
+        vkGetDescriptorEXT(device, &getDesc, m_DescriptorBufferProperties.samplerDescriptorSize,
+                           dummy);
       }
     }
     else
@@ -1224,9 +1322,27 @@ bool WrappedVulkan::Serialise_vkCreateRenderPass(SerialiserType &ser, VkDevice d
 VkResult WrappedVulkan::vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
                                            const VkAllocationCallbacks *, VkRenderPass *pRenderPass)
 {
+  VkRenderPassCreateInfo patchedCreateInfo = *pCreateInfo;
+
+  // descriptor buffers intercepts all swapchain images during capture so we change any
+  // reference to PRESENT layout into GENERAL since that's what is valid for our image
+  if(DescriptorBuffers())
+  {
+    byte *tempMem = GetTempMemory(GetNextPatchSize(patchedCreateInfo.pNext));
+    CopyNextChainForPatching("VkRenderPassCreateInfo", tempMem,
+                             (VkBaseInStructure *)&patchedCreateInfo);
+
+    for(uint32_t a = 0; a < patchedCreateInfo.attachmentCount; a++)
+    {
+      VkAttachmentDescription &att = (VkAttachmentDescription &)patchedCreateInfo.pAttachments[a];
+      SanitiseDescriptorBufferImageLayout(att.initialLayout);
+      SanitiseDescriptorBufferImageLayout(att.finalLayout);
+    }
+  }
+
   VkResult ret;
-  SERIALISE_TIME_CALL(
-      ret = ObjDisp(device)->CreateRenderPass(Unwrap(device), pCreateInfo, NULL, pRenderPass));
+  SERIALISE_TIME_CALL(ret = ObjDisp(device)->CreateRenderPass(Unwrap(device), &patchedCreateInfo,
+                                                              NULL, pRenderPass));
 
   if(ret == VK_SUCCESS)
   {
@@ -1484,6 +1600,24 @@ VkResult WrappedVulkan::vkCreateRenderPass2(VkDevice device,
                                             const VkRenderPassCreateInfo2 *pCreateInfo,
                                             const VkAllocationCallbacks *, VkRenderPass *pRenderPass)
 {
+  VkRenderPassCreateInfo2 patchedCreateInfo = *pCreateInfo;
+
+  // descriptor buffers intercepts all swapchain images during capture so we change any
+  // reference to PRESENT layout into GENERAL since that's what is valid for our image
+  if(DescriptorBuffers())
+  {
+    byte *tempMem = GetTempMemory(GetNextPatchSize(patchedCreateInfo.pNext));
+    CopyNextChainForPatching("VkRenderPassCreateInfo2", tempMem,
+                             (VkBaseInStructure *)&patchedCreateInfo);
+
+    for(uint32_t a = 0; a < patchedCreateInfo.attachmentCount; a++)
+    {
+      VkAttachmentDescription2 &att = (VkAttachmentDescription2 &)patchedCreateInfo.pAttachments[a];
+      SanitiseDescriptorBufferImageLayout(att.initialLayout);
+      SanitiseDescriptorBufferImageLayout(att.finalLayout);
+    }
+  }
+
   VkResult ret;
   SERIALISE_TIME_CALL(
       ret = ObjDisp(device)->CreateRenderPass2(Unwrap(device), pCreateInfo, NULL, pRenderPass));
@@ -1765,6 +1899,292 @@ VkResult WrappedVulkan::vkGetQueryPoolResults(VkDevice device, VkQueryPool query
   }
 
   return result;
+}
+
+template <typename SerialiserType>
+bool WrappedVulkan::Serialise_vkCopyImageToImageEXT(SerialiserType &ser, VkDevice device,
+                                                    const VkCopyImageToImageInfo *pCopyImageToImageInfo)
+{
+  SERIALISE_ELEMENT(device);
+  SERIALISE_ELEMENT_LOCAL(CopyImageToImageInfo, *pCopyImageToImageInfo).Important();
+
+  Serialise_DebugMessages(ser);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    CopyImageToImageInfo.srcImage = Unwrap(CopyImageToImageInfo.srcImage);
+    CopyImageToImageInfo.dstImage = Unwrap(CopyImageToImageInfo.dstImage);
+
+    ObjDisp(device)->CopyImageToImageEXT(Unwrap(device), &CopyImageToImageInfo);
+
+    if(!IsActiveReplaying(m_State))
+    {
+      AddEvent();
+
+      ResourceId srcid = GetResourceManager()->GetOriginalID(GetResID(CopyImageToImageInfo.srcImage));
+      ResourceId dstid = GetResourceManager()->GetOriginalID(GetResID(CopyImageToImageInfo.dstImage));
+
+      ActionDescription action;
+      action.flags |= ActionFlags::Copy;
+
+      action.copySource = srcid;
+      action.copySourceSubresource = Subresource();
+      action.copyDestination = dstid;
+      action.copyDestinationSubresource = Subresource();
+      if(CopyImageToImageInfo.regionCount > 0)
+      {
+        action.copySourceSubresource =
+            Subresource(CopyImageToImageInfo.pRegions[0].srcSubresource.mipLevel,
+                        CopyImageToImageInfo.pRegions[0].srcSubresource.baseArrayLayer);
+        action.copyDestinationSubresource =
+            Subresource(CopyImageToImageInfo.pRegions[0].dstSubresource.mipLevel,
+                        CopyImageToImageInfo.pRegions[0].dstSubresource.baseArrayLayer);
+      }
+
+      AddAction(action);
+
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
+      if(CopyImageToImageInfo.srcImage == CopyImageToImageInfo.dstImage)
+      {
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyImageToImageInfo.srcImage),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::Copy)));
+      }
+      else
+      {
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyImageToImageInfo.srcImage),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyImageToImageInfo.dstImage),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
+      }
+    }
+  }
+
+  return true;
+}
+
+VkResult WrappedVulkan::vkCopyImageToImageEXT(VkDevice device,
+                                              const VkCopyImageToImageInfo *pCopyImageToImageInfo)
+{
+  SCOPED_DBG_SINK();
+
+  byte *tempMem = GetTempMemory(GetNextPatchSize(pCopyImageToImageInfo));
+  VkCopyImageToImageInfo *unwrappedInfo =
+      UnwrapStructAndChain(m_State, tempMem, pCopyImageToImageInfo);
+
+  VkResult ret;
+  SERIALISE_TIME_CALL(ret = ObjDisp(device)->CopyImageToImageEXT(Unwrap(device), unwrappedInfo));
+
+  {
+    SCOPED_READLOCK(m_CapTransitionLock);
+
+    if(IsActiveCapturing(m_State))
+    {
+      CACHE_THREAD_SERIALISER();
+
+      ser.SetActionChunk();
+      SCOPED_SERIALISE_CHUNK(VulkanChunk::vkCopyImageToImage);
+      Serialise_vkCopyImageToImageEXT(ser, device, pCopyImageToImageInfo);
+
+      m_FrameCaptureRecord->AddChunk(scope.Get());
+      GetResourceManager()->MarkResourceFrameReferenced(GetResID(pCopyImageToImageInfo->srcImage),
+                                                        eFrameRef_Read);
+      GetResourceManager()->MarkResourceFrameReferenced(GetResID(pCopyImageToImageInfo->dstImage),
+                                                        eFrameRef_PartialWrite);
+    }
+  }
+
+  return ret;
+}
+
+template <typename SerialiserType>
+bool WrappedVulkan::Serialise_vkCopyImageToMemoryEXT(
+    SerialiserType &ser, VkDevice device, const VkCopyImageToMemoryInfo *pCopyImageToMemoryInfo)
+{
+  SERIALISE_ELEMENT(device);
+  SERIALISE_ELEMENT_LOCAL(CopyImageToMemoryInfo, *pCopyImageToMemoryInfo).Important();
+
+  Serialise_DebugMessages(ser);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    VkImage srcImage = CopyImageToMemoryInfo.srcImage;
+    CopyImageToMemoryInfo.srcImage = Unwrap(srcImage);
+
+    ObjDisp(device)->CopyImageToMemoryEXT(Unwrap(device), &CopyImageToMemoryInfo);
+
+    if(!IsActiveReplaying(m_State))
+    {
+      AddEvent();
+
+      ResourceId srcid = GetResourceManager()->GetOriginalID(GetResID(srcImage));
+
+      ActionDescription action;
+      action.flags |= ActionFlags::Copy;
+
+      action.copySource = srcid;
+      action.copySourceSubresource = Subresource();
+      if(CopyImageToMemoryInfo.regionCount > 0)
+      {
+        action.copySourceSubresource =
+            Subresource(CopyImageToMemoryInfo.pRegions[0].imageSubresource.mipLevel,
+                        CopyImageToMemoryInfo.pRegions[0].imageSubresource.baseArrayLayer);
+      }
+
+      AddAction(action);
+
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(srcImage), EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+    }
+  }
+
+  return true;
+}
+
+VkResult WrappedVulkan::vkCopyImageToMemoryEXT(VkDevice device,
+                                               const VkCopyImageToMemoryInfo *pCopyImageToMemoryInfo)
+{
+  SCOPED_DBG_SINK();
+
+  // Calls with VK_HOST_IMAGE_COPY_MEMCPY_BIT are not supported, and are not expected from typical
+  // applications. See comment in vkCopyMemoryToImageEXT() for more details.
+  if((pCopyImageToMemoryInfo->flags & VK_HOST_IMAGE_COPY_MEMCPY_BIT) != 0)
+  {
+    return VK_SUCCESS;
+  }
+
+  byte *tempMem = GetTempMemory(GetNextPatchSize(pCopyImageToMemoryInfo));
+  VkCopyImageToMemoryInfo *unwrappedInfo =
+      UnwrapStructAndChain(m_State, tempMem, pCopyImageToMemoryInfo);
+
+  VkResult ret;
+  SERIALISE_TIME_CALL(ret = ObjDisp(device)->CopyImageToMemoryEXT(Unwrap(device), unwrappedInfo));
+
+  {
+    SCOPED_READLOCK(m_CapTransitionLock);
+
+    if(IsActiveCapturing(m_State))
+    {
+      CACHE_THREAD_SERIALISER();
+
+      ser.SetActionChunk();
+      SCOPED_SERIALISE_CHUNK(VulkanChunk::vkCopyImageToMemory);
+      Serialise_vkCopyImageToMemoryEXT(ser, device, pCopyImageToMemoryInfo);
+
+      m_FrameCaptureRecord->AddChunk(scope.Get());
+      GetResourceManager()->MarkResourceFrameReferenced(GetResID(pCopyImageToMemoryInfo->srcImage),
+                                                        eFrameRef_Read);
+    }
+  }
+
+  return ret;
+}
+
+template <typename SerialiserType>
+bool WrappedVulkan::Serialise_vkCopyMemoryToImageEXT(
+    SerialiserType &ser, VkDevice device, const VkCopyMemoryToImageInfo *pCopyMemoryToImageInfo)
+{
+  SERIALISE_ELEMENT(device);
+  SERIALISE_ELEMENT_LOCAL(CopyMemoryToImageInfo, *pCopyMemoryToImageInfo).Important();
+
+  Serialise_DebugMessages(ser);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    VkImage dstImage = CopyMemoryToImageInfo.dstImage;
+    CopyMemoryToImageInfo.dstImage = Unwrap(dstImage);
+
+    ObjDisp(device)->CopyMemoryToImageEXT(Unwrap(device), &CopyMemoryToImageInfo);
+
+    if(!IsActiveReplaying(m_State))
+    {
+      AddEvent();
+
+      ResourceId dstid = GetResourceManager()->GetOriginalID(GetResID(dstImage));
+
+      ActionDescription action;
+      action.flags |= ActionFlags::Copy;
+
+      action.copySource = dstid;
+      action.copySourceSubresource = Subresource();
+      if(CopyMemoryToImageInfo.regionCount > 0)
+      {
+        action.copySourceSubresource =
+            Subresource(CopyMemoryToImageInfo.pRegions[0].imageSubresource.mipLevel,
+                        CopyMemoryToImageInfo.pRegions[0].imageSubresource.baseArrayLayer);
+      }
+
+      AddAction(action);
+
+      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
+
+      actionNode.resourceUsage.push_back(make_rdcpair(
+          GetResID(dstImage), EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
+    }
+  }
+
+  return true;
+}
+
+VkResult WrappedVulkan::vkCopyMemoryToImageEXT(VkDevice device,
+                                               const VkCopyMemoryToImageInfo *pCopyMemoryToImageInfo)
+{
+  SCOPED_DBG_SINK();
+
+  // Calls with VK_HOST_IMAGE_COPY_MEMCPY_BIT are not supported, and are not expected from typical
+  // applications. RenderDoc sets optimalTilingLayoutUUID to a fake UUID, meaning the applications
+  // cannot have any preconceived notion of what the preswizzled image data should look like and
+  // must provide linear data.
+  //
+  // Technically dropping these calls is a spec violation, since an application may read back
+  // preswizzled data with memcpy and provide that again to another VkImage in the same run. Outside
+  // of tests, this usage is highly unlikely. On the other hand, supporting
+  // VK_HOST_IMAGE_COPY_MEMCPY_BIT complicates RenderDoc as the size of preswizzled memory is not
+  // obviously known and requires a driver call using VkSubresourceHostMemcpySize at inconvenient
+  // times. Additionally, it reduces the portability of RenderDoc captures.
+  //
+  // Given the little benefit from this complication, it's decided not to support this bit.
+  if((pCopyMemoryToImageInfo->flags & VK_HOST_IMAGE_COPY_MEMCPY_BIT) != 0)
+  {
+    return VK_SUCCESS;
+  }
+
+  byte *tempMem = GetTempMemory(GetNextPatchSize(pCopyMemoryToImageInfo));
+  VkCopyMemoryToImageInfo *unwrappedInfo =
+      UnwrapStructAndChain(m_State, tempMem, pCopyMemoryToImageInfo);
+
+  VkResult ret;
+  SERIALISE_TIME_CALL(ret = ObjDisp(device)->CopyMemoryToImageEXT(Unwrap(device), unwrappedInfo));
+
+  {
+    SCOPED_READLOCK(m_CapTransitionLock);
+
+    if(IsActiveCapturing(m_State))
+    {
+      CACHE_THREAD_SERIALISER();
+
+      ser.SetActionChunk();
+      SCOPED_SERIALISE_CHUNK(VulkanChunk::vkCopyMemoryToImage);
+      Serialise_vkCopyMemoryToImageEXT(ser, device, pCopyMemoryToImageInfo);
+
+      m_FrameCaptureRecord->AddChunk(scope.Get());
+      GetResourceManager()->MarkResourceFrameReferenced(GetResID(pCopyMemoryToImageInfo->dstImage),
+                                                        eFrameRef_PartialWrite);
+    }
+  }
+
+  return ret;
 }
 
 template <typename SerialiserType>
@@ -2168,8 +2588,6 @@ static ObjData GetObjData(VkObjectType objType, uint64_t object)
     case VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV:
     case VK_OBJECT_TYPE_PERFORMANCE_CONFIGURATION_INTEL:
     case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV:
-    case VK_OBJECT_TYPE_CUDA_MODULE_NV:
-    case VK_OBJECT_TYPE_CUDA_FUNCTION_NV:
     case VK_OBJECT_TYPE_CU_MODULE_NVX:
     case VK_OBJECT_TYPE_CU_FUNCTION_NVX:
     case VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA:
@@ -2181,6 +2599,10 @@ static ObjData GetObjData(VkObjectType objType, uint64_t object)
     case VK_OBJECT_TYPE_PIPELINE_BINARY_KHR:
     case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT:
     case VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT:
+    case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV:
+    case VK_OBJECT_TYPE_TENSOR_ARM:
+    case VK_OBJECT_TYPE_TENSOR_VIEW_ARM:
+    case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM:
     case VK_OBJECT_TYPE_MAX_ENUM: break;
   }
 
@@ -2241,10 +2663,6 @@ static ObjData GetObjData(VkDebugReportObjectTypeEXT objType, uint64_t object)
     castType = VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR;
   else if(objType == VK_DEBUG_REPORT_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV_EXT)
     castType = VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_NV;
-  else if(objType == VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_MODULE_NV_EXT)
-    castType = VK_OBJECT_TYPE_CUDA_MODULE_NV;
-  else if(objType == VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_FUNCTION_NV_EXT)
-    castType = VK_OBJECT_TYPE_CUDA_FUNCTION_NV;
   else if(objType == VK_DEBUG_REPORT_OBJECT_TYPE_CU_MODULE_NVX_EXT)
     castType = VK_OBJECT_TYPE_CU_MODULE_NVX;
   else if(objType == VK_DEBUG_REPORT_OBJECT_TYPE_CU_FUNCTION_NVX_EXT)
@@ -2558,6 +2976,11 @@ VkResult WrappedVulkan::vkSetDebugUtilsObjectTagEXT(VkDevice device,
     {
       m_CurrentVRBackbuffer = data.record->GetResourceID();
     }
+    else if(pTagInfo->tagName == RENDERDOC_DescriptorsReservation_UUID &&
+            pTagInfo->objectType == VK_OBJECT_TYPE_INSTANCE)
+    {
+      m_InitParams.DescriptorsReserved = true;
+    }
     else if(ObjDisp(device)->SetDebugUtilsObjectTagEXT)
     {
       VkDebugUtilsObjectTagInfoEXT unwrapped = *pTagInfo;
@@ -2701,6 +3124,15 @@ INSTANTIATE_FUNCTION_SERIALISED(VkResult, vkCreateSamplerYcbcrConversion, VkDevi
                                 const VkSamplerYcbcrConversionCreateInfo *pCreateInfo,
                                 const VkAllocationCallbacks *,
                                 VkSamplerYcbcrConversion *pYcbcrConversion);
+
+INSTANTIATE_FUNCTION_SERIALISED(VkResult, vkCopyImageToImageEXT, VkDevice device,
+                                const VkCopyImageToImageInfo *pCopyImageToImageInfo);
+
+INSTANTIATE_FUNCTION_SERIALISED(VkResult, vkCopyImageToMemoryEXT, VkDevice device,
+                                const VkCopyImageToMemoryInfo *pCopyImageToMemoryInfo);
+
+INSTANTIATE_FUNCTION_SERIALISED(VkResult, vkCopyMemoryToImageEXT, VkDevice device,
+                                const VkCopyMemoryToImageInfo *pCopyMemoryToImageInfo);
 
 INSTANTIATE_FUNCTION_SERIALISED(VkResult, vkResetQueryPool, VkDevice device, VkQueryPool queryPool,
                                 uint32_t firstQuery, uint32_t queryCount);

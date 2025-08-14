@@ -116,11 +116,13 @@ AAPT=$(ls $ANDROID_SDK/build-tools/*/aapt{,.exe} 2>/dev/null | tail -n 1)
 VERSION32=$($AAPT dump badging build-android-arm32/bin/*apk 2>/dev/null | grep -Eo "versionName='[0-9a-f]*'" | grep -Eo "'.*'" | tr -d "'")
 VERSION64=$($AAPT dump badging build-android-arm64/bin/*apk 2>/dev/null | grep -Eo "versionName='[0-9a-f]*'" | grep -Eo "'.*'" | tr -d "'")
 
-if [ "$VERSION32" == "$GITTAG" ]; then
+if [ "$VERSION32" == "$GITHASH" ]; then
 
-	echo "Found existing compatible arm32 build at $GITTAG, not rebuilding";
+	echo "Found existing compatible arm32 build at $GITHASH, not rebuilding";
 
 else
+
+	echo "Rebuilding as existing build is $VERSION32";
 
 	# Build the arm32 variant
 	rm -rf build-android-arm32
@@ -143,11 +145,13 @@ else
 
 fi
 
-if [ "$VERSION64" == "$GITTAG" ]; then
+if [ "$VERSION64" == "$GITHASH" ]; then
 
-	echo "Found existing compatible arm64 build at $GITTAG, not rebuilding";
+	echo "Found existing compatible arm64 build at $GITHASH, not rebuilding";
 
 else
+
+	echo "Rebuilding as existing build is $VERSION64";
 
 	rm -rf build-android-arm64
 	mkdir -p build-android-arm64

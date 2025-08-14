@@ -183,6 +183,11 @@ layout(set = 0, binding = 31) uniform sampler2DMSArray queryTestMS;
 
 layout(set = 0, binding = 32) uniform texture2D depthImage;
 
+layout(set = 0, binding = 33) uniform samplerBuffer texBuffer1010102unorm;
+layout(set = 0, binding = 34, rgb10_a2) uniform imageBuffer storeTexBuffer1010102unorm;
+layout(set = 0, binding = 35) uniform usamplerBuffer texBuffer1010102uint;
+layout(set = 0, binding = 36, rgb10_a2ui) uniform uimageBuffer storeTexBuffer1010102uint;
+
 #if TEST_DESC_INDEXING
 
 layout(set = 1, binding = 1) uniform sampler pointSamplers[14];
@@ -1576,6 +1581,49 @@ void main()
       Color += vec4(1.0, 1.0, 1.0, 1.0);
       break;
     }
+    case 177:
+    {
+      Color = imageLoad(storeTexBuffer, 1) + imageLoad(storeTexBuffer, 4);
+      break;
+    }
+    case 178:
+    {
+      imageStore(storeTexBuffer, 5, vec4(3.1f, 4.1f, 5.9f, 2.6f));
+      Color = imageLoad(storeTexBuffer, 5);
+      break;
+    }
+    case 179:
+    {
+      Color = texelFetch(texBuffer1010102unorm, int(1));
+      break;
+    }
+    case 180:
+    {
+      Color = vec4(texelFetch(texBuffer1010102uint, int(1)));
+      break;
+    }
+    case 181:
+    {
+      Color = imageLoad(storeTexBuffer1010102unorm, int(1)) + imageLoad(storeTexBuffer1010102unorm, int(4));
+      break;
+    }
+    case 182:
+    {
+      Color = vec4(imageLoad(storeTexBuffer1010102uint, int(1))) + vec4(imageLoad(storeTexBuffer1010102uint, int(4)));
+      break;
+    }
+    case 183:
+    {
+      imageStore(storeTexBuffer1010102unorm, 5, vec4(200.1f/1023.0f, 400.1f/1023.0f, 800.1f/1023.0f, 1.0f));
+      Color = imageLoad(storeTexBuffer1010102unorm, int(1)) + imageLoad(storeTexBuffer1010102unorm, int(5));
+      break;
+    }
+    case 184:
+    {
+      imageStore(storeTexBuffer1010102uint, 5, uvec4(20, 40, 80, 1));
+      Color = vec4(imageLoad(storeTexBuffer1010102uint, int(1))) + vec4(imageLoad(storeTexBuffer1010102uint, int(5)));
+      break;
+    }
     default: break;
   }
 }
@@ -1805,6 +1853,19 @@ void main()
     {
       Color = gl_FrontFacing ? vec4(0, 1, 0, 1) : vec4(1, 0, 0, 1);
       break;
+    }
+    case 20:
+    {
+      Color = imageLoad(storeTexBuffer, 1)+imageLoad(storeTexBuffer, 5);
+      break;
+    }
+    case 21:
+    {
+      Color = imageLoad(storeTexBuffer1010102unorm, int(1)) + imageLoad(storeTexBuffer1010102unorm, int(5));
+    }
+    case 22:
+    {
+      Color = vec4(imageLoad(storeTexBuffer1010102uint, int(1))) + vec4(imageLoad(storeTexBuffer1010102uint, int(5)));
     }
     default: break;
   }
@@ -3948,6 +4009,33 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
       LIMIT_CHECK(maxPerStageDescriptorStorageImages, 64);
     }
 
+    VkFormatProperties props = {};
+    vkGetPhysicalDeviceFormatProperties(phys, VK_FORMAT_A2B10G10R10_UINT_PACK32, &props);
+
+    if((props.bufferFeatures & VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT) == 0)
+    {
+      Avail = "VK_FORMAT_A2B10G10R10_UINT_PACK32 not supported in texel buffers";
+      return;
+    }
+    if((props.bufferFeatures & VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT) == 0)
+    {
+      Avail = "VK_FORMAT_A2B10G10R10_UINT_PACK32 not supported in texel buffers";
+      return;
+    }
+
+    vkGetPhysicalDeviceFormatProperties(phys, VK_FORMAT_A2B10G10R10_UNORM_PACK32, &props);
+
+    if((props.bufferFeatures & VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT) == 0)
+    {
+      Avail = "VK_FORMAT_A2B10G10R10_UNORM_PACK32 not supported in texel buffers";
+      return;
+    }
+    if((props.bufferFeatures & VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT) == 0)
+    {
+      Avail = "VK_FORMAT_A2B10G10R10_UNORM_PACK32 not supported in texel buffers";
+      return;
+    }
+
     // enable features we can optionally test with.
     VkPhysicalDeviceFeatures supported;
     vkGetPhysicalDeviceFeatures(phys, &supported);
@@ -4118,6 +4206,10 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
         {30, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
         {31, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
         {32, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
+        {33, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
+        {34, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
+        {35, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
+        {36, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
     }));
 
     std::vector<VkDescriptorSetLayout> setLayouts = {setlayout0};
@@ -4569,6 +4661,37 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
                                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT),
         VmaAllocationCreateInfo({0, VMA_MEMORY_USAGE_GPU_ONLY}));
 
+    AllocatedBuffer texbuffer_1010102unorm(
+        this,
+        vkh::BufferCreateInfo(1024 * sizeof(uint32_t), VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT |
+                                                           VK_BUFFER_USAGE_TRANSFER_DST_BIT),
+        VmaAllocationCreateInfo({0, VMA_MEMORY_USAGE_CPU_TO_GPU}));
+
+    AllocatedBuffer store_texbuffer_1010102unorm(
+        this,
+        vkh::BufferCreateInfo(1024 * sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT |
+                                                           VK_BUFFER_USAGE_TRANSFER_DST_BIT),
+        VmaAllocationCreateInfo({0, VMA_MEMORY_USAGE_GPU_ONLY}));
+
+    uint32_t unormdata[64] = {};
+    memset(unormdata, 0x42, sizeof(unormdata));
+
+    texbuffer_1010102unorm.upload(unormdata);
+
+    AllocatedBuffer texbuffer_1010102uint(
+        this,
+        vkh::BufferCreateInfo(1024 * sizeof(uint32_t), VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT |
+                                                           VK_BUFFER_USAGE_TRANSFER_DST_BIT),
+        VmaAllocationCreateInfo({0, VMA_MEMORY_USAGE_CPU_TO_GPU}));
+
+    texbuffer_1010102uint.upload(unormdata);
+
+    AllocatedBuffer store_texbuffer_1010102uint(
+        this,
+        vkh::BufferCreateInfo(1024 * sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT |
+                                                           VK_BUFFER_USAGE_TRANSFER_DST_BIT),
+        VmaAllocationCreateInfo({0, VMA_MEMORY_USAGE_GPU_ONLY}));
+
     VkBuffer bda_data_buffer = VK_NULL_HANDLE;
     VkDeviceMemory bda_deviceMem = VK_NULL_HANDLE;
     byte *bda_base_gpuptr = NULL;
@@ -4643,6 +4766,15 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
     VkBufferView store_bufview = createBufferView(
         vkh::BufferViewCreateInfo(store_texbuffer.buffer, VK_FORMAT_R32G32B32A32_SFLOAT));
 
+    VkBufferView bufview_1010102unorm = createBufferView(vkh::BufferViewCreateInfo(
+        texbuffer_1010102unorm.buffer, VK_FORMAT_A2B10G10R10_UNORM_PACK32, 96));
+    VkBufferView store_bufview_1010102unorm = createBufferView(vkh::BufferViewCreateInfo(
+        store_texbuffer_1010102unorm.buffer, VK_FORMAT_A2B10G10R10_UNORM_PACK32, 96));
+    VkBufferView bufview_1010102uint = createBufferView(vkh::BufferViewCreateInfo(
+        texbuffer_1010102uint.buffer, VK_FORMAT_A2B10G10R10_UINT_PACK32, 96));
+    VkBufferView store_bufview_1010102uint = createBufferView(vkh::BufferViewCreateInfo(
+        store_texbuffer_1010102uint.buffer, VK_FORMAT_A2B10G10R10_UINT_PACK32, 96));
+
     setName(pointsampler, "pointsampler");
     setName(linearsampler, "linearsampler");
     setName(mipsampler, "mipsampler");
@@ -4655,6 +4787,10 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
     setName(store_texbuffer.buffer, "store_texbuffer");
     setName(store_image.image, "store_image");
     setName(atomic_image.image, "atomic_image");
+    setName(bufview_1010102unorm, "bufview_1010102unorm");
+    setName(store_bufview_1010102unorm, "store_texbuffer_1010102unorm");
+    setName(bufview_1010102uint, "bufview_1010102uint");
+    setName(store_bufview_1010102uint, "store_bufview_1010102uint");
 
     AllocatedImage storezoo_u2D(
         this,
@@ -4717,6 +4853,15 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
             vkh::WriteDescriptorSet(
                 descset0, 32, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
                 {vkh::DescriptorImageInfo(shadowview, VK_IMAGE_LAYOUT_GENERAL, VK_NULL_HANDLE)}),
+
+            vkh::WriteDescriptorSet(descset0, 33, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
+                                    {bufview_1010102unorm}),
+            vkh::WriteDescriptorSet(descset0, 34, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER,
+                                    {store_bufview_1010102unorm}),
+            vkh::WriteDescriptorSet(descset0, 35, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
+                                    {bufview_1010102uint}),
+            vkh::WriteDescriptorSet(descset0, 36, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER,
+                                    {store_bufview_1010102uint}),
         });
 
     if(descIndexing)
@@ -4809,6 +4954,12 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
                                        VK_ACCESS_TRANSFER_WRITE_BIT, atomic_buffer.buffer),
               vkh::BufferMemoryBarrier(VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
                                        VK_ACCESS_TRANSFER_WRITE_BIT, store_texbuffer.buffer),
+              vkh::BufferMemoryBarrier(VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                                       VK_ACCESS_TRANSFER_WRITE_BIT,
+                                       store_texbuffer_1010102uint.buffer),
+              vkh::BufferMemoryBarrier(VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                                       VK_ACCESS_TRANSFER_WRITE_BIT,
+                                       store_texbuffer_1010102unorm.buffer),
           });
 
       vkCmdClearDepthStencilImage(cmd, shadowimg.image, VK_IMAGE_LAYOUT_GENERAL,
@@ -4825,7 +4976,13 @@ OpMemberDecorate %cbuffer_struct 17 Offset 216    ; double doublePackSource
                            vkh::ClearColorValue(8U, 18U, 28U, 38U), 1, vkh::ImageSubresourceRange());
       vkCmdFillBuffer(cmd, store_buffer.buffer, 0, VK_WHOLE_SIZE, 0x42424242);
       vkCmdFillBuffer(cmd, atomic_buffer.buffer, 0, VK_WHOLE_SIZE, 0x42424242);
-      vkCmdFillBuffer(cmd, store_texbuffer.buffer, 0, VK_WHOLE_SIZE, 0);
+      const float val = 1.234f;
+      vkCmdFillBuffer(cmd, store_texbuffer.buffer, 0, 128, *(uint32_t *)&val);
+      vkCmdFillBuffer(cmd, store_texbuffer.buffer, 128, VK_WHOLE_SIZE, 0);
+      vkCmdFillBuffer(cmd, store_texbuffer_1010102uint.buffer, 0, 104, 0x42424242);
+      vkCmdFillBuffer(cmd, store_texbuffer_1010102uint.buffer, 104, VK_WHOLE_SIZE, 0);
+      vkCmdFillBuffer(cmd, store_texbuffer_1010102unorm.buffer, 0, 104, 0x42424242);
+      vkCmdFillBuffer(cmd, store_texbuffer_1010102unorm.buffer, 104, VK_WHOLE_SIZE, 0);
 
       vkh::cmdPipelineBarrier(
           cmd,

@@ -84,7 +84,11 @@ class Iter_Test(rdtest.TestCase):
             rdtest.log.print("No debug result")
             return
 
-        cycles, variables = self.process_trace(trace)
+        try:
+            cycles, variables = self.process_trace(trace)
+        except rdtest.TestFailureException as err:
+            rdtest.log.error(f"Error debugging: {err.message}")
+            return
 
         rdtest.log.success(f'Successfully debugged compute shader in {cycles} cycles {len(refl.outputSignature)}')
 
@@ -156,7 +160,11 @@ class Iter_Test(rdtest.TestCase):
             rdtest.log.print("No debug result")
             return
 
-        cycles, variables = self.process_trace(trace)
+        try:
+            cycles, variables = self.process_trace(trace)
+        except rdtest.TestFailureException as err:
+            rdtest.log.error(f"Error debugging: {err.message}")
+            return
 
         outputs = 0
 
@@ -319,7 +327,11 @@ class Iter_Test(rdtest.TestCase):
                 rdtest.log.print("No debug result")
                 return
 
-            cycles, variables = self.process_trace(trace)
+            try:
+                cycles, variables = self.process_trace(trace)
+            except rdtest.TestFailureException as err:
+                rdtest.log.error(f"Error debugging: {err.message}")
+                return
 
             output_index = [o.resource for o in pipe.GetOutputTargets()].index(target)
 

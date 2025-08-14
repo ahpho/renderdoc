@@ -5228,13 +5228,13 @@ bool WrappedVulkan::Serialise_vkCmdTraceRaysKHR(
     uint32_t height, uint32_t depth)
 {
   SERIALISE_ELEMENT(commandBuffer);
-  SERIALISE_ELEMENT_LOCAL(RaygenShaderBindingTable, *pRaygenShaderBindingTable);
-  SERIALISE_ELEMENT_LOCAL(MissShaderBindingTable, *pMissShaderBindingTable);
-  SERIALISE_ELEMENT_LOCAL(HitShaderBindingTable, *pHitShaderBindingTable);
-  SERIALISE_ELEMENT_LOCAL(CallableShaderBindingTable, *pCallableShaderBindingTable);
-  SERIALISE_ELEMENT(width).Important();
-  SERIALISE_ELEMENT(height).Important();
-  SERIALISE_ELEMENT(depth).Important();
+  SERIALISE_ELEMENT_LOCAL(RaygenShaderBindingTable, *pRaygenShaderBindingTable).Hidden();
+  SERIALISE_ELEMENT_LOCAL(MissShaderBindingTable, *pMissShaderBindingTable).Hidden();
+  SERIALISE_ELEMENT_LOCAL(HitShaderBindingTable, *pHitShaderBindingTable).Hidden();
+  SERIALISE_ELEMENT_LOCAL(CallableShaderBindingTable, *pCallableShaderBindingTable).Hidden();
+  SERIALISE_ELEMENT(width).Hidden();
+  SERIALISE_ELEMENT(height).Hidden();
+  SERIALISE_ELEMENT(depth).Hidden();
 
   Serialise_DebugMessages(ser);
 
@@ -5334,11 +5334,11 @@ bool WrappedVulkan::Serialise_vkCmdTraceRaysIndirectKHR(
     VkDeviceAddress indirectDeviceAddress)
 {
   SERIALISE_ELEMENT(commandBuffer);
-  SERIALISE_ELEMENT_LOCAL(RaygenShaderBindingTable, *pRaygenShaderBindingTable);
-  SERIALISE_ELEMENT_LOCAL(MissShaderBindingTable, *pMissShaderBindingTable);
-  SERIALISE_ELEMENT_LOCAL(HitShaderBindingTable, *pHitShaderBindingTable);
-  SERIALISE_ELEMENT_LOCAL(CallableShaderBindingTable, *pCallableShaderBindingTable);
-  SERIALISE_ELEMENT(indirectDeviceAddress).Important();
+  SERIALISE_ELEMENT_LOCAL(RaygenShaderBindingTable, *pRaygenShaderBindingTable).Hidden();
+  SERIALISE_ELEMENT_LOCAL(MissShaderBindingTable, *pMissShaderBindingTable).Hidden();
+  SERIALISE_ELEMENT_LOCAL(HitShaderBindingTable, *pHitShaderBindingTable).Hidden();
+  SERIALISE_ELEMENT_LOCAL(CallableShaderBindingTable, *pCallableShaderBindingTable).Hidden();
+  SERIALISE_ELEMENT(indirectDeviceAddress).Hidden();
 
   Serialise_DebugMessages(ser);
 
@@ -5432,7 +5432,7 @@ bool WrappedVulkan::Serialise_vkCmdTraceRaysIndirect2KHR(SerialiserType &ser,
                                                          VkDeviceAddress indirectDeviceAddress)
 {
   SERIALISE_ELEMENT(commandBuffer);
-  SERIALISE_ELEMENT(indirectDeviceAddress).Important();
+  SERIALISE_ELEMENT(indirectDeviceAddress).Hidden();
 
   Serialise_DebugMessages(ser);
 

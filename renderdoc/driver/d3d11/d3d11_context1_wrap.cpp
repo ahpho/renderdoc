@@ -687,8 +687,14 @@ bool WrappedID3D11DeviceContext::Serialise_VSSetConstantBuffers1(
     if(pFirstConstant)
       m_CurrentPipelineState->Change(m_CurrentPipelineState->VS.CBOffsets, pFirstConstant,
                                      StartSlot, NumBuffers);
+    else
+      m_CurrentPipelineState->Change(m_CurrentPipelineState->VS.CBOffsets, NullCBOffsets, StartSlot,
+                                     NumBuffers);
     if(pNumConstants)
       m_CurrentPipelineState->Change(m_CurrentPipelineState->VS.CBCounts, pNumConstants, StartSlot,
+                                     NumBuffers);
+    else
+      m_CurrentPipelineState->Change(m_CurrentPipelineState->VS.CBCounts, NullCBCounts, StartSlot,
                                      NumBuffers);
 
     ID3D11Buffer *bufs[D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT] = {};
@@ -779,6 +785,11 @@ void WrappedID3D11DeviceContext::VSSetConstantBuffers1(UINT StartSlot, UINT NumB
     }
     m_CurrentPipelineState->Change(m_CurrentPipelineState->VS.CBOffsets, offs, StartSlot, NumBuffers);
   }
+  else
+  {
+    m_CurrentPipelineState->Change(m_CurrentPipelineState->VS.CBOffsets, NullCBOffsets, StartSlot,
+                                   NumBuffers);
+  }
 
   if(pNumConstants)
   {
@@ -789,6 +800,11 @@ void WrappedID3D11DeviceContext::VSSetConstantBuffers1(UINT StartSlot, UINT NumB
         cnts[i] = NullCBCounts[i];
     }
     m_CurrentPipelineState->Change(m_CurrentPipelineState->VS.CBCounts, cnts, StartSlot, NumBuffers);
+  }
+  else
+  {
+    m_CurrentPipelineState->Change(m_CurrentPipelineState->VS.CBCounts, NullCBCounts, StartSlot,
+                                   NumBuffers);
   }
 
   VerifyState();
@@ -818,8 +834,14 @@ bool WrappedID3D11DeviceContext::Serialise_HSSetConstantBuffers1(
     if(pFirstConstant)
       m_CurrentPipelineState->Change(m_CurrentPipelineState->HS.CBOffsets, pFirstConstant,
                                      StartSlot, NumBuffers);
+    else
+      m_CurrentPipelineState->Change(m_CurrentPipelineState->HS.CBOffsets, NullCBOffsets, StartSlot,
+                                     NumBuffers);
     if(pNumConstants)
       m_CurrentPipelineState->Change(m_CurrentPipelineState->HS.CBCounts, pNumConstants, StartSlot,
+                                     NumBuffers);
+    else
+      m_CurrentPipelineState->Change(m_CurrentPipelineState->HS.CBCounts, NullCBCounts, StartSlot,
                                      NumBuffers);
 
     ID3D11Buffer *bufs[D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT] = {};
@@ -910,6 +932,11 @@ void WrappedID3D11DeviceContext::HSSetConstantBuffers1(UINT StartSlot, UINT NumB
     }
     m_CurrentPipelineState->Change(m_CurrentPipelineState->HS.CBOffsets, offs, StartSlot, NumBuffers);
   }
+  else
+  {
+    m_CurrentPipelineState->Change(m_CurrentPipelineState->HS.CBOffsets, NullCBOffsets, StartSlot,
+                                   NumBuffers);
+  }
 
   if(pNumConstants)
   {
@@ -920,6 +947,11 @@ void WrappedID3D11DeviceContext::HSSetConstantBuffers1(UINT StartSlot, UINT NumB
         cnts[i] = NullCBCounts[i];
     }
     m_CurrentPipelineState->Change(m_CurrentPipelineState->HS.CBCounts, cnts, StartSlot, NumBuffers);
+  }
+  else
+  {
+    m_CurrentPipelineState->Change(m_CurrentPipelineState->HS.CBCounts, NullCBCounts, StartSlot,
+                                   NumBuffers);
   }
 
   VerifyState();
@@ -949,8 +981,14 @@ bool WrappedID3D11DeviceContext::Serialise_DSSetConstantBuffers1(
     if(pFirstConstant)
       m_CurrentPipelineState->Change(m_CurrentPipelineState->DS.CBOffsets, pFirstConstant,
                                      StartSlot, NumBuffers);
+    else
+      m_CurrentPipelineState->Change(m_CurrentPipelineState->DS.CBOffsets, NullCBOffsets, StartSlot,
+                                     NumBuffers);
     if(pNumConstants)
       m_CurrentPipelineState->Change(m_CurrentPipelineState->DS.CBCounts, pNumConstants, StartSlot,
+                                     NumBuffers);
+    else
+      m_CurrentPipelineState->Change(m_CurrentPipelineState->DS.CBCounts, NullCBCounts, StartSlot,
                                      NumBuffers);
 
     ID3D11Buffer *bufs[D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT] = {};
@@ -1041,6 +1079,11 @@ void WrappedID3D11DeviceContext::DSSetConstantBuffers1(UINT StartSlot, UINT NumB
     }
     m_CurrentPipelineState->Change(m_CurrentPipelineState->DS.CBOffsets, offs, StartSlot, NumBuffers);
   }
+  else
+  {
+    m_CurrentPipelineState->Change(m_CurrentPipelineState->DS.CBOffsets, NullCBOffsets, StartSlot,
+                                   NumBuffers);
+  }
 
   if(pNumConstants)
   {
@@ -1051,6 +1094,11 @@ void WrappedID3D11DeviceContext::DSSetConstantBuffers1(UINT StartSlot, UINT NumB
         cnts[i] = NullCBCounts[i];
     }
     m_CurrentPipelineState->Change(m_CurrentPipelineState->DS.CBCounts, cnts, StartSlot, NumBuffers);
+  }
+  else
+  {
+    m_CurrentPipelineState->Change(m_CurrentPipelineState->DS.CBCounts, NullCBCounts, StartSlot,
+                                   NumBuffers);
   }
 
   VerifyState();
@@ -1080,8 +1128,14 @@ bool WrappedID3D11DeviceContext::Serialise_GSSetConstantBuffers1(
     if(pFirstConstant)
       m_CurrentPipelineState->Change(m_CurrentPipelineState->GS.CBOffsets, pFirstConstant,
                                      StartSlot, NumBuffers);
+    else
+      m_CurrentPipelineState->Change(m_CurrentPipelineState->GS.CBOffsets, NullCBOffsets, StartSlot,
+                                     NumBuffers);
     if(pNumConstants)
       m_CurrentPipelineState->Change(m_CurrentPipelineState->GS.CBCounts, pNumConstants, StartSlot,
+                                     NumBuffers);
+    else
+      m_CurrentPipelineState->Change(m_CurrentPipelineState->GS.CBCounts, NullCBCounts, StartSlot,
                                      NumBuffers);
 
     ID3D11Buffer *bufs[D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT] = {};
@@ -1172,6 +1226,11 @@ void WrappedID3D11DeviceContext::GSSetConstantBuffers1(UINT StartSlot, UINT NumB
     }
     m_CurrentPipelineState->Change(m_CurrentPipelineState->GS.CBOffsets, offs, StartSlot, NumBuffers);
   }
+  else
+  {
+    m_CurrentPipelineState->Change(m_CurrentPipelineState->GS.CBOffsets, NullCBOffsets, StartSlot,
+                                   NumBuffers);
+  }
 
   if(pNumConstants)
   {
@@ -1182,6 +1241,11 @@ void WrappedID3D11DeviceContext::GSSetConstantBuffers1(UINT StartSlot, UINT NumB
         cnts[i] = NullCBCounts[i];
     }
     m_CurrentPipelineState->Change(m_CurrentPipelineState->GS.CBCounts, cnts, StartSlot, NumBuffers);
+  }
+  else
+  {
+    m_CurrentPipelineState->Change(m_CurrentPipelineState->GS.CBCounts, NullCBCounts, StartSlot,
+                                   NumBuffers);
   }
 
   VerifyState();
@@ -1211,8 +1275,14 @@ bool WrappedID3D11DeviceContext::Serialise_PSSetConstantBuffers1(
     if(pFirstConstant)
       m_CurrentPipelineState->Change(m_CurrentPipelineState->PS.CBOffsets, pFirstConstant,
                                      StartSlot, NumBuffers);
+    else
+      m_CurrentPipelineState->Change(m_CurrentPipelineState->PS.CBOffsets, NullCBOffsets, StartSlot,
+                                     NumBuffers);
     if(pNumConstants)
       m_CurrentPipelineState->Change(m_CurrentPipelineState->PS.CBCounts, pNumConstants, StartSlot,
+                                     NumBuffers);
+    else
+      m_CurrentPipelineState->Change(m_CurrentPipelineState->PS.CBCounts, NullCBCounts, StartSlot,
                                      NumBuffers);
 
     ID3D11Buffer *bufs[D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT] = {};
@@ -1303,6 +1373,11 @@ void WrappedID3D11DeviceContext::PSSetConstantBuffers1(UINT StartSlot, UINT NumB
     }
     m_CurrentPipelineState->Change(m_CurrentPipelineState->PS.CBOffsets, offs, StartSlot, NumBuffers);
   }
+  else
+  {
+    m_CurrentPipelineState->Change(m_CurrentPipelineState->PS.CBOffsets, NullCBOffsets, StartSlot,
+                                   NumBuffers);
+  }
 
   if(pNumConstants)
   {
@@ -1313,6 +1388,11 @@ void WrappedID3D11DeviceContext::PSSetConstantBuffers1(UINT StartSlot, UINT NumB
         cnts[i] = NullCBCounts[i];
     }
     m_CurrentPipelineState->Change(m_CurrentPipelineState->PS.CBCounts, cnts, StartSlot, NumBuffers);
+  }
+  else
+  {
+    m_CurrentPipelineState->Change(m_CurrentPipelineState->PS.CBCounts, NullCBCounts, StartSlot,
+                                   NumBuffers);
   }
 
   VerifyState();
@@ -1342,8 +1422,14 @@ bool WrappedID3D11DeviceContext::Serialise_CSSetConstantBuffers1(
     if(pFirstConstant)
       m_CurrentPipelineState->Change(m_CurrentPipelineState->CS.CBOffsets, pFirstConstant,
                                      StartSlot, NumBuffers);
+    else
+      m_CurrentPipelineState->Change(m_CurrentPipelineState->CS.CBOffsets, NullCBOffsets, StartSlot,
+                                     NumBuffers);
     if(pNumConstants)
       m_CurrentPipelineState->Change(m_CurrentPipelineState->CS.CBCounts, pNumConstants, StartSlot,
+                                     NumBuffers);
+    else
+      m_CurrentPipelineState->Change(m_CurrentPipelineState->CS.CBCounts, NullCBCounts, StartSlot,
                                      NumBuffers);
 
     ID3D11Buffer *bufs[D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT] = {};
@@ -1434,6 +1520,11 @@ void WrappedID3D11DeviceContext::CSSetConstantBuffers1(UINT StartSlot, UINT NumB
     }
     m_CurrentPipelineState->Change(m_CurrentPipelineState->CS.CBOffsets, offs, StartSlot, NumBuffers);
   }
+  else
+  {
+    m_CurrentPipelineState->Change(m_CurrentPipelineState->CS.CBOffsets, NullCBOffsets, StartSlot,
+                                   NumBuffers);
+  }
 
   if(pNumConstants)
   {
@@ -1444,6 +1535,11 @@ void WrappedID3D11DeviceContext::CSSetConstantBuffers1(UINT StartSlot, UINT NumB
         cnts[i] = NullCBCounts[i];
     }
     m_CurrentPipelineState->Change(m_CurrentPipelineState->CS.CBCounts, cnts, StartSlot, NumBuffers);
+  }
+  else
+  {
+    m_CurrentPipelineState->Change(m_CurrentPipelineState->CS.CBCounts, NullCBCounts, StartSlot,
+                                   NumBuffers);
   }
 
   VerifyState();

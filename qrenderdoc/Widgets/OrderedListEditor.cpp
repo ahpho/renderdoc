@@ -97,14 +97,20 @@ OrderedListEditor::~OrderedListEditor()
 {
 }
 
-QWidget *OrderedListEditor::makeCellWidget(int row, OrderedItemExtras extra)
+QWidget *OrderedListEditor::makeCellWidget(int col, OrderedItemExtras extra)
 {
   if(extra == OrderedItemExtras::Delete)
   {
     QToolButton *ret = new QToolButton(this);
     ret->setAutoRaise(true);
     ret->setIcon(Icons::del());
-    QObject::connect(ret, &QToolButton::clicked, [this, row, extra]() { extraClicked(row, extra); });
+    QObject::connect(ret, &QToolButton::clicked, [this, ret, col, extra]() {
+      for(int row = 0; row < rowCount(); row++)
+        if(cellWidget(row, col) == ret)
+          return extraClicked(row, extra);
+
+      qCritical() << "Couldn't find extra button on click";
+    });
 
     return ret;
   }
@@ -113,7 +119,13 @@ QWidget *OrderedListEditor::makeCellWidget(int row, OrderedItemExtras extra)
     QToolButton *ret = new QToolButton(this);
     ret->setAutoRaise(true);
     ret->setIcon(Icons::folder_page_white());
-    QObject::connect(ret, &QToolButton::clicked, [this, row, extra]() { extraClicked(row, extra); });
+    QObject::connect(ret, &QToolButton::clicked, [this, ret, col, extra]() {
+      for(int row = 0; row < rowCount(); row++)
+        if(cellWidget(row, col) == ret)
+          return extraClicked(row, extra);
+
+      qCritical() << "Couldn't find extra button on click";
+    });
 
     return ret;
   }
@@ -143,7 +155,7 @@ void OrderedListEditor::setItemsAndProp(const QStringList &strings, const QList<
 
     if(m_Prop.valid())
     {
-      QWidget *w = makeCellWidget(i, OrderedItemExtras::CustomProp);
+      QWidget *w = makeCellWidget(1, OrderedItemExtras::CustomProp);
       if(i < prop.count())
       {
         QCheckBox *c = qobject_cast<QCheckBox *>(w);
@@ -162,7 +174,7 @@ void OrderedListEditor::setItemsAndProp(const QStringList &strings, const QList<
     }
 
     for(int c = 0; c < m_Extras.size(); c++)
-      setCellWidget(i, c + firstExtraColumn(), makeCellWidget(i, m_Extras[c]));
+      setCellWidget(i, c + firstExtraColumn(), makeCellWidget(c + firstExtraColumn(), m_Extras[c]));
   }
 
   // if we added any strings above the new item row was automatically
@@ -189,7 +201,7 @@ void OrderedListEditor::addNewItemRow()
   setItem(rowCount() - 1, 0, item);
 
   {
-    QWidget *w = makeCellWidget(rowCount() - 1, OrderedItemExtras::CustomProp);
+    QWidget *w = makeCellWidget(1, OrderedItemExtras::CustomProp);
     QCheckBox *c = qobject_cast<QCheckBox *>(w);
     if(c)
       c->setChecked(m_Prop.defaultValue);
@@ -211,7 +223,7 @@ void OrderedListEditor::addNewItemRow()
     setItem(rowCount() - 1, c + firstExtraColumn(), item);
 
     setCellWidget(rowCount() - 1, c + firstExtraColumn(),
-                  makeCellWidget(rowCount() - 1, m_Extras[c]));
+                  makeCellWidget(c + firstExtraColumn(), m_Extras[c]));
   }
 }
 

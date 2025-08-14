@@ -205,6 +205,7 @@
     <ClInclude Include="common\wrapped_pool.h" />
     <ClInclude Include="core\bit_flag_iterator.h" />
     <ClInclude Include="core\gpu_address_range_tracker.h" />
+    <ClInclude Include="core\rdcbytetrie.h" />
     <ClInclude Include="core\settings.h" />
     <ClInclude Include="core\core.h" />
     <ClInclude Include="core\crash_handler.h" />

@@ -1116,6 +1116,7 @@ struct TestStruct
 groupshared int gsmInt;
 groupshared TestStruct gsmStruct[8];
 groupshared int gsmIntArray[128];
+groupshared int gsmInt2DArray[2][1024];
 
 [numthreads(1,1,1)]
 void main(int3 inTestIndex : SV_GroupID)
@@ -1125,6 +1126,9 @@ void main(int3 inTestIndex : SV_GroupID)
     return;
 
   int testIndex = inTestIndex.x;
+  int ZERO = floor(testIndex/(testIndex+1.0e-6f));
+  int ONE = ZERO + 1;
+
   int4 testResult = 123;
   gsmInt = testIndex;
   gsmStruct[gsmInt].a = inTestIndex;
@@ -1141,14 +1145,18 @@ void main(int3 inTestIndex : SV_GroupID)
     gsmStruct[gsmInt*4].a = inTestIndex;
     int idx = 128 - gsmInt - 1;
     gsmIntArray[idx] = testIndex;
-    testResult.x = gsmIntArray[idx/2];
+    gsmInt2DArray[ZERO][idx] = testIndex;
+    gsmInt2DArray[ONE][idx] = testIndex;
+    testResult.x = gsmIntArray[idx + ZERO];
     testResult.y = testIndex;
     testResult.z = gsmStruct[gsmInt * 4].a.y;
+    testResult.w = gsmInt2DArray[ZERO][idx] + gsmInt2DArray[ONE][idx];
   }
   else
   {
     testResult.x = inTestIndex.x;
   }
+  GroupMemoryBarrierWithGroupSync();
   bufOut[gsmInt] = testResult;
 }
 

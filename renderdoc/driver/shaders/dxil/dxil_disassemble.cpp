@@ -4692,99 +4692,79 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
           }
           case Operation::GetElementPtr:
           {
-            bool fallbackOutput = true;
             if(!inst.type->isVoid())
             {
-              // type "float addrspace(3)*" : addrspace(3) is DXIL specific, see DXIL::Type::PointerAddrSpace
-              rdcstr typeStr = inst.type->toString(dxcStyleFormatting);
-              int start = typeStr.find(" addrspace(");
-              if(start > 0)
+              switch(inst.type->addrSpace)
               {
-                rdcstr scalarType = typeStr.substr(0, start);
-                scalarType.trim();
+                case DXIL::Type::PointerAddrSpace::Default: resultTypeStr = ""; break;
+                case DXIL::Type::PointerAddrSpace::DeviceMemory:
+                  resultTypeStr = "DeviceMemory";
+                  break;
+                case DXIL::Type::PointerAddrSpace::CBuffer: resultTypeStr = "CBuffer"; break;
+                case DXIL::Type::PointerAddrSpace::GroupShared:
+                  resultTypeStr = "GroupShared";
+                  break;
+                case DXIL::Type::PointerAddrSpace::GenericPointer: resultTypeStr = ""; break;
+                case DXIL::Type::PointerAddrSpace::ImmediateCBuffer:
+                  resultTypeStr = "ImmediateCBuffer";
+                  break;
+              };
 
-                start += 11;
-                int end = typeStr.find(')', start);
-                if(end > start)
+              resultTypeStr += " ";
+              resultTypeStr += inst.type->inner->toString(true);
+              resultTypeStr += "* ";
+
+              // arg[0] : ptr
+              if(cast<GlobalVar>(inst.args[0]))
+              {
+                lineStr += DXBC::BasicDemangle(cast<GlobalVar>(inst.args[0])->name);
+              }
+              else
+              {
+                rdcstr ptrStr = GetArgId(0);
+                // Simple demangle take string between first "?" and next "@"
+                int nameStart = ptrStr.indexOf('?');
+                if(nameStart > 0)
                 {
-                  // Example output:
-                  // DXC:
-                  // %3 = getelementptr [6 x float], [6 x float] addrspace(3)*
-                  // @"\01?s_x@@3@$$A.1dim", i32 0, i32 %9
-
-                  // RD: GroupShared float* _3 = s_x[_9];
-                  fallbackOutput = false;
-
-                  rdcstr addrspaceStr(typeStr.substr(start, end - start));
-                  int32_t value = atoi(addrspaceStr.c_str());
-                  DXIL::Type::PointerAddrSpace addrspace = (DXIL::Type::PointerAddrSpace)value;
-
-                  switch(addrspace)
-                  {
-                    case DXIL::Type::PointerAddrSpace::Default: resultTypeStr = ""; break;
-                    case DXIL::Type::PointerAddrSpace::DeviceMemory:
-                      resultTypeStr = "DeviceMemory";
-                      break;
-                    case DXIL::Type::PointerAddrSpace::CBuffer: resultTypeStr = "CBuffer"; break;
-                    case DXIL::Type::PointerAddrSpace::GroupShared:
-                      resultTypeStr = "GroupShared";
-                      break;
-                    case DXIL::Type::PointerAddrSpace::GenericPointer: resultTypeStr = ""; break;
-                    case DXIL::Type::PointerAddrSpace::ImmediateCBuffer:
-                      resultTypeStr = "ImmediateCBuffer";
-                      break;
-                  };
-
-                  resultTypeStr += " ";
-                  resultTypeStr += scalarType;
-                  resultTypeStr += "* ";
-
-                  // arg[0] : ptr
-                  rdcstr ptrStr = GetArgId(inst, 0);
-                  // Simple demangle take string between first "?" and next "@"
-                  int nameStart = ptrStr.indexOf('?');
-                  if(nameStart > 0)
-                  {
-                    nameStart++;
-                    int nameEnd = ptrStr.indexOf('@', nameStart);
-                    if(nameEnd > nameStart)
-                      ptrStr = ptrStr.substr(nameStart, nameEnd - nameStart);
-                  }
+                  nameStart++;
+                  int nameEnd = ptrStr.indexOf('@', nameStart);
+                  if(nameEnd > nameStart)
+                    ptrStr = ptrStr.substr(nameStart, nameEnd - nameStart);
                   lineStr += ptrStr;
-                  // arg[1] : index 0
-                  bool first = true;
-                  if(inst.args.size() > 1)
-                  {
-                    uint32_t v = 0;
-                    if(!getival<uint32_t>(inst.args[1], v) || (v > 0))
-                    {
-                      lineStr += "[";
-                      lineStr += GetArgId(inst, 1);
-                      lineStr += "]";
-                      first = false;
-                    }
-                  }
+                }
+              }
+              // arg[1] : index 0
+              bool first = true;
+              if(inst.args.size() > 1)
+              {
+                uint32_t v = 0;
+                if(!getival<uint32_t>(inst.args[1], v) || (v > 0))
+                {
+                  lineStr += "[";
+                  lineStr += GetArgId(inst, 1);
+                  lineStr += "]";
+                  first = false;
+                }
+              }
 
-                  // arg[2..] : index 1...N
-                  for(uint32_t a = 2; a < inst.args.size(); ++a)
-                  {
-                    if(first)
-                      lineStr += "[";
-                    else
-                      lineStr += " + ";
+              // arg[2..] : index 1...N
+              for(uint32_t a = 2; a < inst.args.size(); ++a)
+              {
+                if(first)
+                  lineStr += "[";
+                else
+                  lineStr += " + ";
 
-                    lineStr += GetArgId(inst, a);
+                lineStr += GetArgId(inst, a);
 
-                    if(first)
-                    {
-                      lineStr += "]";
-                      first = false;
-                    }
-                  }
+                if(first)
+                {
+                  lineStr += "]";
+                  first = false;
                 }
               }
             }
-            if(fallbackOutput)
+            else
             {
               lineStr += "getelementptr ";
               bool first = true;

@@ -59,9 +59,6 @@ struct BindKey
 
   ShaderStage stage;
   ShaderBindIndex index;
-
-  // unused as key, here for convenience when looking up bindings
-  uint32_t arraySize;
 };
 
 struct BindData
@@ -145,6 +142,11 @@ public:
     m_Idx++;
     return NULL;
   }
+  const char *get_str() override
+  {
+    m_Idx++;
+    return NULL;
+  }
   uint64_t get_uint64() override
   {
     uint64_t ret = *(uint64_t *)m_Cur;
@@ -153,7 +155,6 @@ public:
     return ret;
   }
 
-  size_t get_size() override { return sizeof(size_t) == 8 ? (size_t)get_uint64() : get_uint(); }
   rdcstr get_error() { return m_Error; }
 private:
   const uint32_t *m_Cur;
@@ -370,6 +371,9 @@ void AnnotateShader(const ShaderReflection &refl, const SPIRVPatchData &patchDat
   // store the maximum slot we can use, for clamping outputs to avoid writing out of bounds
   rdcspv::Id maxSlotID = targetIndexWidth == 64 ? editor.AddConstantImmediate<uint64_t>(maxSlot)
                                                 : editor.AddConstantImmediate<uint32_t>(maxSlot);
+  rdcspv::Id maxSlotByteOffsetID =
+      targetIndexWidth == 64 ? editor.AddConstantImmediate<uint64_t>(maxSlot * sizeof(uint32_t))
+                             : editor.AddConstantImmediate<uint32_t>(maxSlot * sizeof(uint32_t));
 
   rdcspv::Id maxPrintfWordOffset =
       editor.AddConstantImmediate<uint32_t>(Vulkan_Debug_PrintfBufferSize() / sizeof(uint32_t));
@@ -1405,17 +1409,6 @@ void AnnotateShader(const ShaderReflection &refl, const SPIRVPatchData &patchDat
             }
           }
 
-          // clamp the index to the maximum slot. If the user is reading out of bounds, don't write
-          // out of bounds.
-          {
-            rdcspv::Id clampedtype =
-                editor.DeclareType(rdcspv::Scalar(rdcspv::Op::TypeInt, targetIndexWidth, false));
-            index = editor.AddOperation(
-                it, rdcspv::OpGLSL450(clampedtype, editor.MakeId(), glsl450,
-                                      rdcspv::GLSLstd450::UMin, {index, maxSlotID}));
-            it++;
-          }
-
           rdcspv::Id bufptr;
 
           if(IsBDA(storageMode))
@@ -1434,6 +1427,17 @@ void AnnotateShader(const ShaderReflection &refl, const SPIRVPatchData &patchDat
                 it, rdcspv::OpIAdd(indexOffsetType, editor.MakeId(), varIt->second, shiftedindex));
             it++;
 
+            // clamp the offset address to the maximum byte offset. If the user is reading out of
+            // bounds, don't write out of bounds.
+            {
+              rdcspv::Id clampedtype =
+                  editor.DeclareType(rdcspv::Scalar(rdcspv::Op::TypeInt, targetIndexWidth, false));
+              offsetaddr = editor.AddOperation(
+                  it, rdcspv::OpGLSL450(clampedtype, editor.MakeId(), glsl450,
+                                        rdcspv::GLSLstd450::UMin, {offsetaddr, maxSlotByteOffsetID}));
+              it++;
+            }
+
             // make a pointer out of it
             // uint32_t *bufptr = (uint32_t *)(ptr + offsetaddr)
             bufptr = MakeOffsettedPointer<uintvulkanmax_t>(
@@ -1449,6 +1453,17 @@ void AnnotateShader(const ShaderReflection &refl, const SPIRVPatchData &patchDat
             rdcspv::Id ssboindex = editor.AddOperation(
                 it, rdcspv::OpIAdd(uint32Type, editor.MakeId(), index, varIt->second));
             it++;
+
+            // clamp the ssboindex to the maximum slot. If the user is reading out of bounds, don't
+            // write out of bounds.
+            {
+              rdcspv::Id clampedtype =
+                  editor.DeclareType(rdcspv::Scalar(rdcspv::Op::TypeInt, targetIndexWidth, false));
+              ssboindex = editor.AddOperation(
+                  it, rdcspv::OpGLSL450(clampedtype, editor.MakeId(), glsl450,
+                                        rdcspv::GLSLstd450::UMin, {ssboindex, maxSlotID}));
+              it++;
+            }
 
             // accesschain to get the pointer we'll atomic into.
             // accesschain is 0 to access rtarray (first member) then ssboindex for array index
@@ -1546,6 +1561,7 @@ bool VulkanReplay::FetchShaderFeedback(uint32_t eventId)
   ShaderReflection *stageRefls[NumShaderStages] = {};
 
   {
+    const rdcarray<VulkanRenderState::DescriptorBuffer> &descBufs = state.descBufs;
     const rdcarray<VulkanStatePipeline::DescriptorAndOffsets> &descSets =
         (result.compute ? state.compute.descSets : state.graphics.descSets);
 
@@ -1553,33 +1569,23 @@ bool VulkanReplay::FetchShaderFeedback(uint32_t eventId)
     for(size_t set = 0; set < pipeInfo.descSetLayouts.size(); set++)
       descLayouts.push_back(&creationInfo.m_DescSetLayout[pipeInfo.descSetLayouts[set]]);
 
-    auto processBinding = [this, &descLayouts, &descSets, &feedbackData](
-                              ShaderStage stage, DescriptorType type, uint16_t index,
-                              uint32_t bindset, uint32_t bind, uint32_t arraySize) {
+    auto processBinding = [this, &descLayouts, &descBufs, &descSets, &feedbackData](
+                              ShaderStage stage, DescriptorType type, bool inputAttachment,
+                              uint16_t index, uint32_t bindset, uint32_t bind, uint32_t arraySize) {
       // only process array bindings
       if(arraySize <= 1)
         return;
 
       BindKey key;
       key.stage = stage;
-      key.arraySize = arraySize;
       key.index.category = CategoryForDescriptorType(type);
       key.index.index = index;
       key.index.arrayElement = 0;
 
       if(bindset >= descLayouts.size() || !descLayouts[bindset] || bindset >= descSets.size() ||
-         descSets[bindset].descSet == ResourceId())
+         !descSets[bindset].IsBound())
       {
         RDCERR("Invalid set %u referenced by %s shader", bindset, ToStr(key.stage).c_str());
-        return;
-      }
-
-      ResourceId descSet = descSets[bindset].descSet;
-
-      if(bind >= descLayouts[bindset]->bindings.size())
-      {
-        RDCERR("Invalid binding %u in set %u referenced by %s shader", bind, bindset,
-               ToStr(key.stage).c_str());
         return;
       }
 
@@ -1592,26 +1598,57 @@ bool VulkanReplay::FetchShaderFeedback(uint32_t eventId)
         return;
       }
 
-      if(descLayouts[bindset]->bindings[bind].variableSize)
-      {
-        auto it = m_pDriver->m_DescriptorSetState.find(descSet);
-        if(it != m_pDriver->m_DescriptorSetState.end())
-          arraySize = it->second.data.variableDescriptorCount;
-      }
-      else if(arraySize == ~0U)
-      {
-        // if the array was unbounded, clamp it to the size of the descriptor set
-        arraySize = descLayouts[bindset]->bindings[bind].descriptorCount;
-      }
-
       DescriptorAccess access;
       access.stage = key.stage;
       access.type = type;
       access.index = index;
-      access.descriptorStore = m_pDriver->GetResourceManager()->GetOriginalID(descSet);
-      access.byteOffset =
-          descLayouts[bindset]->bindings[bind].elemOffset + descLayouts[bindset]->inlineByteSize;
-      access.byteSize = 1;
+
+      if(descSets[bindset].descSet == ResourceId())
+      {
+        ResourceId id;
+        uint64_t offs = 0;
+        m_pDriver->GetResIDFromAddr(descBufs[descSets[bindset].descBufferIdx].address, id, offs);
+        access.descriptorStore = m_pDriver->GetResourceManager()->GetOriginalID(id);
+        access.byteOffset += uint32_t(offs + descSets[bindset].descBufferOffset) +
+                             descLayouts[bindset]->bindings[bind].elemOffset;
+        access.byteSize =
+            GetDescriptorSizeOfBind(m_pDriver->GetResourceManager(), descLayouts[bindset]->bindings,
+                                    descLayouts[bindset]->mutableBitmasks, bind);
+
+        if(descLayouts[bindset]->bindings[bind].variableSize || arraySize == ~0U)
+        {
+          arraySize = uint32_t((m_pDriver->m_CreationInfo.m_Buffer[id].size - access.byteOffset) /
+                               access.byteSize);
+        }
+      }
+      else
+      {
+        ResourceId descSet = descSets[bindset].descSet;
+
+        if(bind >= descLayouts[bindset]->bindings.size())
+        {
+          RDCERR("Invalid binding %u in set %u referenced by %s shader", bind, bindset,
+                 ToStr(key.stage).c_str());
+          return;
+        }
+
+        if(descLayouts[bindset]->bindings[bind].variableSize)
+        {
+          auto it = m_pDriver->m_DescriptorSetState.find(descSet);
+          if(it != m_pDriver->m_DescriptorSetState.end())
+            arraySize = it->second.data.variableDescriptorCount;
+        }
+        else if(arraySize == ~0U)
+        {
+          // if the array was unbounded, clamp it to the size of the descriptor set
+          arraySize = descLayouts[bindset]->bindings[bind].descriptorCount;
+        }
+
+        access.descriptorStore = m_pDriver->GetResourceManager()->GetOriginalID(descSet);
+        access.byteOffset =
+            descLayouts[bindset]->bindings[bind].elemOffset + descLayouts[bindset]->inlineByteSize;
+        access.byteSize = 1;
+      }
 
       feedbackData.offsetMap[key] = {feedbackData.feedbackStorageSize, arraySize, access};
 
@@ -1626,25 +1663,26 @@ bool VulkanReplay::FetchShaderFeedback(uint32_t eventId)
       stageRefls[(uint32_t)sh.refl->stage] = sh.refl;
 
       for(uint32_t i = 0; i < sh.refl->constantBlocks.size(); i++)
-        processBinding(sh.refl->stage, DescriptorType::ConstantBuffer, i & 0xffff,
+        processBinding(sh.refl->stage, DescriptorType::ConstantBuffer, false, i & 0xffff,
                        sh.refl->constantBlocks[i].fixedBindSetOrSpace,
                        sh.refl->constantBlocks[i].fixedBindNumber,
                        sh.refl->constantBlocks[i].bindArraySize);
 
       for(uint32_t i = 0; i < sh.refl->samplers.size(); i++)
-        processBinding(sh.refl->stage, DescriptorType::Sampler, i & 0xffff,
+        processBinding(sh.refl->stage, DescriptorType::Sampler, false, i & 0xffff,
                        sh.refl->samplers[i].fixedBindSetOrSpace,
                        sh.refl->samplers[i].fixedBindNumber, sh.refl->samplers[i].bindArraySize);
 
       for(uint32_t i = 0; i < sh.refl->readOnlyResources.size(); i++)
-        processBinding(sh.refl->stage, sh.refl->readOnlyResources[i].descriptorType, i & 0xffff,
+        processBinding(sh.refl->stage, sh.refl->readOnlyResources[i].descriptorType,
+                       sh.refl->readOnlyResources[i].isInputAttachment, i & 0xffff,
                        sh.refl->readOnlyResources[i].fixedBindSetOrSpace,
                        sh.refl->readOnlyResources[i].fixedBindNumber,
                        sh.refl->readOnlyResources[i].bindArraySize);
 
       for(uint32_t i = 0; i < sh.refl->readWriteResources.size(); i++)
-        processBinding(sh.refl->stage, sh.refl->readWriteResources[i].descriptorType, i & 0xffff,
-                       sh.refl->readWriteResources[i].fixedBindSetOrSpace,
+        processBinding(sh.refl->stage, sh.refl->readWriteResources[i].descriptorType, false,
+                       i & 0xffff, sh.refl->readWriteResources[i].fixedBindSetOrSpace,
                        sh.refl->readWriteResources[i].fixedBindNumber,
                        sh.refl->readWriteResources[i].bindArraySize);
     }
@@ -1787,7 +1825,7 @@ bool VulkanReplay::FetchShaderFeedback(uint32_t eventId)
         result.access.push_back(access);
       }
 
-      access.byteOffset++;
+      access.byteOffset += access.byteSize;
     }
   }
 

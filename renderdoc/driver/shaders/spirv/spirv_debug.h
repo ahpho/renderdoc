@@ -225,11 +225,20 @@ struct ThreadState
   // changes (and vice-versa - a change via any of those pointers must update all other pointers).
   SparseIdMap<rdcarray<Id>> pointersForId;
 
+  SparseIdMap<ShaderVariable> gsmPointers;
+  struct GSMIndex
+  {
+    int32_t global;
+    int32_t local;
+  };
+  rdcarray<GSMIndex> gsmIndexes;
+
   // the id of the merge block that the last branch targetted
   Id mergeBlock;
   uint32_t convergenceInstruction;
   uint32_t functionReturnPoint;
   ShaderVariable returnValue;
+  bool hasReturnValueData;
   rdcarray<StackFrame *> callstack;
 
   // the list of IDs that are currently valid and live
@@ -270,6 +279,7 @@ private:
   void SkipIgnoredInstructions();
   void SetConvergencePoint(Id block);
 
+  void ExecuteMemoryBarrier(Id semanticsId);
   static bool WorkgroupIsDiverged(const rdcarray<ThreadState> &workgroup);
 
   ShaderDebugState *m_State = NULL;

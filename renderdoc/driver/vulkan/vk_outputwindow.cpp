@@ -483,7 +483,7 @@ void VulkanReplay::OutputWindow::Create(WrappedVulkan *driver, VkDevice device, 
     VkImageViewCreateInfo info = {
         VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         NULL,
-        0,
+        driver->DefaultImageViewCreateFlags(),
         Unwrap(dsimg),
         VK_IMAGE_VIEW_TYPE_2D,
         VK_FORMAT_D32_SFLOAT,
@@ -639,7 +639,7 @@ void VulkanReplay::OutputWindow::Create(WrappedVulkan *driver, VkDevice device, 
     VkImageViewCreateInfo info = {
         VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         NULL,
-        0,
+        driver->DefaultImageViewCreateFlags(),
         Unwrap(bb),
         VK_IMAGE_VIEW_TYPE_2D,
         imformat,
@@ -943,7 +943,7 @@ void VulkanReplay::BindOutputWindow(uint64_t id, bool depth)
   {
     // semaphore is short lived, so not wrapped, if it's cached (ideally)
     // then it should be wrapped
-    VkSemaphore sem;
+    VkSemaphore sem = VK_NULL_HANDLE;
     VkPipelineStageFlags stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
     VkSemaphoreCreateInfo semInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, NULL, 0};
 

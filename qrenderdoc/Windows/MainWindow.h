@@ -96,6 +96,7 @@ public:
 
   void LoadInitialLayout();
 
+  bool ErrorReportsAllowed();
   void sendErrorReport(bool forceCaptureInclusion);
 
   void setProgress(float val);

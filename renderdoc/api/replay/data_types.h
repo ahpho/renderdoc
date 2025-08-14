@@ -934,13 +934,13 @@ struct ConstantBindStats
   static const size_t BucketCount = 31;
 
   DOCUMENT("How many function calls were made.");
-  uint32_t calls;
+  uint32_t calls = 0;
 
   DOCUMENT("How many objects were bound.");
-  uint32_t sets;
+  uint32_t sets = 0;
 
   DOCUMENT("How many objects were unbound.");
-  uint32_t nulls;
+  uint32_t nulls = 0;
 
   DOCUMENT(R"(A list where the Nth element contains the number of calls that bound N buffers.
 
@@ -981,13 +981,13 @@ struct SamplerBindStats
   }
 
   DOCUMENT("How many function calls were made.");
-  uint32_t calls;
+  uint32_t calls = 0;
 
   DOCUMENT("How many objects were bound.");
-  uint32_t sets;
+  uint32_t sets = 0;
 
   DOCUMENT("How many objects were unbound.");
-  uint32_t nulls;
+  uint32_t nulls = 0;
 
   DOCUMENT(R"(A list where the Nth element contains the number of calls that bound N samplers.
 
@@ -1025,13 +1025,13 @@ struct ResourceBindStats
   }
 
   DOCUMENT("How many function calls were made.");
-  uint32_t calls;
+  uint32_t calls = 0;
 
   DOCUMENT("How many objects were bound.");
-  uint32_t sets;
+  uint32_t sets = 0;
 
   DOCUMENT("How many objects were unbound.");
-  uint32_t nulls;
+  uint32_t nulls = 0;
 
   DOCUMENT(R"(A list with one element for each type in :class:`TextureType`.
 
@@ -1071,13 +1071,13 @@ struct ResourceUpdateStats
   static const size_t BucketCount = 31;
 
   DOCUMENT("How many function calls were made.");
-  uint32_t calls;
+  uint32_t calls = 0;
 
   DOCUMENT("How many of :data:`calls` were mapped pointers written by the CPU.");
-  uint32_t clients;
+  uint32_t clients = 0;
 
   DOCUMENT("How many of :data:`calls` were batched updates written in the command queue.");
-  uint32_t servers;
+  uint32_t servers = 0;
 
   DOCUMENT(R"(A list with one element for each type in :class:`TextureType`.
 
@@ -1122,11 +1122,11 @@ struct DrawcallStats
   static const size_t BucketCount = 16;
 
   DOCUMENT("How many draw calls were made.");
-  uint32_t calls;
+  uint32_t calls = 0;
   DOCUMENT("How many of :data:`calls` were instanced.");
-  uint32_t instanced;
+  uint32_t instanced = 0;
   DOCUMENT("How many of :data:`calls` were indirect.");
-  uint32_t indirect;
+  uint32_t indirect = 0;
 
   DOCUMENT(R"(A :class:`bucketed <BucketType>` list over the number of instances in the draw.
       
@@ -1244,16 +1244,16 @@ struct ShaderChangeStats
   }
 
   DOCUMENT("How many function calls were made.");
-  uint32_t calls;
+  uint32_t calls = 0;
 
   DOCUMENT("How many objects were bound.");
-  uint32_t sets;
+  uint32_t sets = 0;
 
   DOCUMENT("How many objects were unbound.");
-  uint32_t nulls;
+  uint32_t nulls = 0;
 
   DOCUMENT("How many calls made no change due to the existing bind being identical.");
-  uint32_t redundants;
+  uint32_t redundants = 0;
 };
 
 DECLARE_REFLECTION_STRUCT(ShaderChangeStats);
@@ -1267,16 +1267,16 @@ struct BlendStats
   BlendStats &operator=(const BlendStats &) = default;
 
   DOCUMENT("How many function calls were made.");
-  uint32_t calls;
+  uint32_t calls = 0;
 
   DOCUMENT("How many objects were bound.");
-  uint32_t sets;
+  uint32_t sets = 0;
 
   DOCUMENT("How many objects were unbound.");
-  uint32_t nulls;
+  uint32_t nulls = 0;
 
   DOCUMENT("How many calls made no change due to the existing bind being identical.");
-  uint32_t redundants;
+  uint32_t redundants = 0;
 };
 
 DECLARE_REFLECTION_STRUCT(BlendStats);
@@ -1290,16 +1290,16 @@ struct DepthStencilStats
   DepthStencilStats &operator=(const DepthStencilStats &) = default;
 
   DOCUMENT("How many function calls were made.");
-  uint32_t calls;
+  uint32_t calls = 0;
 
   DOCUMENT("How many objects were bound.");
-  uint32_t sets;
+  uint32_t sets = 0;
 
   DOCUMENT("How many objects were unbound.");
-  uint32_t nulls;
+  uint32_t nulls = 0;
 
   DOCUMENT("How many calls made no change due to the existing bind being identical.");
-  uint32_t redundants;
+  uint32_t redundants = 0;
 };
 
 DECLARE_REFLECTION_STRUCT(DepthStencilStats);
@@ -1313,16 +1313,16 @@ struct RasterizationStats
   RasterizationStats &operator=(const RasterizationStats &) = default;
 
   DOCUMENT("How many function calls were made.");
-  uint32_t calls;
+  uint32_t calls = 0;
 
   DOCUMENT("How many objects were bound.");
-  uint32_t sets;
+  uint32_t sets = 0;
 
   DOCUMENT("How many objects were unbound.");
-  uint32_t nulls;
+  uint32_t nulls = 0;
 
   DOCUMENT("How many calls made no change due to the existing bind being identical.");
-  uint32_t redundants;
+  uint32_t redundants = 0;
 
   DOCUMENT(R"(A list where the Nth element contains the number of calls that bound N viewports.
     
@@ -1348,13 +1348,13 @@ struct OutputTargetStats
   OutputTargetStats &operator=(const OutputTargetStats &) = default;
 
   DOCUMENT("How many function calls were made.");
-  uint32_t calls;
+  uint32_t calls = 0;
 
   DOCUMENT("How many objects were bound.");
-  uint32_t sets;
+  uint32_t sets = 0;
 
   DOCUMENT("How many objects were unbound.");
-  uint32_t nulls;
+  uint32_t nulls = 0;
 
   DOCUMENT(R"(A list where the Nth element contains the number of calls that bound N targets.
 

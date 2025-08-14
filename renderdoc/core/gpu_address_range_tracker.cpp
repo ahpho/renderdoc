@@ -721,6 +721,8 @@ TEST_CASE("Check GPUAddressRangeTracker", "[gpuaddr]")
     // wrong ID, don't remove
     tracker.RemoveFrom(0x1270000, g);
 
+    CHECK(DID_ERROR_HAPPEN());
+
     CHECK(tracker.GetResIDFromAddr(0x1230000 - 1) == none);
     CHECK(tracker.GetResIDFromAddr(0x1230000) == make_idoffs(a, 0ULL));
     CHECK(tracker.GetResIDFromAddr(0x1230001) == make_idoffs(a, 1ULL));
@@ -743,6 +745,8 @@ TEST_CASE("Check GPUAddressRangeTracker", "[gpuaddr]")
 
     // wrong address, don't remove
     tracker.RemoveFrom(0x1000, a);
+
+    CHECK(DID_ERROR_HAPPEN());
 
     CHECK(tracker.GetResIDFromAddr(0x1230000 - 1) == none);
     CHECK(tracker.GetResIDFromAddr(0x1230000) == make_idoffs(a, 0ULL));

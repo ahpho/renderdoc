@@ -50,6 +50,7 @@ void InitReplayTables(void *vulkanModule)
     VkDevDispatchTable &table = replayDeviceTable;
     memset(&table, 0, sizeof(table));
     HookInit(GetDeviceProcAddr);
+    HookInit(CreateDevice);
     HookInitVulkanDevice();
   }
 

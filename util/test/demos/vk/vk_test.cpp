@@ -120,6 +120,9 @@ static VkBool32 VKAPI_PTR vulkanCallback(VkDebugUtilsMessageSeverityFlagBitsEXT 
                                          const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
                                          void *pUserData)
 {
+  if(strstr(pCallbackData->pMessageIdName, "-01779"))
+    return false;
+
   TEST_WARN("Vulkan message: [%s] %s", pCallbackData->pMessageIdName, pCallbackData->pMessage);
 
   return false;
@@ -187,6 +190,9 @@ void VulkanGraphicsTest::Prepare(int argc, char **argv)
 
       // enable debug utils when possible
       optInstExts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+
+      // ditto validation features
+      optInstExts.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
 
       CHECK_VKR(vkh::enumerateInstanceLayerProperties(availInstLayers));
 
@@ -286,6 +292,30 @@ void VulkanGraphicsTest::Prepare(int argc, char **argv)
 
         if(found)
           enabledInstExts.push_back(search);
+      }
+
+      VkValidationFeaturesEXT featuresEXT = {VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT};
+      VkValidationFeatureEnableEXT enableFeatures[] = {
+          VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT,
+          VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
+      };
+      featuresEXT.enabledValidationFeatureCount = ARRAY_COUNT(enableFeatures);
+      featuresEXT.pEnabledValidationFeatures = enableFeatures;
+
+      // allow command line override
+      for(int i = 0; i < argc; i++)
+      {
+        if(!strcmp(argv[i], "--gpuva"))
+        {
+          for(const char *a : enabledInstExts)
+          {
+            if(std::string(a) == VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME)
+            {
+              featuresEXT.pNext = instInfoNext;
+              instInfoNext = &featuresEXT;
+            }
+          }
+        }
       }
 
       vulkanVersion = volkGetInstanceVersion();
@@ -1045,6 +1075,12 @@ void VulkanGraphicsTest::setName(VkBuffer obj, const std::string &name)
 }
 
 template <>
+void VulkanGraphicsTest::setName(VkBufferView obj, const std::string &name)
+{
+  setName(VK_OBJECT_TYPE_BUFFER_VIEW, (uint64_t)obj, name);
+}
+
+template <>
 void VulkanGraphicsTest::setName(VkSemaphore obj, const std::string &name)
 {
   setName(VK_OBJECT_TYPE_SEMAPHORE, (uint64_t)obj, name);
@@ -1054,6 +1090,12 @@ template <>
 void VulkanGraphicsTest::setName(VkFence obj, const std::string &name)
 {
   setName(VK_OBJECT_TYPE_FENCE, (uint64_t)obj, name);
+}
+
+template <>
+void VulkanGraphicsTest::setName(VkAccelerationStructureKHR obj, const std::string &name)
+{
+  setName(VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, (uint64_t)obj, name);
 }
 
 void VulkanGraphicsTest::setName(VkObjectType objType, uint64_t obj, const std::string &name)
@@ -1428,23 +1470,6 @@ VulkanWindow::VulkanWindow(VulkanGraphicsTest *test, GraphicsWindow *win)
   {
     std::lock_guard<std::mutex> lock(m_Test->mutex);
 
-    for(size_t i = 0; i < ARRAY_COUNT(renderStartSemaphore); i++)
-    {
-      CHECK_VKR(vkCreateSemaphore(m_Test->device, vkh::SemaphoreCreateInfo(), NULL,
-                                  &renderStartSemaphore[i]));
-      CHECK_VKR(vkCreateSemaphore(m_Test->device, vkh::SemaphoreCreateInfo(), NULL,
-                                  &renderEndSemaphore[i]));
-
-      test->setName(renderStartSemaphore[i], title + " renderStartSemaphore" + std::to_string(i));
-      test->setName(renderEndSemaphore[i], title + " renderEndSemaphore" + std::to_string(i));
-
-      // create signalled so the first wait works
-      CHECK_VKR(vkCreateFence(m_Test->device, vkh::FenceCreateInfo(VK_FENCE_CREATE_SIGNALED_BIT),
-                              NULL, &imageFences[i]));
-
-      test->setName(imageFences[i], title + " fence" + std::to_string(i));
-    }
-
 #if defined(WIN32)
     VkWin32SurfaceCreateInfoKHR createInfo;
 
@@ -1497,7 +1522,12 @@ VulkanWindow::~VulkanWindow()
   DestroySwapchain();
 
   {
-    for(size_t i = 0; i < ARRAY_COUNT(renderStartSemaphore); i++)
+    TEST_ASSERT(renderStartSemaphore.size() == renderEndSemaphore.size(),
+                "size mismatch between start/end semaphore");
+    TEST_ASSERT(renderStartSemaphore.size() == imageFences.size(),
+                "size mismatch between render/image semaphore");
+
+    for(size_t i = 0; i < renderStartSemaphore.size(); i++)
     {
       vkDestroySemaphore(m_Test->device, renderStartSemaphore[i], NULL);
       vkDestroySemaphore(m_Test->device, renderEndSemaphore[i], NULL);
@@ -1546,7 +1576,8 @@ bool VulkanWindow::CreateSwapchain()
 
   for(const VkSurfaceFormatKHR &f : formats)
   {
-    if(f.format == VK_FORMAT_B8G8R8A8_SRGB && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+    if((f.format == VK_FORMAT_B8G8R8A8_SRGB || f.format == VK_FORMAT_R8G8B8A8_SRGB) &&
+       f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
     {
       surfaceFormat = f;
       break;
@@ -1589,9 +1620,9 @@ bool VulkanWindow::CreateSwapchain()
 
   CHECK_VKR(vkCreateSwapchainKHR(
       m_Test->device,
-      vkh::SwapchainCreateInfoKHR(
-          surface, mode, surfaceFormat, {width, height},
-          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT),
+      vkh::SwapchainCreateInfoKHR(surface, mode, surfaceFormat, {width, height},
+                                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                                  VK_NULL_HANDLE, capabilities.minImageCount),
       NULL, &swap));
 
   CHECK_VKR(vkh::getSwapchainImagesKHR(imgs, m_Test->device, swap));
@@ -1608,8 +1639,24 @@ bool VulkanWindow::CreateSwapchain()
     rp = m_Test->createRenderPass(renderPassCreateInfo);
   }
 
-  TEST_ASSERT(imgs.size() <= ARRAY_COUNT(renderStartSemaphore),
-              "Expected to have one semaphore set per image");
+  renderStartSemaphore.resize(imgs.size());
+  renderEndSemaphore.resize(imgs.size());
+  imageFences.resize(imgs.size());
+  for(size_t i = 0; i < renderStartSemaphore.size(); i++)
+  {
+    CHECK_VKR(vkCreateSemaphore(m_Test->device, vkh::SemaphoreCreateInfo(), NULL,
+                                &renderStartSemaphore[i]));
+    CHECK_VKR(vkCreateSemaphore(m_Test->device, vkh::SemaphoreCreateInfo(), NULL,
+                                &renderEndSemaphore[i]));
+
+    m_Test->setName(renderStartSemaphore[i], title + " renderStartSemaphore" + std::to_string(i));
+    m_Test->setName(renderEndSemaphore[i], title + " renderEndSemaphore" + std::to_string(i));
+
+    CHECK_VKR(vkCreateFence(m_Test->device, vkh::FenceCreateInfo(VK_FENCE_CREATE_SIGNALED_BIT),
+                            NULL, &imageFences[i]));
+
+    m_Test->setName(imageFences[i], title + " fence" + std::to_string(i));
+  }
 
   imgviews.resize(imgs.size());
   for(size_t i = 0; i < imgs.size(); i++)
@@ -1630,7 +1677,7 @@ void VulkanWindow::Acquire()
   if(swap == VK_NULL_HANDLE)
     return;
 
-  semIdx = (semIdx + 1) % ARRAY_COUNT(renderStartSemaphore);
+  semIdx = (semIdx + 1) % renderStartSemaphore.size();
 
   // acquire next image stupidly does not properly block, do a manual block
   vkWaitForFences(m_Test->device, 1, &imageFences[semIdx], VK_FALSE, UINT64_MAX);
@@ -1827,11 +1874,11 @@ void AllocatedImage::free()
 }
 
 AllocatedBuffer::AllocatedBuffer(VulkanGraphicsTest *test, const VkBufferCreateInfo &bufInfo,
-                                 const VmaAllocationCreateInfo &allocInfo)
+                                 const VmaAllocationCreateInfo &allocInfo, uint32_t alignment)
 {
   this->test = test;
   allocator = test->allocator;
-  vmaCreateBuffer(allocator, &bufInfo, &allocInfo, &buffer, &alloc, NULL);
+  vmaCreateBufferWithAlignment(allocator, &bufInfo, &allocInfo, alignment, &buffer, &alloc, NULL);
 
   test->bufferAllocs[buffer] = alloc;
 

@@ -732,6 +732,8 @@ void Program::SetupRegisterFile(rdcarray<ShaderVariable> &registers) const
   for(size_t i = 0; i < m_IndexTempSizes.size(); i++)
   {
     registers.push_back(makeReg(GetRegisterName(TYPE_INDEXABLE_TEMP, (uint32_t)i)));
+    registers.back().rows = 0;
+    registers.back().columns = 0;
     registers.back().members.resize(m_IndexTempSizes[i]);
     for(uint32_t t = 0; t < m_IndexTempSizes[i]; t++)
       registers.back().members[t] = makeReg(StringFormat::Fmt("[%u]", t));
@@ -755,6 +757,8 @@ void Program::SetupRegisterFile(rdcarray<ShaderVariable> &registers) const
       continue;
 
     registers.push_back(makeReg(GetRegisterName(TYPE_THREAD_GROUP_SHARED_MEMORY, (uint32_t)i)));
+    registers.back().rows = 0;
+    registers.back().columns = 0;
     registers.back().members.resize(m_GroupsharedTempSizes[i].second);
     // nice case, groupshared is raw or structured with stride less than a register, we can treat
     // it as a simple array
@@ -776,6 +780,8 @@ void Program::SetupRegisterFile(rdcarray<ShaderVariable> &registers) const
       for(uint32_t t = 0; t < m_GroupsharedTempSizes[i].second; t++)
       {
         registers.back().members[t] = makeReg(StringFormat::Fmt("[%u]", t));
+        registers.back().members[t].rows = 0;
+        registers.back().members[t].columns = 0;
 
         registers.back().members[t].members.resize(AlignUp4(m_GroupsharedTempSizes[i].first) / 4);
 

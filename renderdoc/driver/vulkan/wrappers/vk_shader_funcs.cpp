@@ -1287,10 +1287,10 @@ bool WrappedVulkan::Serialise_vkCreateRayTracingPipelinesKHR(
     VkPipeline *pPipelines)
 {
   SERIALISE_ELEMENT(device);
-  SERIALISE_ELEMENT(pipelineCache);
-  SERIALISE_ELEMENT(createInfoCount);
-  SERIALISE_ELEMENT_LOCAL(CreateInfo, *pCreateInfos).Important();
-  SERIALISE_ELEMENT_OPT(pAllocator);
+  SERIALISE_ELEMENT(pipelineCache).Hidden();
+  SERIALISE_ELEMENT(createInfoCount).Hidden();
+  SERIALISE_ELEMENT_LOCAL(CreateInfo, *pCreateInfos).Hidden();
+  SERIALISE_ELEMENT_OPT(pAllocator).Hidden();
   SERIALISE_ELEMENT_LOCAL(Pipeline, GetResID(*pPipelines)).TypedAs("VkPipeline"_lit);
 
   uint32_t captureReplayHandleSize = 0;

@@ -1025,12 +1025,54 @@ rdcstr Reflector::Disassemble(const rdcstr &entryPoint,
           while(nextit.opcode() == Op::Line || nextit.opcode() == Op::NoLine)
             nextit++;
 
-          // next opcode *must* be a label because this is the end of a block
-          RDCASSERTEQUAL(nextit.opcode(), Op::Label);
-          OpLabel decodedlabel(nextit);
+          // next opcode *must* be a label because this is the end of a block, unless there are no more blocks
+          Id decodedlabelId;
+          if(nextit.opcode() == Op::FunctionEnd)
+          {
+            // if we just hit the end of the function we have to wrap up any CFG constructs to at
+            // least match their braces. We also try to explicitly annotate what is happening next -
+            // an if can silently drop its scope but a switch or loop should have a break/continue.
+            // This situation only happens with strange block ordering
+            while(!cfgStack.empty())
+            {
+              if(cfgStack.back().mergeTarget == decoded.targetLabel)
+              {
+                ret += indent + "break;\n";
+                lineNum++;
+              }
+              else if((cfgStack.back().continueTarget == currentBlock &&
+                       cfgStack.back().headerBlock == decoded.targetLabel) ||
+                      cfgStack.back().continueTarget == decoded.targetLabel)
+              {
+                ret += indent + "continue;\n";
+                lineNum++;
+              }
+
+              // if this is the latest merge block print a closing brace and reduce the indent
+              indent.resize(indent.size() - 2);
+
+              // if this is a switch, remove another level
+              if(cfgStack.back().type == StructuredCFG::Switch)
+                indent.resize(indent.size() - 2);
+
+              ret += indent;
+              ret += "}\n\n";
+              lineNum += 2;
+
+              cfgStack.pop_back();
+            }
+
+            // don't do any more processing of this branch, we're done
+            continue;
+          }
+          else
+          {
+            RDCASSERTEQUAL(nextit.opcode(), Op::Label);
+            decodedlabelId = OpLabel(nextit).result;
+          }
 
           // always skip redundant gotos
-          if(decodedlabel.result == decoded.targetLabel)
+          if(decodedlabelId == decoded.targetLabel)
           {
             // however if we're in a switch we might want to print a clarifying fallthrough comment
             // or end-of-case break
@@ -1070,7 +1112,7 @@ rdcstr Reflector::Disassemble(const rdcstr &entryPoint,
 
           // if we're in an if, skip branches to the merge block if the next block is the 'else'
           if(!cfgStack.empty() && cfgStack.back().type == StructuredCFG::If &&
-             cfgStack.back().elseTarget == decodedlabel.result &&
+             cfgStack.back().elseTarget == decodedlabelId &&
              cfgStack.back().mergeTarget == decoded.targetLabel)
             continue;
 

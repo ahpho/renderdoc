@@ -138,8 +138,8 @@ struct ResourceReferenceInfo
 
   DXIL::ResourceClass resClass;
   BindingSlot binding;
-  DescriptorCategory category;
-  VarType type;
+  DescriptorType descType;
+  VarType varType;
 
   struct SRVData
   {
@@ -197,7 +197,7 @@ public:
   virtual ShaderVariable GetRenderTargetSampleInfo(const DXBC::ShaderType shaderType,
                                                    const char *opString) = 0;
   virtual ResourceReferenceInfo GetResourceReferenceInfo(const DXDebug::BindingSlot &slot) = 0;
-  virtual ShaderDirectAccess GetShaderDirectAccess(DescriptorCategory category,
+  virtual ShaderDirectAccess GetShaderDirectAccess(DescriptorType type,
                                                    const DXDebug::BindingSlot &slot) = 0;
 };
 
@@ -211,7 +211,8 @@ struct MemoryTracking
     // the allocated memory
     void *backingMemory;
     uint64_t size;
-    bool global;
+    bool globalVarAlloc;
+    bool localMemory;
   };
 
   // Represents pointers within a Allocation memory allocation (heap)
@@ -251,9 +252,7 @@ struct ThreadState
   bool ExecuteInstruction(DebugAPIWrapper *apiWrapper, const rdcarray<ThreadState> &workgroup,
                           const rdcarray<bool> &activeMask);
 
-  void MarkResourceAccess(const rdcstr &name, const ResourceReferenceInfo &resRefInfo,
-                          bool directAccess, const ShaderDirectAccess &access,
-                          const ShaderBindIndex &bindIndex);
+  void MarkResourceAccess(const ShaderVariable &var);
   void SetResult(const Id &id, ShaderVariable &result, DXIL::Operation op, DXIL::DXOp dxOpCode,
                  ShaderEvents flags);
   rdcstr GetArgumentName(uint32_t i) const;
@@ -280,6 +279,9 @@ struct ThreadState
   bool GetVariableHelper(DXIL::Operation op, DXIL::DXOp dxOpCode, ShaderVariable &var) const;
   void UpdateBackingMemoryFromVariable(void *ptr, uint64_t &allocSize, const ShaderVariable &var);
   void UpdateMemoryVariableFromBackingMemory(Id memoryId, const void *ptr);
+  void UpdateGlobalBackingMemory(Id ptrId, const MemoryTracking::Pointer &ptr,
+                                 const MemoryTracking::Allocation &allocation,
+                                 const ShaderVariable &val);
 
   void PerformGPUResourceOp(const rdcarray<ThreadState> &workgroup, DXIL::Operation opCode,
                             DXIL::DXOp dxOpCode, const ResourceReferenceInfo &resRef,
@@ -294,6 +296,7 @@ struct ThreadState
 
   void ProcessScopeChange(const rdcarray<bool> &oldLive, const rdcarray<bool> &newLive);
 
+  void ExecuteMemoryBarrier();
   static bool WorkgroupIsDiverged(const rdcarray<ThreadState> &workgroup);
   static bool QuadIsDiverged(const rdcarray<ThreadState> &workgroup,
                              const rdcfixedarray<uint32_t, 4> &quadNeighbours);
@@ -368,9 +371,6 @@ struct ThreadState
 
   // SSA Ids guaranteed to be greater than 0 and less than this value
   uint32_t m_MaxSSAId;
-
-  rdcarray<BindingSlot> m_accessedSRVs;
-  rdcarray<BindingSlot> m_accessedUAVs;
 
   // quad ID (arbitrary, just used to find neighbours for derivatives)
   uint32_t m_QuadId = 0;
@@ -449,6 +449,7 @@ struct GlobalState
   rdcarray<ShaderVariable> constantBlocks;
   std::map<ConstantBlockReference, bytebuf> constantBlocksDatas;
 
+  rdcarray<Id> groupSharedMemoryIds;
   // resources may be read-write but the variable itself doesn't change
   rdcarray<ShaderVariable> readOnlyResources;
   rdcarray<ShaderVariable> readWriteResources;
@@ -611,6 +612,7 @@ private:
   ScopedDebugData *AddScopedDebugData(const DXIL::Metadata *scopeMD);
   ScopedDebugData *FindScopedDebugData(const DXIL::Metadata *md) const;
   const TypeData &AddDebugType(const DXIL::Metadata *typeMD);
+  void AddStructMembers(const DXIL::DICompositeType *structTypeData, TypeData &structType);
   void AddLocalVariable(const DXIL::SourceMappingInfo &srcMapping, uint32_t instructionIndex);
   void ParseDebugData();
 

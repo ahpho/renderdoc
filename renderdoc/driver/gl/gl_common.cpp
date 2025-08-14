@@ -474,17 +474,47 @@ bool FetchEnabledExtensions()
 
 void DoVendorChecks(GLPlatform &platform, GLWindowingData context)
 {
-  const char *vendor = "";
-  const char *renderer = "";
-  const char *version = "";
+  enum DetectedVendor
+  {
+    Vendor_None = 0,
+    // zink doesn't have any specific cehcks but we treat it as a dedicated vendor to prevent it
+    // being detected as other vendors when it matches their strings
+    Vendor_Zink,
+    Vendor_Intel,
+    Vendor_Qualcomm,
+    Vendor_Count,
+  } detectedVendor = Vendor_None;
+
+  const char *detectedVendorNames[Vendor_Count] = {
+      "None",
+      "Zink",
+      "Intel",
+      "Qualcomm",
+  };
 
   if(GL.glGetString)
   {
-    vendor = (const char *)GL.glGetString(eGL_VENDOR);
-    renderer = (const char *)GL.glGetString(eGL_RENDERER);
-    version = (const char *)GL.glGetString(eGL_VERSION);
+    const char *vendor = (const char *)GL.glGetString(eGL_VENDOR);
+    const char *renderer = (const char *)GL.glGetString(eGL_RENDERER);
+    const char *version = (const char *)GL.glGetString(eGL_VERSION);
+
+    if(strstr(vendor, "Zink") || strstr(vendor, "zink") || strstr(renderer, "Zink") ||
+       strstr(renderer, "zink"))
+    {
+      detectedVendor = Vendor_Zink;
+    }
+    else if(!strcmp(vendor, "Intel") || !strcmp(vendor, "intel") || !strcmp(vendor, "INTEL"))
+    {
+      detectedVendor = Vendor_Intel;
+    }
+    else if(strstr(vendor, "Qualcomm") || strstr(vendor, "Adreno") ||
+            strstr(renderer, "Qualcomm") || strstr(renderer, "Adreno"))
+    {
+      detectedVendor = Vendor_Qualcomm;
+    }
 
     RDCLOG("Vendor checks for %u (%s / %s / %s)", GLCoreVersion, vendor, renderer, version);
+    RDCLOG("Detected vendor: %s", detectedVendorNames[detectedVendor]);
   }
 
   //////////////////////////////////////////////////////////
@@ -551,7 +581,7 @@ void DoVendorChecks(GLPlatform &platform, GLWindowingData context)
   // Intel seems to completely break everything if we even run this check, so we just
   // skip this check and assume the hack is enabled.
 
-  if(!strcmp(vendor, "Intel") || !strcmp(vendor, "intel") || !strcmp(vendor, "INTEL"))
+  if(detectedVendor == Vendor_Intel)
   {
     RDCWARN("Using super hack-on-a-hack to avoid glCopyImageSubData tests on intel.");
     VendorCheck[VendorCheck_AMD_copy_compressed_tinymips] = true;
@@ -781,10 +811,11 @@ void DoVendorChecks(GLPlatform &platform, GLWindowingData context)
   // Qualcomm's implementation of glCopyImageSubData is buggy on some drivers and can cause GPU
   // crashes or corrupted data. We force the initial state copies to happen via our emulation which
   // uses framebuffer blits.
-  if(strstr(vendor, "Qualcomm") || strstr(vendor, "Adreno") || strstr(renderer, "Qualcomm") ||
-     strstr(renderer, "Adreno"))
+  if(detectedVendor == Vendor_Qualcomm)
   {
     bool broken = true;
+
+    const char *version = (const char *)GL.glGetString(eGL_VERSION);
 
     // the bug should be fixed in version 325 and above
     const char *qualcommver = strstr(version, "V@");
@@ -1556,97 +1587,131 @@ GLuint GetBoundVertexBuffer(GLuint i)
   return buffer;
 }
 
-void SafeBlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0,
-                         GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter)
+struct SafeClearBlitState
 {
-  // only viewport 0's scissor should be used for blits, but Intel seems to require all scissors to
-  // be disabled. Since it's only a bit more work to disable them all, we push/pop all of them
+  SafeClearBlitState()
+  {
+    // only viewport 0's scissor should be used for blits, but Intel seems to require all scissors
+    // to be disabled. Since it's only a bit more work to disable them all, we push/pop all of them
+    GL.glGetIntegerv(eGL_MAX_VIEWPORTS, &maxViews);
+
+    // fetch current state
+    {
+      if(HasExt[ARB_viewport_array])
+      {
+        for(GLint v = 0; v < maxViews; v++)
+          scissorEnabled[v] = GL.glIsEnabledi(eGL_SCISSOR_TEST, v) != 0;
+      }
+      else
+      {
+        scissorEnabled[0] = GL.glIsEnabled(eGL_SCISSOR_TEST) != 0;
+      }
+
+      if(HasExt[EXT_draw_buffers2] || HasExt[ARB_draw_buffers_blend])
+        GL.glGetBooleani_v(eGL_COLOR_WRITEMASK, 0, ColorMask);
+      else
+        GL.glGetBooleanv(eGL_COLOR_WRITEMASK, ColorMask);
+
+      GL.glGetBooleanv(eGL_DEPTH_WRITEMASK, &DepthMask);
+
+      GL.glGetIntegerv(eGL_STENCIL_WRITEMASK, &StencilMask);
+      GL.glGetIntegerv(eGL_STENCIL_BACK_WRITEMASK, &StencilBackMask);
+    }
+
+    GL.glGetFloatv(eGL_COLOR_CLEAR_VALUE, ClearColor);
+    GL.glGetFloatv(eGL_DEPTH_CLEAR_VALUE, &ClearDepth);
+    GL.glGetIntegerv(eGL_STENCIL_CLEAR_VALUE, &ClearStencil);
+
+    // apply safe state
+    {
+      if(HasExt[ARB_viewport_array])
+      {
+        for(GLint v = 0; v < maxViews; v++)
+          GL.glDisablei(eGL_SCISSOR_TEST, v);
+      }
+      else
+      {
+        GL.glDisable(eGL_SCISSOR_TEST);
+      }
+
+      if(HasExt[EXT_draw_buffers2] || HasExt[ARB_draw_buffers_blend])
+        GL.glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+      else
+        GL.glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+      GL.glDepthMask(GL_TRUE);
+
+      GL.glStencilMaskSeparate(eGL_FRONT, 0xff);
+      GL.glStencilMaskSeparate(eGL_BACK, 0xff);
+    }
+  }
+
+  ~SafeClearBlitState()
+  {
+    // restore original state
+    {
+      if(HasExt[ARB_viewport_array])
+      {
+        for(GLint v = 0; v < maxViews; v++)
+        {
+          if(scissorEnabled[v])
+            GL.glEnablei(eGL_SCISSOR_TEST, v);
+          else
+            GL.glDisablei(eGL_SCISSOR_TEST, v);
+        }
+      }
+      else
+      {
+        if(scissorEnabled[0])
+          GL.glEnable(eGL_SCISSOR_TEST);
+        else
+          GL.glDisable(eGL_SCISSOR_TEST);
+      }
+
+      if(HasExt[EXT_draw_buffers2] || HasExt[ARB_draw_buffers_blend])
+        GL.glColorMaski(0, ColorMask[0], ColorMask[1], ColorMask[2], ColorMask[3]);
+      else
+        GL.glColorMask(ColorMask[0], ColorMask[1], ColorMask[2], ColorMask[3]);
+
+      GL.glDepthMask(DepthMask);
+
+      GL.glStencilMaskSeparate(eGL_FRONT, StencilMask);
+      GL.glStencilMaskSeparate(eGL_BACK, StencilBackMask);
+    }
+
+    GL.glClearColor(ClearColor[0], ClearColor[1], ClearColor[2], ClearColor[3]);
+    GL.glClearDepthf(ClearDepth);
+    GL.glClearStencil(ClearStencil);
+  }
+
   bool scissorEnabled[16] = {};
   GLboolean ColorMask[4] = {GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE};
   GLboolean DepthMask = GL_TRUE;
   GLint StencilMask = 0xff, StencilBackMask = 0xff;
 
+  GLfloat ClearColor[4] = {};
+  GLfloat ClearDepth = 1.0f;
+  GLint ClearStencil = 0;
+
   GLint maxViews = 0;
-  GL.glGetIntegerv(eGL_MAX_VIEWPORTS, &maxViews);
+};
 
-  // fetch current state
-  {
-    if(HasExt[ARB_viewport_array])
-    {
-      for(GLint v = 0; v < maxViews; v++)
-        scissorEnabled[v] = GL.glIsEnabledi(eGL_SCISSOR_TEST, v) != 0;
-    }
-    else
-    {
-      scissorEnabled[0] = GL.glIsEnabled(eGL_SCISSOR_TEST) != 0;
-    }
-
-    if(HasExt[EXT_draw_buffers2] || HasExt[ARB_draw_buffers_blend])
-      GL.glGetBooleani_v(eGL_COLOR_WRITEMASK, 0, ColorMask);
-    else
-      GL.glGetBooleanv(eGL_COLOR_WRITEMASK, ColorMask);
-
-    GL.glGetBooleanv(eGL_DEPTH_WRITEMASK, &DepthMask);
-
-    GL.glGetIntegerv(eGL_STENCIL_WRITEMASK, &StencilMask);
-    GL.glGetIntegerv(eGL_STENCIL_BACK_WRITEMASK, &StencilBackMask);
-  }
-
-  // apply safe state
-  {
-    if(HasExt[ARB_viewport_array])
-    {
-      for(GLint v = 0; v < maxViews; v++)
-        GL.glDisablei(eGL_SCISSOR_TEST, v);
-    }
-    else
-    {
-      GL.glDisable(eGL_SCISSOR_TEST);
-    }
-
-    if(HasExt[EXT_draw_buffers2] || HasExt[ARB_draw_buffers_blend])
-      GL.glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    else
-      GL.glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-
-    GL.glDepthMask(GL_TRUE);
-
-    GL.glStencilMaskSeparate(eGL_FRONT, 0xff);
-    GL.glStencilMaskSeparate(eGL_BACK, 0xff);
-  }
+void SafeBlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0,
+                         GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter)
+{
+  SafeClearBlitState safe;
 
   GL.glBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
+}
 
-  // restore original state
-  {
-    if(HasExt[ARB_viewport_array])
-    {
-      for(GLint v = 0; v < maxViews; v++)
-      {
-        if(scissorEnabled[v])
-          GL.glEnablei(eGL_SCISSOR_TEST, v);
-        else
-          GL.glDisablei(eGL_SCISSOR_TEST, v);
-      }
-    }
-    else
-    {
-      if(scissorEnabled[0])
-        GL.glEnable(eGL_SCISSOR_TEST);
-      else
-        GL.glDisable(eGL_SCISSOR_TEST);
-    }
+void SafeClearFramebuffer(GLbitfield clearMask, GLfloat rgba[4], GLfloat depth, GLint stencil)
+{
+  SafeClearBlitState safe;
 
-    if(HasExt[EXT_draw_buffers2] || HasExt[ARB_draw_buffers_blend])
-      GL.glColorMaski(0, ColorMask[0], ColorMask[1], ColorMask[2], ColorMask[3]);
-    else
-      GL.glColorMask(ColorMask[0], ColorMask[1], ColorMask[2], ColorMask[3]);
-
-    GL.glDepthMask(DepthMask);
-
-    GL.glStencilMaskSeparate(eGL_FRONT, StencilMask);
-    GL.glStencilMaskSeparate(eGL_BACK, StencilBackMask);
-  }
+  GL.glClearColor(rgba[0], rgba[1], rgba[2], rgba[3]);
+  GL.glClearDepthf(0.0f);
+  GL.glClearStencil(0);
+  GL.glClear(clearMask);
 }
 
 BufferCategory MakeBufferCategory(GLenum bufferTarget)
