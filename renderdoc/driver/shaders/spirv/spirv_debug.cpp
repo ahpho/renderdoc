@@ -438,6 +438,12 @@ ShaderVariable ThreadState::ReadPointerValue(Id pointer)
   return debugger.ReadFromPointer(GetSrc(pointer));
 }
 
+void ThreadState::DebugBreak()
+{
+  if(m_State)
+    m_State->flags |= ShaderEvents::DebugBreak;
+}
+
 void ThreadState::SetDst(Id id, const ShaderVariable &val)
 {
   if(m_State && ContainsNaNInf(val))
@@ -1567,8 +1573,8 @@ void ThreadState::StepNext(ShaderDebugState *state, const rdcarray<ThreadState> 
 
       const ExtInstDispatcher &dispatch = global.extInsts[extinst];
 
-      // ignore nonsemantic instructions
-      if(dispatch.nonsemantic)
+      // ignore nonsemantic instructions that we have no implementations for
+      if(dispatch.skippedNonsemantic)
         break;
 
       uint32_t instruction = it.word(4);
@@ -2005,13 +2011,14 @@ void ThreadState::StepNext(ShaderDebugState *state, const rdcarray<ThreadState> 
       for(uint8_t c = 0; c < var.columns; c++)
       {
 #undef _IMPL
-#define _IMPL(I, S, U)                  \
-  U v = comp<U>(var, c);                \
-  comp<U>(var, c) = 0;                  \
-  for(uint8_t b = 0; b < 32; b++)       \
-  {                                     \
-    uint32_t bit = (v >> b) & 0x1;      \
-    comp<U>(var, c) |= bit << (31 - b); \
+#define _IMPL(I, S, U)                             \
+  U v = comp<U>(var, c);                           \
+  comp<U>(var, c) = 0;                             \
+  uint8_t numBits = sizeof(U) * 8;                 \
+  for(uint8_t b = 0; b < numBits; b++)             \
+  {                                                \
+    U bit = (v >> b) & 0x1;                        \
+    comp<U>(var, c) |= bit << ((numBits - 1) - b); \
   }
 
         IMPL_FOR_INT_TYPES(_IMPL);
@@ -2339,22 +2346,41 @@ void ThreadState::StepNext(ShaderDebugState *state, const rdcarray<ThreadState> 
       }
       else if(opdata.op == Op::SRem || opdata.op == Op::SMod)
       {
+        // OpSRem:
+        // ... the sign of r is the same as the sign of Operand 1.
+        // OpSMod:
+        // ... the sign of r is the same as the sign of Operand 2.
+        //
+        // match signs to the appropriate operand by checking and doing -abs() or abs().
+        // since abs() never truncates (INT_MIN has a corresponding unsigned value) this will never
+        // lose precision as -abs(INT_MIN) == INT_MIN
+
+#define ABS(x) ((x) < 0 ? -(x) : (x))
+
         for(uint8_t c = 0; c < var.columns; c++)
         {
 #undef _IMPL
-#define _IMPL(I, S, U)                                   \
-  if(comp<S>(b, c) != 0)                                 \
-  {                                                      \
-    comp<S>(var, c) %= comp<S>(b, c);                    \
-  }                                                      \
-  else                                                   \
-  {                                                      \
-    comp<S>(var, c) = 0;                                 \
-    if(m_State)                                          \
-      m_State->flags |= ShaderEvents::GeneratedNanOrInf; \
+#define _IMPL(I, S, U)                                        \
+  if(comp<S>(b, c) != 0)                                      \
+  {                                                           \
+    S op1 = comp<S>(var, c);                                  \
+    S op2 = comp<S>(b, c);                                    \
+    S tmp = op1 % op2;                                        \
+    if(opdata.op == Op::SRem)                                 \
+      comp<S>(var, c) = op1 < 0 ? (S)-ABS(tmp) : (S)ABS(tmp); \
+    else                                                      \
+      comp<S>(var, c) = op2 < 0 ? (S)-ABS(tmp) : (S)ABS(tmp); \
+  }                                                           \
+  else                                                        \
+  {                                                           \
+    comp<S>(var, c) = 0;                                      \
+    if(m_State)                                               \
+      m_State->flags |= ShaderEvents::GeneratedNanOrInf;      \
   }
 
           IMPL_FOR_INT_TYPES(_IMPL);
+
+#undef ABS
         }
       }
       else if(opdata.op == Op::IAdd)

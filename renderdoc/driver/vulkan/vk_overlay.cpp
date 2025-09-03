@@ -385,14 +385,14 @@ struct VulkanQuadOverdrawCallback : public VulkanActionCallback
       {
         VkRenderingAttachmentLocationInfo attachmentLocations = {};
         attachmentLocations.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_LOCATION_INFO;
-        m_pDriver->vkCmdSetRenderingAttachmentLocationsKHR(cmd, &attachmentLocations);
+        m_pDriver->vkCmdSetRenderingAttachmentLocations(cmd, &attachmentLocations);
       }
       if(m_PrevState.dynamicRendering.localRead.AreInputIndicesNonDefault())
       {
         VkRenderingInputAttachmentIndexInfo inputIndices = {};
         inputIndices.sType = VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO;
 
-        m_pDriver->vkCmdSetRenderingInputAttachmentIndicesKHR(cmd, &inputIndices);
+        m_pDriver->vkCmdSetRenderingInputAttachmentIndices(cmd, &inputIndices);
       }
     }
   }
@@ -623,9 +623,12 @@ void VulkanDebugManager::PatchLineStripIndexBuffer(const ActionDescription *acti
       readSizeBytes = RDCMIN(readSizeBytes, maxSubrangeBytes);
     }
 
-    GetBufferData(rs.ibuffer.buf,
-                  rs.ibuffer.offs + uint64_t(action->indexOffset) * rs.ibuffer.bytewidth,
-                  readSizeBytes, indices);
+    if(rs.ibuffer.buf == ResourceId())
+      indices.resize((size_t)readSizeBytes);
+    else
+      GetBufferData(rs.ibuffer.buf,
+                    rs.ibuffer.offs + uint64_t(action->indexOffset) * rs.ibuffer.bytewidth,
+                    readSizeBytes, indices);
 
     if(rs.ibuffer.bytewidth == 4)
       idx32 = (uint32_t *)indices.data();

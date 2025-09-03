@@ -191,7 +191,9 @@ static void StripUnwantedExtensions(rdcarray<rdcstr> &Extensions)
     // remove WSI-only extensions
     if(ext == "VK_GOOGLE_display_timing" || ext == "VK_KHR_display_swapchain" ||
        ext == "VK_EXT_display_control" || ext == "VK_KHR_present_id" ||
-       ext == "VK_KHR_present_wait" || ext == "VK_EXT_surface_maintenance1" ||
+       ext == "VK_KHR_present_id2" || ext == "VK_KHR_present_wait" ||
+       ext == "VK_KHR_present_wait2" || ext == "VK_KHR_present_mode_fifo_latest_ready" ||
+       ext == "VK_EXT_present_mode_fifo_latest_ready" || ext == "VK_EXT_surface_maintenance1" ||
        ext == "VK_EXT_swapchain_maintenance1" || ext == "VK_EXT_hdr_metadata" ||
        ext == "VK_KHR_get_display_properties2")
       return true;
@@ -2246,14 +2248,20 @@ bool WrappedVulkan::Serialise_vkCreateDevice(SerialiserType &ser, VkPhysicalDevi
       RDCLOG("Removed VK_EXT_private_data structs from vkCreateDevice pNext chain");
     }
 
-    bool present_id = false;
-    present_id |=
+    bool present_exts = false;
+    present_exts |=
         RemoveNextStruct(&createInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR);
-    present_id |=
+    present_exts |=
         RemoveNextStruct(&createInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR);
-    if(present_id)
+    present_exts |=
+        RemoveNextStruct(&createInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR);
+    present_exts |=
+        RemoveNextStruct(&createInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_2_FEATURES_KHR);
+    present_exts |= RemoveNextStruct(
+        &createInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_KHR);
+    if(present_exts)
     {
-      RDCLOG("Removed VK_KHR_present_id/wait structs from vkCreateDevice pNext chain");
+      RDCLOG("Removed VK_KHR_present_id/wait/latest_ready structs from vkCreateDevice pNext chain");
     }
 
     VkPhysicalDeviceFeatures enabledFeatures = {0};
@@ -2362,6 +2370,7 @@ bool WrappedVulkan::Serialise_vkCreateDevice(SerialiserType &ser, VkPhysicalDevi
     VkPhysicalDeviceDescriptorIndexingFeatures descIndexingFeatures = {};
     VkPhysicalDeviceVulkan12Features vulkan12Features = {};
     VkPhysicalDeviceVulkan13Features vulkan13Features = {};
+    VkPhysicalDeviceVulkan14Features vulkan14Features = {};
     VkPhysicalDeviceSynchronization2Features sync2 = {};
 
     if(ObjDisp(physicalDevice)->GetPhysicalDeviceFeatures2)
@@ -2478,6 +2487,38 @@ bool WrappedVulkan::Serialise_vkCreateDevice(SerialiserType &ser, VkPhysicalDevi
       }
       END_PHYS_EXT_CHECK();
 
+      BEGIN_PHYS_EXT_CHECK(VkPhysicalDeviceVulkan14Features,
+                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES);
+      {
+        vulkan14Features = *ext;
+
+        CHECK_PHYS_EXT_FEATURE(globalPriorityQuery);
+        CHECK_PHYS_EXT_FEATURE(shaderSubgroupRotate);
+        CHECK_PHYS_EXT_FEATURE(shaderSubgroupRotateClustered);
+        CHECK_PHYS_EXT_FEATURE(shaderFloatControls2);
+        CHECK_PHYS_EXT_FEATURE(shaderExpectAssume);
+        CHECK_PHYS_EXT_FEATURE(rectangularLines);
+        CHECK_PHYS_EXT_FEATURE(bresenhamLines);
+        CHECK_PHYS_EXT_FEATURE(smoothLines);
+        CHECK_PHYS_EXT_FEATURE(stippledRectangularLines);
+        CHECK_PHYS_EXT_FEATURE(stippledBresenhamLines);
+        CHECK_PHYS_EXT_FEATURE(stippledSmoothLines);
+        CHECK_PHYS_EXT_FEATURE(vertexAttributeInstanceRateDivisor);
+        CHECK_PHYS_EXT_FEATURE(vertexAttributeInstanceRateZeroDivisor);
+        CHECK_PHYS_EXT_FEATURE(indexTypeUint8);
+        CHECK_PHYS_EXT_FEATURE(dynamicRenderingLocalRead);
+        CHECK_PHYS_EXT_FEATURE(maintenance5);
+        CHECK_PHYS_EXT_FEATURE(maintenance6);
+        CHECK_PHYS_EXT_FEATURE(pipelineProtectedAccess);
+        CHECK_PHYS_EXT_FEATURE(pipelineRobustness);
+        CHECK_PHYS_EXT_FEATURE(hostImageCopy);
+        CHECK_PHYS_EXT_FEATURE(pushDescriptor);
+
+        m_Maintenance5 |= ext->maintenance5 != VK_FALSE;
+        m_Maintenance6 |= ext->maintenance6 != VK_FALSE;
+      }
+      END_PHYS_EXT_CHECK();
+
       BEGIN_PHYS_EXT_CHECK(VkPhysicalDevice8BitStorageFeatures,
                            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES);
       {
@@ -2548,8 +2589,8 @@ bool WrappedVulkan::Serialise_vkCreateDevice(SerialiserType &ser, VkPhysicalDevi
       END_PHYS_EXT_CHECK();
 
       BEGIN_PHYS_EXT_CHECK(
-          VkPhysicalDeviceFragmentDensityMapOffsetFeaturesQCOM,
-          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_OFFSET_FEATURES_QCOM);
+          VkPhysicalDeviceFragmentDensityMapOffsetFeaturesEXT,
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_OFFSET_FEATURES_EXT);
       {
         CHECK_PHYS_EXT_FEATURE(fragmentDensityMapOffset);
       }
@@ -3476,7 +3517,7 @@ bool WrappedVulkan::Serialise_vkCreateDevice(SerialiserType &ser, VkPhysicalDevi
                            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES);
       {
         CHECK_PHYS_EXT_FEATURE(maintenance5);
-        m_Maintenance5 = ext->maintenance5 != VK_FALSE;
+        m_Maintenance5 |= ext->maintenance5 != VK_FALSE;
       }
       END_PHYS_EXT_CHECK();
 
@@ -3519,6 +3560,73 @@ bool WrappedVulkan::Serialise_vkCreateDevice(SerialiserType &ser, VkPhysicalDevi
         // enable the imageLayoutIgnored feature if available
         if(avail.descriptorBufferImageLayoutIgnored)
           ext->descriptorBufferImageLayoutIgnored = VK_TRUE;
+      }
+      END_PHYS_EXT_CHECK();
+
+      BEGIN_PHYS_EXT_CHECK(VkPhysicalDeviceShaderBfloat16FeaturesKHR,
+                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR);
+      {
+        CHECK_PHYS_EXT_FEATURE(shaderBFloat16Type);
+        CHECK_PHYS_EXT_FEATURE(shaderBFloat16DotProduct);
+        CHECK_PHYS_EXT_FEATURE(shaderBFloat16CooperativeMatrix);
+      }
+      END_PHYS_EXT_CHECK();
+
+      BEGIN_PHYS_EXT_CHECK(VkPhysicalDeviceUnifiedImageLayoutsFeaturesKHR,
+                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFIED_IMAGE_LAYOUTS_FEATURES_KHR);
+      {
+        CHECK_PHYS_EXT_FEATURE(unifiedImageLayouts);
+        CHECK_PHYS_EXT_FEATURE(unifiedImageLayoutsVideo);
+      }
+      END_PHYS_EXT_CHECK();
+
+      BEGIN_PHYS_EXT_CHECK(VkPhysicalDeviceMaintenance6Features,
+                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_FEATURES);
+      {
+        CHECK_PHYS_EXT_FEATURE(maintenance6);
+        m_Maintenance6 |= ext->maintenance6 != VK_FALSE;
+      }
+      END_PHYS_EXT_CHECK();
+
+      BEGIN_PHYS_EXT_CHECK(VkPhysicalDeviceMaintenance7FeaturesKHR,
+                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_7_FEATURES_KHR);
+      {
+        CHECK_PHYS_EXT_FEATURE(maintenance7);
+      }
+      END_PHYS_EXT_CHECK();
+
+      BEGIN_PHYS_EXT_CHECK(VkPhysicalDeviceMaintenance8FeaturesKHR,
+                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_8_FEATURES_KHR);
+      {
+        CHECK_PHYS_EXT_FEATURE(maintenance8);
+      }
+      END_PHYS_EXT_CHECK();
+
+      BEGIN_PHYS_EXT_CHECK(VkPhysicalDeviceMaintenance9FeaturesKHR,
+                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_9_FEATURES_KHR);
+      {
+        CHECK_PHYS_EXT_FEATURE(maintenance9);
+      }
+      END_PHYS_EXT_CHECK();
+
+      BEGIN_PHYS_EXT_CHECK(VkPhysicalDevicePipelineRobustnessFeatures,
+                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_FEATURES);
+      {
+        CHECK_PHYS_EXT_FEATURE(pipelineRobustness);
+      }
+      END_PHYS_EXT_CHECK();
+
+      BEGIN_PHYS_EXT_CHECK(VkPhysicalDevicePipelineProtectedAccessFeatures,
+                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROTECTED_ACCESS_FEATURES);
+      {
+        CHECK_PHYS_EXT_FEATURE(pipelineProtectedAccess);
+      }
+      END_PHYS_EXT_CHECK();
+
+      BEGIN_PHYS_EXT_CHECK(VkPhysicalDeviceHostImageCopyFeatures,
+                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES);
+      {
+        CHECK_PHYS_EXT_FEATURE(hostImageCopy);
       }
       END_PHYS_EXT_CHECK();
     }

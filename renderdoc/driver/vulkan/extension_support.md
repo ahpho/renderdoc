@@ -87,7 +87,10 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_EXT_pci_bus_info`
 * `VK_EXT_pipeline_creation_cache_control`
 * `VK_EXT_pipeline_creation_feedback`
+* `VK_EXT_pipeline_protected_access`
+* `VK_EXT_pipeline_robustness`
 * `VK_EXT_post_depth_coverage`
+* `VK_EXT_present_mode_fifo_latest_ready`
 * `VK_EXT_primitive_topology_list_restart`
 * `VK_EXT_primitives_generated_query`
 * `VK_EXT_private_data`
@@ -185,12 +188,20 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_KHR_maintenance3`
 * `VK_KHR_maintenance4`
 * `VK_KHR_maintenance5`
+* `VK_KHR_maintenance6`
+* `VK_KHR_maintenance7`
+* `VK_KHR_maintenance8`
+* `VK_KHR_maintenance9`
+* `VK_KHR_map_memory2`
 * `VK_KHR_multiview`
 * `VK_KHR_performance_query`
 * `VK_KHR_pipeline_executable_properties`
 * `VK_KHR_pipeline_library`
 * `VK_KHR_present_id`
+* `VK_KHR_present_id2`
+* `VK_KHR_present_mode_fifo_latest_ready`
 * `VK_KHR_present_wait`
+* `VK_KHR_present_wait2`
 * `VK_KHR_push_descriptor`
 * `VK_KHR_ray_query`
 * `VK_KHR_ray_tracing_maintenance1`
@@ -202,6 +213,7 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_KHR_sampler_ycbcr_conversion`
 * `VK_KHR_separate_depth_stencil_layouts`
 * `VK_KHR_shader_atomic_int64`
+* `VK_KHR_shader_bfloat16`
 * `VK_KHR_shader_clock`
 * `VK_KHR_shader_draw_parameters`
 * `VK_KHR_shader_expect_assume`
@@ -228,6 +240,7 @@ Maintainers can update this file by updating vk.xml in this folder and running `
 * `VK_KHR_swapchain_maintenance1`
 * `VK_KHR_synchronization2`
 * `VK_KHR_timeline_semaphore`
+* `VK_KHR_unified_image_layouts`
 * `VK_KHR_uniform_buffer_standard_layout`
 * `VK_KHR_variable_pointers`
 * `VK_KHR_vertex_attribute_divisor`
@@ -264,17 +277,7 @@ KHR extensions will definitely be implemented at some point, though KHR extensio
 ## KHR Extensions
 
 * `VK_KHR_cooperative_matrix`
-* `VK_KHR_maintenance6`
-* `VK_KHR_maintenance7`
-* `VK_KHR_maintenance8`
-* `VK_KHR_maintenance9`
-* `VK_KHR_map_memory2`
 * `VK_KHR_pipeline_binary`
-* `VK_KHR_present_id2`
-* `VK_KHR_present_mode_fifo_latest_ready`
-* `VK_KHR_present_wait2`
-* `VK_KHR_shader_bfloat16`
-* `VK_KHR_unified_image_layouts`
 
 ## KHR Portability
 
@@ -307,9 +310,6 @@ The portability subset is only relevant on mac, which is not a supported platfor
 * `VK_EXT_opacity_micromap`
 * `VK_EXT_physical_device_drm`
 * `VK_EXT_pipeline_library_group_handles`
-* `VK_EXT_pipeline_protected_access`
-* `VK_EXT_pipeline_robustness`
-* `VK_EXT_present_mode_fifo_latest_ready`
 * `VK_EXT_shader_float8`
 * `VK_EXT_shader_module_identifier`
 * `VK_EXT_shader_replicated_composites`

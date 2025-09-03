@@ -1326,11 +1326,13 @@ VkDriverInfo::VkDriverInfo(const VkPhysicalDeviceProperties &physProps,
       nvidiaStaticPipelineRebindStates = true;
     }
 
+#if ENABLED(RDOC_WIN32)
     // this is fixed in a windows version but we can't easily query that, so instead we are waiting
     // for a driver-based workaround and apply the workaround ourselves in the meantime
     if(active)
       RDCLOG("Enabling NV workaround for unaligned BDA memory capture/replay");
     nvidiaUnalignedBDAIssue = true;
+#endif
 
     // this was found in the initial implementation, if mesh output is fetched and a user descriptor
     // set has no vertex bindings at all (and they're not also compute bindings) then a descriptor
@@ -1816,7 +1818,7 @@ void DynamicRenderingLocalRead::SetLocations(VkCommandBuffer cmd)
   attachmentLocations.colorAttachmentCount = colorAttachmentLocations.count();
   attachmentLocations.pColorAttachmentLocations = colorAttachmentLocations.data();
 
-  ObjDisp(cmd)->CmdSetRenderingAttachmentLocationsKHR(Unwrap(cmd), &attachmentLocations);
+  ObjDisp(cmd)->CmdSetRenderingAttachmentLocations(Unwrap(cmd), &attachmentLocations);
 }
 
 void DynamicRenderingLocalRead::SetInputIndices(VkCommandBuffer cmd)
@@ -1830,7 +1832,7 @@ void DynamicRenderingLocalRead::SetInputIndices(VkCommandBuffer cmd)
   inputIndices.pStencilInputAttachmentIndex =
       isStencilInputAttachmentIndexImplicit ? NULL : &stencilInputAttachmentIndex;
 
-  ObjDisp(cmd)->CmdSetRenderingInputAttachmentIndicesKHR(Unwrap(cmd), &inputIndices);
+  ObjDisp(cmd)->CmdSetRenderingInputAttachmentIndices(Unwrap(cmd), &inputIndices);
 }
 
 #if ENABLED(ENABLE_UNIT_TESTS)

@@ -4351,7 +4351,6 @@ void VulkanReplay::FetchVSOut(uint32_t eventId, VulkanRenderState &state)
     uint32_t *idx32 = NULL;
 
     // fetch ibuffer
-    if(state.ibuffer.buf != ResourceId())
     {
       uint64_t readSizeBytes = uint64_t(action->numIndices) * state.ibuffer.bytewidth;
       // clamp to handle subrange bound via vkCmdBindIndexBuffer2
@@ -4364,8 +4363,11 @@ void VulkanReplay::FetchVSOut(uint32_t eventId, VulkanRenderState &state)
         readSizeBytes = RDCMIN(readSizeBytes, maxSubrangeBytes);
       }
 
-      GetBufferData(state.ibuffer.buf, state.ibuffer.offs + action->indexOffset * idxsize,
-                    readSizeBytes, idxdata);
+      if(state.ibuffer.buf != ResourceId())
+        GetBufferData(state.ibuffer.buf, state.ibuffer.offs + action->indexOffset * idxsize,
+                      readSizeBytes, idxdata);
+      else if(m_pDriver->Maintenance6())
+        idxdata.resize((size_t)readSizeBytes);
     }
 
     // figure out what the maximum index could be, so we can clamp our index buffer to something
@@ -5239,12 +5241,21 @@ void VulkanReplay::FetchVSOut(uint32_t eventId, VulkanRenderState &state)
                         "KHR and EXT buffer_device_address should be interchangeable here.");
       VkBufferDeviceAddressInfo getAddressInfo = {VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
 
+      uint32_t specIdOffset = i;
       if(i < MeshOutputBufferArraySize)
+      {
         getAddressInfo.buffer = vbuffers[i].buf;
+      }
       else if(i == MeshOutputBufferArraySize)
+      {
         getAddressInfo.buffer = uniqIdxBuf;
+        specIdOffset = MeshOutputIBufferSpecConstant;
+      }
       else if(i == MeshOutputBufferArraySize + 1)
+      {
         getAddressInfo.buffer = meshBuffer;
+        specIdOffset = MeshOutputOutputSpecConstant;
+      }
 
       // skip
       if(getAddressInfo.buffer == VK_NULL_HANDLE)
@@ -5257,7 +5268,7 @@ void VulkanReplay::FetchVSOut(uint32_t eventId, VulkanRenderState &state)
 
       VkSpecializationMapEntry entry;
       entry.offset = baseOffset + i * sizeof(uint64_t);
-      entry.constantID = baseSpecConstant + i * 2 + 0;
+      entry.constantID = baseSpecConstant + specIdOffset * 2 + 0;
 
       // for EXT we have one 64-bit spec constant per address, for KHR we have a uvec2 - two
       // constants

@@ -1613,7 +1613,10 @@ rdcstr Reflector::Disassemble(const rdcstr &entryPoint,
               uint32_t c = decoded.components[i];
 
               ret += idName(c < vec1Cols ? decoded.vector1 : decoded.vector2) + ".";
-              ret.push_back(comps[c % vec1Cols]);
+              if(c == ~0U)
+                ret.push_back('_');
+              else
+                ret.push_back(comps[c < vec1Cols ? c : c - vec1Cols]);
 
               if(i + 1 < decoded.components.size())
                 ret += ", ";
@@ -1635,6 +1638,7 @@ rdcstr Reflector::Disassemble(const rdcstr &entryPoint,
           const bool IsGLSL450 = knownExtSet[ExtSet_GLSL450] == decoded.set;
           const bool IsDebugPrintf = knownExtSet[ExtSet_Printf] == decoded.set;
           const bool IsShaderDbg = knownExtSet[ExtSet_ShaderDbg] == decoded.set;
+          const bool IsDebugBreak = knownExtSet[ExtSet_DebugBreak] == decoded.set;
           // GLSL.std.450 all parameters are Ids
           const bool idParams = IsGLSL450 || setname.beginsWith("NonSemantic.");
 
@@ -1715,6 +1719,8 @@ rdcstr Reflector::Disassemble(const rdcstr &entryPoint,
               ret += StringFormat::Fmt("%s::%s(", setname.c_str(), ToStr(GLSLstd450(inst)).c_str());
             else if(IsDebugPrintf)
               ret += "DebugPrintf(";
+            else if(IsDebugBreak)
+              ret += "DebugBreak(";
             else
               ret += StringFormat::Fmt("%s::[%u](", setname.c_str(), inst);
 

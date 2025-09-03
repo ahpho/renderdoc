@@ -1028,23 +1028,25 @@ DECLARE_REFLECTION_STRUCT(AspectSparseTable);
 
 struct DescriptorUniquenessKey
 {
-  DescriptorUniquenessKey(VkImageLayout layout)
-      : layout(layout), offset(0), size(0), fmt(VK_FORMAT_UNDEFINED)
+  DescriptorUniquenessKey(VkImageLayout layout, VkDescriptorType type)
+      : layout(layout), offset(0), size(0), fmt(VK_FORMAT_UNDEFINED), type(type)
   {
   }
-  DescriptorUniquenessKey(uint64_t offset, uint64_t size, VkFormat fmt)
-      : layout(VK_IMAGE_LAYOUT_UNDEFINED), offset(offset), size(size), fmt(fmt)
+  DescriptorUniquenessKey(uint64_t offset, uint64_t size, VkFormat fmt, VkDescriptorType type)
+      : layout(VK_IMAGE_LAYOUT_UNDEFINED), offset(offset), size(size), fmt(fmt), type(type)
   {
   }
 
   bool operator==(const DescriptorUniquenessKey &key) const
   {
-    return layout == key.layout && offset == key.offset && size == key.size && fmt == key.fmt;
+    return layout == key.layout && offset == key.offset && size == key.size && fmt == key.fmt &&
+           type == key.type;
   }
 
   VkImageLayout layout;
   uint64_t offset, size;
   VkFormat fmt;
+  VkDescriptorType type;
 };
 
 namespace std
@@ -1058,6 +1060,7 @@ struct hash<DescriptorUniquenessKey>
     hash ^= std::hash<uint64_t>()(key.offset) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
     hash ^= std::hash<uint64_t>()(key.size) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
     hash ^= std::hash<uint32_t>()(key.fmt) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    hash ^= std::hash<uint32_t>()(key.type) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
     return hash;
   }
 };
@@ -1089,7 +1092,7 @@ struct ResourceInfo
   // for images this is a self pointer. For image views when we are using descriptor buffers we
   // can't alias the resInfo in each view's record because each view needs to track its own
   // descriptors - instead we point back to the image's resInfo here for sparse info. blech
-  ResourceInfo *parentResInfo;
+  ResourceInfo *parentResInfo = this;
 
   // for buffers, or for images when layouts can affect descriptors, the set of descriptors which
   // have already been serialised

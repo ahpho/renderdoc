@@ -1283,8 +1283,20 @@ static const VkExtensionProperties supportedExtensions[] = {
         VK_EXT_PIPELINE_CREATION_FEEDBACK_SPEC_VERSION,
     },
     {
+        VK_EXT_PIPELINE_PROTECTED_ACCESS_EXTENSION_NAME,
+        VK_EXT_PIPELINE_PROTECTED_ACCESS_SPEC_VERSION,
+    },
+    {
+        VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME,
+        VK_EXT_PIPELINE_ROBUSTNESS_SPEC_VERSION,
+    },
+    {
         VK_EXT_POST_DEPTH_COVERAGE_EXTENSION_NAME,
         VK_EXT_POST_DEPTH_COVERAGE_SPEC_VERSION,
+    },
+    {
+        VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME,
+        VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_SPEC_VERSION,
     },
     {
         VK_EXT_PRIMITIVE_TOPOLOGY_LIST_RESTART_EXTENSION_NAME,
@@ -1687,6 +1699,26 @@ static const VkExtensionProperties supportedExtensions[] = {
         VK_KHR_MAINTENANCE_5_SPEC_VERSION,
     },
     {
+        VK_KHR_MAINTENANCE_6_EXTENSION_NAME,
+        VK_KHR_MAINTENANCE_6_SPEC_VERSION,
+    },
+    {
+        VK_KHR_MAINTENANCE_7_EXTENSION_NAME,
+        VK_KHR_MAINTENANCE_7_SPEC_VERSION,
+    },
+    {
+        VK_KHR_MAINTENANCE_8_EXTENSION_NAME,
+        VK_KHR_MAINTENANCE_8_SPEC_VERSION,
+    },
+    {
+        VK_KHR_MAINTENANCE_9_EXTENSION_NAME,
+        VK_KHR_MAINTENANCE_9_SPEC_VERSION,
+    },
+    {
+        VK_KHR_MAP_MEMORY_2_EXTENSION_NAME,
+        VK_KHR_MAP_MEMORY_2_SPEC_VERSION,
+    },
+    {
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
         VK_KHR_MULTIVIEW_SPEC_VERSION,
     },
@@ -1707,8 +1739,20 @@ static const VkExtensionProperties supportedExtensions[] = {
         VK_KHR_PRESENT_ID_SPEC_VERSION,
     },
     {
+        VK_KHR_PRESENT_ID_2_EXTENSION_NAME,
+        VK_KHR_PRESENT_ID_2_SPEC_VERSION,
+    },
+    {
+        VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME,
+        VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_SPEC_VERSION,
+    },
+    {
         VK_KHR_PRESENT_WAIT_EXTENSION_NAME,
         VK_KHR_PRESENT_WAIT_SPEC_VERSION,
+    },
+    {
+        VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME,
+        VK_KHR_PRESENT_WAIT_2_SPEC_VERSION,
     },
     {
         VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
@@ -1753,6 +1797,10 @@ static const VkExtensionProperties supportedExtensions[] = {
     {
         VK_KHR_SHADER_ATOMIC_INT64_EXTENSION_NAME,
         VK_KHR_SHADER_ATOMIC_INT64_SPEC_VERSION,
+    },
+    {
+        VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME,
+        VK_KHR_SHADER_BFLOAT16_SPEC_VERSION,
     },
     {
         VK_KHR_SHADER_CLOCK_EXTENSION_NAME,
@@ -1857,6 +1905,10 @@ static const VkExtensionProperties supportedExtensions[] = {
     {
         VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
         VK_KHR_TIMELINE_SEMAPHORE_SPEC_VERSION,
+    },
+    {
+        VK_KHR_UNIFIED_IMAGE_LAYOUTS_EXTENSION_NAME,
+        VK_KHR_UNIFIED_IMAGE_LAYOUTS_SPEC_VERSION,
     },
     {
         VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME,
@@ -2083,7 +2135,11 @@ VkResult WrappedVulkan::FilterDeviceExtensionProperties(VkPhysicalDevice physDev
 
     // extensions with conditional support
     filtered.removeIf([instDevInfo, physDev](const VkExtensionProperties &ext) {
-      if(!strcmp(ext.extensionName, VK_EXT_FRAGMENT_DENSITY_MAP_EXTENSION_NAME))
+      // Anything that depends on VK_EXT_fragment_density_map will need disabling if the
+      // fragmentDensityMapNonSubsampledImages feature is not supported
+      if(!strcmp(ext.extensionName, VK_EXT_FRAGMENT_DENSITY_MAP_EXTENSION_NAME) ||
+         !strcmp(ext.extensionName, VK_EXT_FRAGMENT_DENSITY_MAP_2_EXTENSION_NAME) ||
+         !strcmp(ext.extensionName, VK_QCOM_FRAGMENT_DENSITY_MAP_OFFSET_EXTENSION_NAME))
       {
         // require GPDP2
         if(instDevInfo->ext_KHR_get_physical_device_properties2)
@@ -2103,8 +2159,8 @@ VkResult WrappedVulkan::FilterDeviceExtensionProperties(VkPhysicalDevice physDev
           {
             RDCWARN(
                 "VkPhysicalDeviceFragmentDensityMapFeaturesEXT."
-                "fragmentDensityMapNonSubsampledImages is "
-                "false, can't support capture of VK_EXT_fragment_density_map");
+                "fragmentDensityMapNonSubsampledImages is false, can't support capture of %s",
+                ext.extensionName);
           }
         }
 
@@ -4348,13 +4404,13 @@ bool WrappedVulkan::ProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
       // Just in case it gets exported and imported, completely ignore it.
       return true;
 
-    case VulkanChunk::vkCmdPushDescriptorSetKHR:
-      return Serialise_vkCmdPushDescriptorSetKHR(
-          ser, VK_NULL_HANDLE, VK_PIPELINE_BIND_POINT_GRAPHICS, VK_NULL_HANDLE, 0, 0, NULL);
+    case VulkanChunk::vkCmdPushDescriptorSet:
+      return Serialise_vkCmdPushDescriptorSet(ser, VK_NULL_HANDLE, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                              VK_NULL_HANDLE, 0, 0, NULL);
 
-    case VulkanChunk::vkCmdPushDescriptorSetWithTemplateKHR:
-      return Serialise_vkCmdPushDescriptorSetWithTemplateKHR(ser, VK_NULL_HANDLE, VK_NULL_HANDLE,
-                                                             VK_NULL_HANDLE, 0, NULL);
+    case VulkanChunk::vkCmdPushDescriptorSetWithTemplate:
+      return Serialise_vkCmdPushDescriptorSetWithTemplate(ser, VK_NULL_HANDLE, VK_NULL_HANDLE,
+                                                          VK_NULL_HANDLE, 0, NULL);
 
     case VulkanChunk::vkCreateDescriptorUpdateTemplate:
       return Serialise_vkCreateDescriptorUpdateTemplate(ser, VK_NULL_HANDLE, NULL, NULL, NULL);
@@ -4441,17 +4497,17 @@ bool WrappedVulkan::ProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
       return GetResourceManager()->Serialise_DeviceMemoryRefs(ser, data);
     }
     case VulkanChunk::vkCopyImageToImage:
-      return Serialise_vkCopyImageToImageEXT(ser, VK_NULL_HANDLE, NULL);
+      return Serialise_vkCopyImageToImage(ser, VK_NULL_HANDLE, NULL);
     case VulkanChunk::vkCopyImageToMemory:
-      return Serialise_vkCopyImageToMemoryEXT(ser, VK_NULL_HANDLE, NULL);
+      return Serialise_vkCopyImageToMemory(ser, VK_NULL_HANDLE, NULL);
     case VulkanChunk::vkCopyMemoryToImage:
-      return Serialise_vkCopyMemoryToImageEXT(ser, VK_NULL_HANDLE, NULL);
+      return Serialise_vkCopyMemoryToImage(ser, VK_NULL_HANDLE, NULL);
     case VulkanChunk::vkTransitionImageLayout:
-      return Serialise_vkTransitionImageLayoutEXT(ser, VK_NULL_HANDLE, 0, NULL);
+      return Serialise_vkTransitionImageLayout(ser, VK_NULL_HANDLE, 0, NULL);
     case VulkanChunk::vkResetQueryPool:
       return Serialise_vkResetQueryPool(ser, VK_NULL_HANDLE, VK_NULL_HANDLE, 0, 0);
-    case VulkanChunk::vkCmdSetLineStippleKHR:
-      return Serialise_vkCmdSetLineStippleKHR(ser, VK_NULL_HANDLE, 0, 0);
+    case VulkanChunk::vkCmdSetLineStipple:
+      return Serialise_vkCmdSetLineStipple(ser, VK_NULL_HANDLE, 0, 0);
     case VulkanChunk::ImageRefs:
     {
       SCOPED_LOCK(m_ImageStatesLock);
@@ -4541,10 +4597,10 @@ bool WrappedVulkan::ProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
     case VulkanChunk::vkCmdBeginRendering:
       return Serialise_vkCmdBeginRendering(ser, VK_NULL_HANDLE, NULL);
     case VulkanChunk::vkCmdEndRendering: return Serialise_vkCmdEndRendering(ser, VK_NULL_HANDLE);
-    case VulkanChunk::vkCmdSetRenderingAttachmentLocationsKHR:
-      return Serialise_vkCmdSetRenderingAttachmentLocationsKHR(ser, VK_NULL_HANDLE, NULL);
-    case VulkanChunk::vkCmdSetRenderingInputAttachmentIndicesKHR:
-      return Serialise_vkCmdSetRenderingInputAttachmentIndicesKHR(ser, VK_NULL_HANDLE, NULL);
+    case VulkanChunk::vkCmdSetRenderingAttachmentLocations:
+      return Serialise_vkCmdSetRenderingAttachmentLocations(ser, VK_NULL_HANDLE, NULL);
+    case VulkanChunk::vkCmdSetRenderingInputAttachmentIndices:
+      return Serialise_vkCmdSetRenderingInputAttachmentIndices(ser, VK_NULL_HANDLE, NULL);
 
     case VulkanChunk::vkCmdSetFragmentShadingRateKHR:
       return Serialise_vkCmdSetFragmentShadingRateKHR(ser, VK_NULL_HANDLE, NULL, NULL);
@@ -4653,9 +4709,25 @@ bool WrappedVulkan::ProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
     case VulkanChunk::vkCmdWriteAccelerationStructuresPropertiesKHR:
       return Serialise_vkCmdWriteAccelerationStructuresPropertiesKHR(
           ser, VK_NULL_HANDLE, 0, NULL, VK_QUERY_TYPE_MAX_ENUM, VK_NULL_HANDLE, 0);
-    case VulkanChunk::vkCmdBindIndexBuffer2KHR:
-      return Serialise_vkCmdBindIndexBuffer2KHR(ser, VK_NULL_HANDLE, VK_NULL_HANDLE, 0, 0,
-                                                VK_INDEX_TYPE_MAX_ENUM);
+    case VulkanChunk::vkCmdBindIndexBuffer2:
+      return Serialise_vkCmdBindIndexBuffer2(ser, VK_NULL_HANDLE, VK_NULL_HANDLE, 0, 0,
+                                             VK_INDEX_TYPE_MAX_ENUM);
+
+    case VulkanChunk::vkUnmapMemory2:
+      return Serialise_vkUnmapMemory2(ser, VK_NULL_HANDLE, VK_NULL_HANDLE);
+
+    case VulkanChunk::vkCmdBindDescriptorSets2:
+      return Serialise_vkCmdBindDescriptorSets2(ser, VK_NULL_HANDLE, NULL);
+    case VulkanChunk::vkCmdPushConstants2:
+      return Serialise_vkCmdPushConstants2(ser, VK_NULL_HANDLE, NULL);
+    case VulkanChunk::vkCmdBindDescriptorBufferEmbeddedSamplers2EXT:
+      return Serialise_vkCmdBindDescriptorBufferEmbeddedSamplers2EXT(ser, VK_NULL_HANDLE, NULL);
+    case VulkanChunk::vkCmdSetDescriptorBufferOffsets2EXT:
+      return Serialise_vkCmdSetDescriptorBufferOffsets2EXT(ser, VK_NULL_HANDLE, NULL);
+    case VulkanChunk::vkCmdPushDescriptorSet2:
+      return Serialise_vkCmdPushDescriptorSet2(ser, VK_NULL_HANDLE, NULL);
+    case VulkanChunk::vkCmdPushDescriptorSetWithTemplate2:
+      return Serialise_vkCmdPushDescriptorSetWithTemplate2(ser, VK_NULL_HANDLE, NULL);
 
     // chunks that are reserved but not yet serialised
     case VulkanChunk::vkResetCommandPool:

@@ -55,6 +55,12 @@ struct VulkanStatePipeline
     uint32_t descBufferIdx = ~0U;
     VkDeviceSize descBufferOffset = 0;
     bool descBufferEmbeddedSamplers = false;
+    bool descBufferPush = false;
+
+    bool IsDescBufferBound() const
+    {
+      return descBufferIdx != ~0U || descBufferEmbeddedSamplers || descBufferPush;
+    }
 
     bool IsBound() const
     {
@@ -315,6 +321,8 @@ struct VulkanRenderState
     VkRenderingAttachmentInfo depth = {};
     VkRenderingAttachmentInfo stencil = {};
 
+    void CopyAttachmentNexts();
+
     VkImageView fragmentDensityView = VK_NULL_HANDLE;
     VkImageLayout fragmentDensityLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
@@ -327,6 +335,12 @@ struct VulkanRenderState
 
     // VK_KHR_dynamic_rendering_local_read
     DynamicRenderingLocalRead localRead;
+
+  private:
+    // VK_KHR_unified_image_layouts
+    rdcarray<VkAttachmentFeedbackLoopInfoEXT> feedbacks;
+
+    void CopyAttachmentNext(VkRenderingAttachmentInfo &info);
   } dynamicRendering;
 
   // fdm offset

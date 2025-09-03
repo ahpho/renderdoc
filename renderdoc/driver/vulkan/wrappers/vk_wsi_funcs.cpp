@@ -327,7 +327,6 @@ VkResult WrappedVulkan::vkGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR 
         record->AddParent(swaprecord);
 
         record->resInfo = new ResourceInfo();
-        record->resInfo->parentResInfo = record->resInfo;
         record->resInfo->imageInfo = swaprecord->swapInfo->imageInfo;
 
         // note we add the chunk to the swap record, that way when the swapchain is created it will
@@ -533,7 +532,7 @@ bool WrappedVulkan::Serialise_vkCreateSwapchainKHR(SerialiserType &ser, VkDevice
       VkMemoryOpaqueCaptureAddressAllocateInfo memoryDeviceAddress = {
           VK_STRUCTURE_TYPE_MEMORY_OPAQUE_CAPTURE_ADDRESS_ALLOCATE_INFO,
       };
-      if(fakeBackbuffers)
+      if(fakeBackbuffers && opaqueMemAddress)
       {
         allocInfo.pNext = &memFlags;
         memFlags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT |
@@ -1015,6 +1014,7 @@ VkResult WrappedVulkan::vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR 
        next->sType != VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR &&
        next->sType != VK_STRUCTURE_TYPE_PRESENT_TIMES_INFO_GOOGLE &&
        next->sType != VK_STRUCTURE_TYPE_PRESENT_ID_KHR &&
+       next->sType != VK_STRUCTURE_TYPE_PRESENT_ID_2_KHR &&
        next->sType != VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_KHR &&
        next->sType != VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODE_INFO_KHR)
     {
@@ -1069,6 +1069,11 @@ VkResult WrappedVulkan::vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR 
     if(ids)
       ids->swapchainCount = 1;
 
+    VkPresentId2KHR *ids2 =
+        (VkPresentId2KHR *)FindNextStruct(&mutableInfo, VK_STRUCTURE_TYPE_PRESENT_ID_2_KHR);
+    if(ids2)
+      ids2->swapchainCount = 1;
+
     VkSwapchainPresentFenceInfoKHR *fences = (VkSwapchainPresentFenceInfoKHR *)FindNextStruct(
         &mutableInfo, VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_KHR);
     if(fences)
@@ -1092,6 +1097,8 @@ VkResult WrappedVulkan::vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR 
         regions->pRegions++;
       if(ids)
         ids->pPresentIds++;
+      if(ids2)
+        ids2->pPresentIds++;
       if(times)
         times->pTimes++;
       if(fences)
@@ -1170,7 +1177,7 @@ void WrappedVulkan::HandlePresent(VkQueue queue, const VkPresentInfoKHR *pPresen
 
     const bool fakeBackbuffers = AccelerationStructures() || DescriptorBuffers();
 
-    if(overlay & eRENDERDOC_Overlay_Enabled)
+    if(fakeBackbuffers || (overlay & eRENDERDOC_Overlay_Enabled))
     {
       VkRenderPass rp = swapInfo.rp;
       VkImage unwrappedRealSwapImage = swapInfo.images[imgIndex].unwrappedRealSwapImage;
@@ -1378,7 +1385,7 @@ void WrappedVulkan::HandlePresent(VkQueue queue, const VkPresentInfoKHR *pPresen
         DoPipelineBarrier(cmd, 1, &tmpBarrier);
       }
 
-      if(!overlayText.empty())
+      if(!overlayText.empty() && (overlay & eRENDERDOC_Overlay_Enabled))
       {
         m_TextRenderer->BeginText(textstate);
 
@@ -1793,6 +1800,12 @@ VkResult WrappedVulkan::vkWaitForPresentKHR(VkDevice device, VkSwapchainKHR swap
   return ObjDisp(device)->WaitForPresentKHR(Unwrap(device), Unwrap(swapchain), presentId, timeout);
 }
 
+VkResult WrappedVulkan::vkWaitForPresent2KHR(VkDevice device, VkSwapchainKHR swapchain,
+                                             const VkPresentWait2InfoKHR *pPresentWait2Info)
+{
+  return ObjDisp(device)->WaitForPresent2KHR(Unwrap(device), Unwrap(swapchain), pPresentWait2Info);
+}
+
 VkResult WrappedVulkan::vkReleaseSwapchainImagesKHR(VkDevice device,
                                                     const VkReleaseSwapchainImagesInfoKHR *pReleaseInfo)
 {
@@ -1805,7 +1818,7 @@ VkResult WrappedVulkan::vkReleaseSwapchainImagesKHR(VkDevice device,
 // EXT is available it will go through to the EXT from the driver, and we would rather merge the
 // EXT/KHR paths and silently promote than keep them separate and maintain two paths.
 VkResult WrappedVulkan::vkReleaseSwapchainImagesEXT(VkDevice device,
-                                                    const VkReleaseSwapchainImagesInfoEXT *pReleaseInfo)
+                                                    const VkReleaseSwapchainImagesInfoKHR *pReleaseInfo)
 {
   return vkReleaseSwapchainImagesKHR(device, pReleaseInfo);
 }

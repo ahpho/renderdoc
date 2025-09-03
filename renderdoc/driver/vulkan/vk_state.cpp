@@ -136,6 +136,37 @@ void setupRenderingInfo(const VulkanRenderState::DynamicRendering &dynamicRender
 }
 }    // namespace
 
+void VulkanRenderState::DynamicRendering::CopyAttachmentNext(VkRenderingAttachmentInfo &info)
+{
+  void *newNext = NULL;
+
+  VkAttachmentFeedbackLoopInfoEXT *feedback = (VkAttachmentFeedbackLoopInfoEXT *)FindNextStruct(
+      &info, VK_STRUCTURE_TYPE_ATTACHMENT_FEEDBACK_LOOP_INFO_EXT);
+  if(feedback)
+  {
+    feedbacks.push_back(*feedback);
+    feedbacks.back().pNext = newNext;
+    newNext = &feedbacks.back();
+  }
+
+  // if other structs are added, they can be checked the same here and prepended to newNext in the same way
+
+  info.pNext = newNext;
+}
+
+void VulkanRenderState::DynamicRendering::CopyAttachmentNexts()
+{
+  // ensure we don't invalidate any pointers in the loop below, reserve enough space
+  feedbacks.clear();
+  feedbacks.reserve(color.size() + 2);
+
+  for(VkRenderingAttachmentInfo &info : color)
+    CopyAttachmentNext(info);
+
+  CopyAttachmentNext(depth);
+  CopyAttachmentNext(stencil);
+}
+
 VulkanRenderState::VulkanRenderState()
 {
   RDCEraseEl(ibuffer);
@@ -754,13 +785,27 @@ void VulkanRenderState::BindDynamicState(WrappedVulkan *vk, VkCommandBuffer cmd)
       type = VK_INDEX_TYPE_UINT8;
 
     if(vk->Maintenance5() && ibuffer.size != VK_WHOLE_SIZE)
-      ObjDisp(cmd)->CmdBindIndexBuffer2KHR(
+      ObjDisp(cmd)->CmdBindIndexBuffer2(
           Unwrap(cmd), Unwrap(vk->GetResourceManager()->GetCurrentHandle<VkBuffer>(ibuffer.buf)),
           ibuffer.offs, ibuffer.size, type);
     else
       ObjDisp(cmd)->CmdBindIndexBuffer(
           Unwrap(cmd), Unwrap(vk->GetResourceManager()->GetCurrentHandle<VkBuffer>(ibuffer.buf)),
           ibuffer.offs, type);
+  }
+  else if(vk->Maintenance6())
+  {
+    VkIndexType type = VK_INDEX_TYPE_UINT16;
+    if(ibuffer.bytewidth == 4)
+      type = VK_INDEX_TYPE_UINT32;
+    else if(ibuffer.bytewidth == 1)
+      type = VK_INDEX_TYPE_UINT8;
+
+    if(vk->Maintenance5() && ibuffer.size != VK_WHOLE_SIZE)
+      ObjDisp(cmd)->CmdBindIndexBuffer2(Unwrap(cmd), VK_NULL_HANDLE, ibuffer.offs, ibuffer.size,
+                                        type);
+    else
+      ObjDisp(cmd)->CmdBindIndexBuffer(Unwrap(cmd), VK_NULL_HANDLE, ibuffer.offs, type);
   }
 
   if((vk->DynamicVertexInput() || vk->ShaderObject()) && dynamicStates[VkDynamicVertexInputEXT])
@@ -1330,8 +1375,8 @@ void VulkanRenderState::BindDescriptorSet(WrappedVulkan *vk, const DescSetLayout
       push.pTexelBufferView = NULL;
     }
 
-    ObjDisp(cmd)->CmdPushDescriptorSetKHR(Unwrap(cmd), bindPoint, Unwrap(layout), setIndex,
-                                          (uint32_t)writes.size(), writes.data());
+    ObjDisp(cmd)->CmdPushDescriptorSet(Unwrap(cmd), bindPoint, Unwrap(layout), setIndex,
+                                       (uint32_t)writes.size(), writes.data());
 
     // delete allocated arrays for descriptor writes
     for(VkDescriptorBufferInfo *a : allocBufWrites)

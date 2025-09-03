@@ -93,7 +93,14 @@ void APIInspector::RevealParameter(SDObject *param)
           if(current->GetChild(i) == next)
           {
             current = next;
-            item = parent->child((int)i);
+
+            int idx = (int)i;
+
+            // revealing a parameter that wasn't added, bail out now
+            if(idx >= parent->childCount() || parent->child(idx)->tag().value<void *>() != next)
+              return;
+
+            item = parent->child(idx);
             break;
           }
         }
