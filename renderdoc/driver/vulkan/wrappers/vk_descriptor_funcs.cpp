@@ -830,12 +830,14 @@ void WrappedVulkan::LookupDescriptor(byte *descriptorBytes, size_t descriptorSiz
             if(texelBuffer)
               bufinfo.format = m_DescriptorLookup.texelFormats[i];
 
+            VkDeviceAddress checkAddress = address;
+
             if(type != DescriptorType::AccelerationStructure)
             {
               // a couple of formats modify the address or size in non-trivial ways that need to be patched
               // here. This also handles converting an element size back into a byte size trivially
               GetFinalBufferParameters(descriptorBytes, descriptorSize, type, bufinfo.format,
-                                       address, size, bufinfo.address, bufinfo.range);
+                                       checkAddress, size, bufinfo.address, bufinfo.range);
             }
 
             ObjDisp(m_Device)->GetDescriptorEXT(Unwrap(m_Device), &info, descriptorSize, tempMem);
@@ -843,11 +845,11 @@ void WrappedVulkan::LookupDescriptor(byte *descriptorBytes, size_t descriptorSiz
             if(memcmp(tempMem, descriptorBytes, descriptorSize) != 0)
             {
               // try sign extending if the top bit is set
-              address |= (0xffffULL << 48);
+              checkAddress |= (0xffffULL << 48);
               if(type == DescriptorType::AccelerationStructure)
-                info.data.accelerationStructure = address;
+                info.data.accelerationStructure = checkAddress;
               else
-                bufinfo.address = address;
+                bufinfo.address = checkAddress;
 
               ObjDisp(m_Device)->GetDescriptorEXT(Unwrap(m_Device), &info, descriptorSize, tempMem);
             }
@@ -880,17 +882,17 @@ void WrappedVulkan::LookupDescriptor(byte *descriptorBytes, size_t descriptorSiz
               }
               else
               {
-                id = m_ASLookupByAddr[address];
+                id = m_ASLookupByAddr[checkAddress];
 
-                if(id == ResourceId() && (address & (1ULL << 47)))
+                if(id == ResourceId() && (checkAddress & (1ULL << 47)))
                 {
                   // try sign extending if the top bit is set
-                  id = m_ASLookupByAddr[address | (0xffffULL << 48)];
+                  id = m_ASLookupByAddr[checkAddress | (0xffffULL << 48)];
                 }
 
                 if(id == ResourceId())
                 {
-                  RDCWARN("Unknown AS at descriptor address %llx", address);
+                  RDCWARN("Unknown AS at descriptor address %llx", checkAddress);
                 }
                 else
                 {
@@ -1361,13 +1363,19 @@ void WrappedVulkan::RegisterDescriptor(const bytebuf &key, const DescriptorSetSl
         {key.data() + m_DescriptorLookup.combinedSamplerOffset, samplerSize}, samplerData);
   }
 
-  if((data.type == DescriptorSlotType::InputAttachment ||
-      data.type == DescriptorSlotType::StorageImage || data.type == DescriptorSlotType::SampledImage ||
+  if((data.type == DescriptorSlotType::SampledImage ||
       data.type == DescriptorSlotType::CombinedImageSampler) &&
      m_DescriptorLookup.sampled != ImageDescriptorFormat::Indexed2012)
   {
     m_CreationInfo.m_Image[m_CreationInfo.m_ImageView[data.resource].image].viewDescriptors.push_back(
         {bytebuf(key.data(), sampledSize), data.resource});
+  }
+  else if((data.type == DescriptorSlotType::InputAttachment ||
+           data.type == DescriptorSlotType::StorageImage) &&
+          m_DescriptorLookup.storage != ImageDescriptorFormat::Indexed2012)
+  {
+    m_CreationInfo.m_Image[m_CreationInfo.m_ImageView[data.resource].image].viewDescriptors.push_back(
+        {key, data.resource});
   }
 }
 
