@@ -380,7 +380,7 @@ bool WrappedID3D11Device::Serialise_InitialState(SerialiserType &ser, ResourceId
 {
   D3D11ResourceType type = Resource_Unknown;
 
-  if(IsCaptureMode(m_State))
+  if(IsCaptureMode(m_State) && initial != NULL)
     type = initial->resourceType;
 
   bool ret = true;

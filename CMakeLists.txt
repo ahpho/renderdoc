@@ -109,9 +109,9 @@ set(VULKAN_JSON_SUFFIX "" CACHE STRING "Suffix for the vulkan implicit_layer jso
 
 option(INTERNAL_SELF_CAPTURE "Internal option: enable self-capture" OFF)
 
-set(RDOC_BASE_NAME "renderdoc")
+set(RDOC_BASE_NAME "senderdod")                         #originally = renderdoc
 if(INTERNAL_SELF_CAPTURE)
-    set(RDOC_BASE_NAME "rdocself")
+    set(RDOC_BASE_NAME "sdodself")                      #originally = rdocself
     add_definitions(-DRDOC_SELFCAPTURE_LIMITEDAPI=1)
 endif()
 string(TOUPPER ${RDOC_BASE_NAME} RDOC_BASE_NAME_UPPER)
