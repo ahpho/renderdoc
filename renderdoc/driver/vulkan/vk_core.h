@@ -1031,6 +1031,10 @@ private:
     rdcarray<VkDeviceMemory> DeadMemories;
     rdcarray<VkBuffer> DeadBuffers;
     rdcarray<ResourceId> IDs;
+
+    // with descriptor buffers, we also need to hold onto images and image views
+    rdcarray<VkImage> DeadImages;
+    rdcarray<VkImageView> DeadImageViews;
   } m_DeviceAddressResources;
   Threading::CriticalSection m_DeviceAddressResourcesLock;
 
@@ -2967,6 +2971,8 @@ public:
                                 const VkRenderingInfo *pRenderingInfo);
 
   IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdEndRendering, VkCommandBuffer commandBuffer);
+  IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdEndRendering2EXT, VkCommandBuffer commandBuffer,
+                                const VkRenderingEndInfoEXT *pRenderingEndInfo);
 
   // VK_KHR_dynamic_rendering_local_read
 

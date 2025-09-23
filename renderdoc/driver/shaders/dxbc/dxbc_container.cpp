@@ -680,7 +680,7 @@ CBufferVariableType DXBCContainer::ParseRDEFType(const RDEFHeader *h, const byte
   return ret;
 }
 
-D3D_PRIMITIVE_TOPOLOGY DXBCContainer::GetOutputTopology()
+void DXBCContainer::CacheOutputTopology()
 {
   if(m_OutputTopology == D3D_PRIMITIVE_TOPOLOGY_UNDEFINED)
   {
@@ -691,8 +691,6 @@ D3D_PRIMITIVE_TOPOLOGY DXBCContainer::GetOutputTopology()
     else if(m_DXILByteCode)
       m_OutputTopology = m_DXILByteCode->GetOutputTopology();
   }
-
-  return m_OutputTopology;
 }
 
 D3D_PRIMITIVE_TOPOLOGY DXBCContainer::GetOutputTopology(const void *ByteCode, size_t ByteCodeLength)
@@ -2818,7 +2816,7 @@ void DXBCContainer::ProcessSourceInfo(const byte *chunkContents, uint32_t chunkS
           flags.flags[cmdlineIdx].value += name;
           if(value[0] != 0)
           {
-            flags.flags[cmdlineIdx].value += "=";
+            flags.flags[cmdlineIdx].value += " ";
             flags.flags[cmdlineIdx].value += value;
           }
         }

@@ -1515,7 +1515,7 @@ ResourceId D3D12Replay::RenderOverlay(ResourceId texid, FloatVector clearCol, De
 
       list->SetGraphicsRootSignature(m_General.CheckerboardRootSig);
 
-      CheckerboardCBuffer pixelData = {0};
+      CheckerboardCBuffer pixelData = {};
 
       pixelData.BorderWidth = 3;
       pixelData.CheckerSquareDimension = 16.0f;
@@ -1683,7 +1683,7 @@ ResourceId D3D12Replay::RenderOverlay(ResourceId texid, FloatVector clearCol, De
         Vec4f viewport;
 
         if(!rs.views.empty())
-          viewport = Vec4f(rs.views[0].Width, rs.views[0].Height);
+          viewport = Vec4f(rs.views[0].Width, rs.views[0].Height, 0.0f, 0.0f);
 
         D3D12RenderState::SignatureElement viewportElem(eRootCBV, ResourceId(), 0);
         WrappedID3D12Resource::GetResIDFromAddr(
@@ -1991,8 +1991,8 @@ ResourceId D3D12Replay::RenderOverlay(ResourceId texid, FloatVector clearCol, De
         WrappedID3D12PipelineState::ShaderEntry *wrappedPS = pipe->PS();
         if(wrappedPS)
         {
-          ShaderReflection &reflection = pipe->PS()->GetDetails();
-          for(SigParameter &output : reflection.outputSignature)
+          const ShaderReflection &reflection = pipe->PS()->GetDetails();
+          for(const SigParameter &output : reflection.outputSignature)
           {
             if(output.systemValue == ShaderBuiltin::DepthOutput)
               useDepthWriteStencilPass = true;

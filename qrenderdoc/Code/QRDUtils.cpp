@@ -174,9 +174,8 @@ rdcstr DoStringise(const PointerVal &el)
   }
 }
 
-QString GetTruncatedResourceName(const ICaptureContext &ctx, ResourceId id)
+void TruncateStringFromEnd(QString &name)
 {
-  QString name = ctx.GetResourceName(id);
   if(name.length() > 64)
   {
     QTextBoundaryFinder boundaries(QTextBoundaryFinder::Grapheme, name.data(), name.length());
@@ -187,6 +186,12 @@ QString GetTruncatedResourceName(const ICaptureContext &ctx, ResourceId id)
     name.resize(pos);
     name += lit("...");
   }
+}
+
+QString GetTruncatedResourceName(const ICaptureContext &ctx, ResourceId id)
+{
+  QString name = ctx.GetResourceName(id);
+  TruncateStringFromEnd(name);
 
   return name;
 }
@@ -755,7 +760,7 @@ void RichResourceTextPaint(const QWidget *owner, QPainter *painter, QRect rect, 
 
     static const int margin = RichResourceTextMargin;
 
-    rect.adjust(margin, 0, -margin * 2, 0);
+    rect.adjust(margin, 0, -margin, 0);
 
     QString name;
 
@@ -966,7 +971,8 @@ int RichResourceTextWidthHint(const QWidget *owner, const QFont &font, const QVa
         name = lit("NULL");
     }
 
-    const QPixmap &px = Pixmaps::link(owner->devicePixelRatio());
+    // this calculation is in device independent sizes so use a ratio of 1 for the pixmap
+    const QPixmap &px = Pixmaps::link(1);
 
     int ret = margin + metrics.boundingRect(name).width() + margin + px.width() + margin;
     return ret;
@@ -983,18 +989,21 @@ int RichResourceTextHeightHint(const QWidget *owner, const QFont &font, const QV
 {
   QFontMetrics metrics(font);
 
+  static const int margin = RichResourceTextMargin;
+
   if(var.userType() == qMetaTypeId<RichResourceTextPtr>())
   {
     RichResourceTextPtr linkedText = var.value<RichResourceTextPtr>();
-
-    static const int margin = RichResourceTextMargin;
 
     linkedText->cacheDocument(owner);
 
     return linkedText->numLines * (metrics.lineSpacing() + margin * 2);
   }
 
-  return metrics.height();
+  // this calculation is in device independent sizes so use a ratio of 1 for the pixmap
+  const QPixmap &px = Pixmaps::link(1);
+
+  return qMax(metrics.height(), px.height() + margin * 2);
 }
 
 bool RichResourceTextMouseEvent(const QWidget *owner, const QVariant &var, QRect rect,

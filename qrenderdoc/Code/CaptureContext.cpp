@@ -1743,6 +1743,17 @@ void CaptureContext::AddMessages(const rdcarray<DebugMessage> &msgs)
   }
 }
 
+void CaptureContext::ClearMessages()
+{
+  m_UnreadMessageCount = 0;
+  m_DebugMessages.clear();
+
+  if(m_DebugMessageView)
+  {
+    GUIInvoke::call(m_DebugMessageView, [this]() { m_DebugMessageView->RefreshMessageList(); });
+  }
+}
+
 void CaptureContext::SetNotes(const rdcstr &key, const rdcstr &contents)
 {
   // ignore no-op changes
@@ -1786,6 +1797,11 @@ void CaptureContext::RemoveBookmark(uint32_t EID)
   SetModification(CaptureModifications::Bookmarks);
 
   RefreshUIStatus({}, true, true);
+}
+
+void CaptureContext::DelayedCallback(uint32_t milliseconds, std::function<void()> callback)
+{
+  QTimer::singleShot(milliseconds, callback);
 }
 
 void CaptureContext::SetModification(CaptureModifications mod)

@@ -183,7 +183,7 @@ static void StripUnwantedExtensions(rdcarray<rdcstr> &Extensions)
     if(ext == "VK_KHR_external_fence_fd" || ext == "VK_KHR_external_fence_win32" ||
        ext == "VK_KHR_external_memory_fd" || ext == "VK_KHR_external_memory_win32" ||
        ext == "VK_KHR_external_semaphore_fd" || ext == "VK_KHR_external_semaphore_win32" ||
-       ext == "VK_KHR_win32_keyed_mutex")
+       ext == "VK_KHR_win32_keyed_mutex" || ext == "VK_EXT_external_memory_dma_buf")
     {
       return true;
     }
@@ -194,7 +194,8 @@ static void StripUnwantedExtensions(rdcarray<rdcstr> &Extensions)
        ext == "VK_KHR_present_id2" || ext == "VK_KHR_present_wait" ||
        ext == "VK_KHR_present_wait2" || ext == "VK_KHR_present_mode_fifo_latest_ready" ||
        ext == "VK_EXT_present_mode_fifo_latest_ready" || ext == "VK_EXT_surface_maintenance1" ||
-       ext == "VK_EXT_swapchain_maintenance1" || ext == "VK_EXT_hdr_metadata" ||
+       ext == "VK_EXT_swapchain_maintenance1" || ext == "VK_KHR_surface_maintenance1" ||
+       ext == "VK_KHR_swapchain_maintenance1" || ext == "VK_EXT_hdr_metadata" ||
        ext == "VK_KHR_get_display_properties2")
       return true;
 
@@ -2593,6 +2594,14 @@ bool WrappedVulkan::Serialise_vkCreateDevice(SerialiserType &ser, VkPhysicalDevi
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_OFFSET_FEATURES_EXT);
       {
         CHECK_PHYS_EXT_FEATURE(fragmentDensityMapOffset);
+      }
+      END_PHYS_EXT_CHECK();
+
+      BEGIN_PHYS_EXT_CHECK(
+          VkPhysicalDeviceFragmentDensityMapLayeredFeaturesVALVE,
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_LAYERED_FEATURES_VALVE);
+      {
+        CHECK_PHYS_EXT_FEATURE(fragmentDensityMapLayered);
       }
       END_PHYS_EXT_CHECK();
 

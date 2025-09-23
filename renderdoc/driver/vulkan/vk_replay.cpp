@@ -94,7 +94,7 @@ RDResult VulkanReplay::FatalErrorCheck()
 IReplayDriver *VulkanReplay::MakeDummyDriver()
 {
   // gather up the shaders we've allocated to pass to the dummy driver
-  rdcarray<ShaderReflection *> shaders;
+  rdcarray<const ShaderReflection *> shaders;
   for(auto it = m_pDriver->m_CreationInfo.m_ShaderModule.begin();
       it != m_pDriver->m_CreationInfo.m_ShaderModule.end(); it++)
   {
@@ -440,8 +440,8 @@ rdcarray<ShaderEntryPoint> VulkanReplay::GetShaderEntryPoints(ResourceId shader)
   return shad->second.spirv.EntryPoints();
 }
 
-ShaderReflection *VulkanReplay::GetShader(ResourceId pipeline, ResourceId shader,
-                                          ShaderEntryPoint entry)
+const ShaderReflection *VulkanReplay::GetShader(ResourceId pipeline, ResourceId shader,
+                                                ShaderEntryPoint entry)
 {
   auto shad = m_pDriver->m_CreationInfo.m_ShaderModule.find(shader);
 
@@ -2890,6 +2890,9 @@ rdcarray<DescriptorAccess> VulkanReplay::GetDescriptorAccess(uint32_t eventId)
 
   rdcarray<DescriptorAccess> ret;
 
+  const ActionDescription *action = m_pDriver->GetAction(eventId);
+  const bool compute = action && bool(action->flags & ActionFlags::Dispatch);
+
   if(state.graphics.pipeline != ResourceId())
     ret.append(m_pDriver->m_CreationInfo.m_Pipeline[state.graphics.pipeline].staticDescriptorAccess);
 
@@ -2939,6 +2942,15 @@ rdcarray<DescriptorAccess> VulkanReplay::GetDescriptorAccess(uint32_t eventId)
         {
           access.descriptorStore = rm->GetOriginalID(descSets[setIdx].descSet);
         }
+      }
+      else if(action == NULL || ((!compute && access.stage == ShaderStage::Compute) ||
+                                 (compute && access.stage != ShaderStage::Compute)))
+      {
+        // descriptor buffer state can be temporarily invalid due to multiple stage binding and be
+        // perturbed across stages if buffers are rebound without offsets or vice-versa, do not
+        // display descriptor access for descriptor buffers if no action is selected, or the access
+        // comes from the alternate pipeline
+        access.descriptorStore = ResourceId();
       }
       else if(bufSetIdx >= 0 || inlinebufSetIdx >= 0)
       {

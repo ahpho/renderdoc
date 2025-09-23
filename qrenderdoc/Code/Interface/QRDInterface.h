@@ -107,26 +107,45 @@ struct CaptureSettings
 :type: renderdoc.CaptureOptions
 )");
   CaptureOptions options;
-  DOCUMENT(
-      "``True`` if the described capture is an inject-into-process instead of a launched "
-      "executable.");
+  DOCUMENT(R"(``True`` if the described capture is an inject-into-process instead of a launched executable.
+
+:type: bool
+)");
   bool inject;
-  DOCUMENT("``True`` if this capture settings object should be immediately executed upon load.");
+  DOCUMENT(R"(``True`` if this capture settings object should be immediately executed upon load.
+
+:type: bool
+)");
   bool autoStart;
-  DOCUMENT("The path to the executable to run.");
+  DOCUMENT(R"(The path to the executable to run.
+
+:type: str
+)");
   rdcstr executable;
-  DOCUMENT("The path to the working directory to run in, or blank for the executable's directory.");
+  DOCUMENT(R"(The path to the working directory to run in, or blank for the executable's directory.
+
+:type: str
+)");
   rdcstr workingDir;
-  DOCUMENT("The command line to pass when running :data:`executable`.");
+  DOCUMENT(R"(The command line to pass when running :data:`executable`.
+
+:type: str
+)");
   rdcstr commandLine;
   DOCUMENT(R"(The environment changes to apply.
 
 :type: List[renderdoc.EnvironmentModification]
 )");
   rdcarray<EnvironmentModification> environment;
-  DOCUMENT("The number of queued frames to capture, or 0 if no frames are queued to be captured.");
+  DOCUMENT(R"(The number of queued frames to capture, or 0 if no frames are queued to be captured.
+
+:type: int
+)");
   uint32_t numQueuedFrames;
-  DOCUMENT("The first queued frame to capture. Ignored if :data:`numQueuedFrames` is 0.");
+  DOCUMENT(R"(The first queued frame to capture. Ignored if :data:`numQueuedFrames` is 0.
+
+:type: int
+)");
   uint32_t queuedFrameCap;
 };
 
@@ -1762,10 +1781,16 @@ BITMASK_OPERATORS(CaptureModifications);
 DOCUMENT("A description of a bookmark on an event");
 struct EventBookmark
 {
-  DOCUMENT("The :data:`eventId <renderdoc.APIEvent.eventId>` at which this bookmark is placed.");
+  DOCUMENT(R"(The :data:`eventId <renderdoc.APIEvent.eventId>` at which this bookmark is placed.
+
+:type: int
+)");
   uint32_t eventId = 0;
 
-  DOCUMENT("The text associated with this bookmark - could be empty");
+  DOCUMENT(R"(The text associated with this bookmark - could be empty
+
+:type: str
+)");
   rdcstr text;
 
   DOCUMENT("");
@@ -2335,6 +2360,11 @@ as well as messages generated during replay and analysis.
 )");
   virtual void AddMessages(const rdcarray<DebugMessage> &msgs) = 0;
 
+  DOCUMENT(R"(Clear the currently stored messages, and mark all as unread. This can be used in
+combination with :meth:`DebugMessages` and :meth:`AddMessages` to filter the current set of messages.
+)");
+  virtual void ClearMessages() = 0;
+
   DOCUMENT(R"(Retrieve the contents for a given notes field.
 
 Examples of fields are:
@@ -2384,6 +2414,14 @@ If no bookmark exists, this function will do nothing.
 :param int eventId: The eventId of the bookmark to remove.
 )");
   virtual void RemoveBookmark(uint32_t eventId) = 0;
+
+  DOCUMENT(R"(Registers a delayed callback to be called after a certain number of milliseconds
+on the UI thread.
+
+:param int milliseconds: The number of milliseconds (approximately) to wait before the callback.
+:param Callable[[], None] callback: The function to call
+)");
+  virtual void DelayedCallback(uint32_t milliseconds, std::function<void()> callback) = 0;
 
   DOCUMENT(R"(Retrieve the current singleton :class:`MainWindow`.
 

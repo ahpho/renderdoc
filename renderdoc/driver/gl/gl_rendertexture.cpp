@@ -43,7 +43,7 @@ bool GLReplay::RenderTextureInternal(TextureDisplay cfg, TexDisplayFlags flags)
 
   WrappedOpenGL &drv = *m_pDriver;
 
-  auto &texDetails = m_pDriver->m_Textures[cfg.resourceId];
+  WrappedOpenGL::TextureData &texDetails = m_pDriver->m_Textures[cfg.resourceId];
 
   if(texDetails.internalFormat == eGL_NONE)
     return false;
@@ -623,9 +623,14 @@ bool GLReplay::RenderTextureInternal(TextureDisplay cfg, TexDisplayFlags flags)
   ubo->TextureResolutionPS.z = float(RDCMAX(1, tex_z >> cfg.subresource.mip));
 
   if(mipShift)
-    ubo->MipShift = float(1 << cfg.subresource.mip);
+  {
+    ubo->MipShift.x = float(tex_x) / float(RDCMAX(1, tex_x >> cfg.subresource.mip));
+    ubo->MipShift.y = float(tex_y) / float(RDCMAX(1, tex_y >> cfg.subresource.mip));
+  }
   else
-    ubo->MipShift = 1.0f;
+  {
+    ubo->MipShift.x = ubo->MipShift.y = 1.0f;
+  }
 
   ubo->OutputRes.x = DebugData.outWidth;
   ubo->OutputRes.y = DebugData.outHeight;

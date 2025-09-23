@@ -242,8 +242,8 @@ struct VulkanCreationInfo
     ResourceId module;
     ShaderStage stage = ShaderStage::Count;
     rdcstr entryPoint;
-    ShaderReflection *refl = NULL;
-    SPIRVPatchData *patchData = NULL;
+    const ShaderReflection *refl = NULL;
+    const SPIRVPatchData *patchData = NULL;
 
     VkPipelineShaderStageCreateFlags flags;
 
@@ -461,6 +461,9 @@ struct VulkanCreationInfo
 
     // VkPipelineRobustnessCreateInfo
     VkPipelineRobustnessBufferBehavior vertexInputRobustness;
+
+    // VkPipelineFragmentDensityMapLayeredCreateInfoVALVE
+    uint32_t maxFragmentDensityMapLayers;
   };
   std::unordered_map<ResourceId, Pipeline> m_Pipeline;
 

@@ -275,14 +275,51 @@ void VulkanRenderState::BeginRenderPassAndApplyState(WrappedVulkan *vk, VkComman
 
 void VulkanRenderState::EndRenderPass(VkCommandBuffer cmd)
 {
+  VkRenderPassFragmentDensityMapOffsetEndInfoEXT fragmentDensityOffsetStruct = {
+      VK_STRUCTURE_TYPE_RENDER_PASS_FRAGMENT_DENSITY_MAP_OFFSET_END_INFO_EXT,
+      NULL,
+      (uint32_t)fragmentDensityMapOffsets.size(),
+      fragmentDensityMapOffsets.data(),
+  };
+
   if(dynamicRendering.active)
   {
     if(!dynamicRendering.suspended)
-      ObjDisp(cmd)->CmdEndRendering(Unwrap(cmd));
+    {
+      if(fragmentDensityMapOffsets.empty())
+      {
+        ObjDisp(cmd)->CmdEndRendering(Unwrap(cmd));
+      }
+      else
+      {
+        VkRenderingEndInfoEXT endInfo = {
+            VK_STRUCTURE_TYPE_RENDERING_END_INFO_EXT,
+            &fragmentDensityOffsetStruct,
+        };
+
+        // the only time we can possibly have fragment offsets and be using dynamic rendering is if
+        // this function is available by definition, so we don't have to check for it
+        ObjDisp(cmd)->CmdEndRendering2EXT(Unwrap(cmd), &endInfo);
+      }
+    }
   }
   else
   {
-    ObjDisp(cmd)->CmdEndRenderPass(Unwrap(cmd));
+    if(fragmentDensityMapOffsets.empty())
+    {
+      ObjDisp(cmd)->CmdEndRenderPass(Unwrap(cmd));
+    }
+    else
+    {
+      VkSubpassEndInfo endInfo = {
+          VK_STRUCTURE_TYPE_SUBPASS_END_INFO,
+          &fragmentDensityOffsetStruct,
+      };
+
+      // the only time we can possibly have fragment offsets and be using a normal render pass is if
+      // this function is available by definition, so we don't have to check for it
+      ObjDisp(cmd)->CmdEndRenderPass2(Unwrap(cmd), &endInfo);
+    }
   }
 }
 
@@ -332,16 +369,8 @@ bool VulkanRenderState::IsConditionalRenderingEnabled()
   return conditionalRendering.buffer != ResourceId() && !conditionalRendering.forceDisable;
 }
 
-void VulkanRenderState::BindPipeline(WrappedVulkan *vk, VkCommandBuffer cmd,
-                                     PipelineBinding binding, bool subpass0)
+void VulkanRenderState::BindDescriptorBuffers(WrappedVulkan *vk, VkCommandBuffer cmd)
 {
-  // subpass0 is a patched version of the pipeline created against subpass 0, in case for old style
-  // renderpasses we need to use a pipeline that was previously in subpass 1 against our loadrp with
-  // only one subpass. It's not needed for dynamic rendering, we can always use the original
-  // pipeline
-  if(subpass0 && dynamicRendering.active)
-    subpass0 = false;
-
   if(!descBufs.empty())
   {
     VkDescriptorBufferBindingPushDescriptorBufferHandleEXT push;
@@ -387,6 +416,19 @@ void VulkanRenderState::BindPipeline(WrappedVulkan *vk, VkCommandBuffer cmd,
 
     ObjDisp(cmd)->CmdBindDescriptorBuffersEXT(Unwrap(cmd), bufferCount, bind.data());
   }
+}
+
+void VulkanRenderState::BindPipeline(WrappedVulkan *vk, VkCommandBuffer cmd,
+                                     PipelineBinding binding, bool subpass0)
+{
+  // subpass0 is a patched version of the pipeline created against subpass 0, in case for old style
+  // renderpasses we need to use a pipeline that was previously in subpass 1 against our loadrp with
+  // only one subpass. It's not needed for dynamic rendering, we can always use the original
+  // pipeline
+  if(subpass0 && dynamicRendering.active)
+    subpass0 = false;
+
+  BindDescriptorBuffers(vk, cmd);
 
   if(binding == BindGraphics || binding == BindInitial)
   {
@@ -492,6 +534,8 @@ void VulkanRenderState::BindPipeline(WrappedVulkan *vk, VkCommandBuffer cmd,
 void VulkanRenderState::BindShaderObjects(WrappedVulkan *vk, VkCommandBuffer cmd,
                                           PipelineBinding binding)
 {
+  BindDescriptorBuffers(vk, cmd);
+
   if(binding == BindGraphics || binding == BindInitial)
   {
     if(graphics.shaderObject)
