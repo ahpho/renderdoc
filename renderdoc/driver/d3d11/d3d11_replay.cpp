@@ -94,7 +94,7 @@ RDResult D3D11Replay::FatalErrorCheck()
 IReplayDriver *D3D11Replay::MakeDummyDriver()
 {
   // gather up the shaders we've allocated to pass to the dummy driver
-  rdcarray<ShaderReflection *> shaders;
+  rdcarray<const ShaderReflection *> shaders;
   WrappedID3D11Shader<ID3D11ComputeShader>::GetReflections(shaders);
 
   IReplayDriver *dummy = new DummyDriver(this, shaders, m_pDevice->DetachStructuredFile());
@@ -2671,22 +2671,6 @@ void D3D11Replay::GetTextureData(ResourceId tex, const Subresource &sub,
     intercept.InitWrappedResource(dummyTex, subresource, data.data());
     intercept.SetD3D(mapped);
     intercept.CopyFromD3D();
-
-    // for 3D textures if we wanted a particular slice (arrayIdx > 0)
-    // copy it into the beginning.
-    if(intercept.numSlices > 1 && s.slice > 0 && (int)s.slice < intercept.numSlices)
-    {
-      byte *dst = data.data();
-      byte *src = data.data() + intercept.app.DepthPitch * s.slice;
-
-      for(int row = 0; row < intercept.numRows; row++)
-      {
-        memcpy(dst, src, intercept.app.RowPitch);
-
-        src += intercept.app.RowPitch;
-        dst += intercept.app.RowPitch;
-      }
-    }
   }
   else
   {

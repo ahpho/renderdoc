@@ -717,8 +717,10 @@ public:
   }
 };
 
-class WrappedID3D12Heap : public WrappedDeviceChild12<ID3D12Heap, ID3D12Heap1>
+class WrappedID3D12Heap : public WrappedDeviceChild12<ID3D12Heap, ID3D12Heap1>,
+                          public ID3D12PageableTools
 {
+  ID3D12PageableTools *m_Pageable = NULL;
 public:
   ALLOCATE_WITH_WRAPPED_POOL(WrappedID3D12Heap);
 
@@ -731,7 +733,17 @@ public:
       : WrappedDeviceChild12(real, device)
   {
   }
-  virtual ~WrappedID3D12Heap() { Shutdown(); }
+  virtual ~WrappedID3D12Heap()
+  {
+    SAFE_RELEASE(m_Pageable);
+    Shutdown();
+  }
+  ULONG STDMETHODCALLTYPE AddRef() { return WrappedDeviceChild12::AddRef(); }
+  ULONG STDMETHODCALLTYPE Release() { return WrappedDeviceChild12::Release(); }
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject)
+  {
+    return WrappedDeviceChild12::QueryInterface(riid, ppvObject);
+  }
   //////////////////////////////
   // implement ID3D12Heap
   virtual D3D12_HEAP_DESC STDMETHODCALLTYPE GetDesc() { return m_pReal->GetDesc(); }
@@ -766,6 +778,18 @@ public:
     }
 
     return S_OK;
+  }
+  //////////////////////////////
+  // implement ID3D12PageableTools
+  virtual HRESULT STDMETHODCALLTYPE GetAllocation(_Inout_ D3D12_GPU_VIRTUAL_ADDRESS_RANGE *pAllocation)
+  {
+    if(!m_Pageable)
+      m_pReal->QueryInterface(__uuidof(ID3D12PageableTools), (void **)&m_Pageable);
+
+    if(m_Pageable)
+      return m_Pageable->GetAllocation(pAllocation);
+
+    return E_NOINTERFACE;
   }
 };
 
@@ -918,7 +942,7 @@ public:
       return false;
     }
 
-    static void GetReflections(rdcarray<ShaderReflection *> &refls)
+    static void GetReflections(rdcarray<const ShaderReflection *> &refls)
     {
       refls.clear();
       for(auto it = m_Shaders.begin(); it != m_Shaders.end(); ++it)
@@ -963,7 +987,8 @@ public:
       return ret;
     }
 
-    DXBC::DXBCContainer *GetDXBC()
+    const DXBC::DXBCContainer *GetDXBC() { return GetWriteableDXBC(); }
+    DXBC::DXBCContainer *GetWriteableDXBC()
     {
       if(m_DXBCFile == NULL && !m_Bytecode.empty())
       {
@@ -972,7 +997,7 @@ public:
       }
       return m_DXBCFile;
     }
-    ShaderReflection &GetDetails()
+    const ShaderReflection &GetDetails()
     {
       if(!m_Built && GetDXBC() != NULL)
         BuildReflection();
@@ -1275,7 +1300,7 @@ public:
         return E_NOINTERFACE;
       }
     }
-    if(riid == __uuidof(ID3D12WorkGraphProperties) || riid == __uuidof(ID3D12WorkGraphProperties1))
+    if(riid == __uuidof(ID3D12WorkGraphProperties))
     {
       // work graphs are not currently supported
       return E_NOINTERFACE;
@@ -1345,8 +1370,11 @@ public:
 class D3D12AccelerationStructure;
 
 class WrappedID3D12Resource
-    : public WrappedDeviceChild12<ID3D12Resource, ID3D12Resource1, ID3D12Resource2>
+    : public WrappedDeviceChild12<ID3D12Resource, ID3D12Resource1, ID3D12Resource2>,
+      public ID3D12PageableTools
 {
+  ID3D12PageableTools *m_Pageable = NULL;
+
   static GPUAddressRangeTracker m_Addresses;
 
   WriteSerialiser &GetThreadSerialiser();
@@ -1492,6 +1520,8 @@ public:
     return 0;
   }
 
+  ULONG STDMETHODCALLTYPE AddRef() { return WrappedDeviceChild12::AddRef(); }
+  ULONG STDMETHODCALLTYPE Release() { return WrappedDeviceChild12::Release(); }
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject)
   {
     if(riid == __uuidof(ID3D12ManualWriteTrackingResource))
@@ -1578,6 +1608,18 @@ public:
 
     SAFE_RELEASE(real2);
     return ret;
+  }
+  //////////////////////////////
+  // implement ID3D12PageableTools
+  virtual HRESULT STDMETHODCALLTYPE GetAllocation(_Inout_ D3D12_GPU_VIRTUAL_ADDRESS_RANGE *pAllocation)
+  {
+    if(!m_Pageable)
+      m_pReal->QueryInterface(__uuidof(ID3D12PageableTools), (void **)&m_Pageable);
+
+    if(m_Pageable)
+      return m_Pageable->GetAllocation(pAllocation);
+
+    return E_NOINTERFACE;
   }
 };
 

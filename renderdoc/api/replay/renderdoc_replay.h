@@ -1108,6 +1108,9 @@ texture to something compatible with the target file format.
 
   DOCUMENT(R"(Retrieve the contents of one subresource of a texture as a ``bytes``.
 
+.. note:: For 3D textures a whole width x height x depth mip is returned, you can't select a single
+  depth slice using :data:`Subresource.slice`.
+
 :param ResourceId tex: The id of the texture to retrieve data from.
 :param Subresource sub: The subresource within this texture to use.
 :return: The requested texture contents.
@@ -2082,13 +2085,22 @@ extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_EndSelfHostCapture(const rd
 DOCUMENT("INTERNAL: Information about vulkan layer registration");
 struct VulkanLayerRegistrationInfo
 {
-  DOCUMENT(":class:`VulkanLayerFlags` detailing the current registration.");
+  DOCUMENT(R"(:class:`VulkanLayerFlags` detailing the current registration.
+
+:type: VulkanLayerFlags
+)");
   VulkanLayerFlags flags;
 
-  DOCUMENT("A list of jsons that should be registered");
+  DOCUMENT(R"(A list of jsons that should be registered
+
+:type: List[str]
+)");
   rdcarray<rdcstr> myJSONs;
 
-  DOCUMENT("A list of jsons that should be unregistered / updated");
+  DOCUMENT(R"(A list of jsons that should be unregistered / updated
+
+:type: List[str]
+)");
   rdcarray<rdcstr> otherJSONs;
 };
 

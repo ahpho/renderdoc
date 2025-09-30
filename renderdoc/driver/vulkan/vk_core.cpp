@@ -123,7 +123,7 @@ bool DescriptorTrieNode::operator==(const DescriptorTrieNode &o) const
       return true;
   }
 
-  if(type != o.type || resource != o.resource || sampler != o.sampler || offset != o.offset)
+  if(resource != o.resource || sampler != o.sampler || offset != o.offset)
     return false;
 
   // deliberately allow imageLayout differences to be considered equal still - some drivers are
@@ -132,7 +132,30 @@ bool DescriptorTrieNode::operator==(const DescriptorTrieNode &o) const
   if((range & rangeToleranceMask) != (o.range & rangeToleranceMask))
     return false;
 
-  return true;
+  if(type == o.type)
+    return true;
+
+  // allow similar types alias based on usage if they're otherwise identical since not all descriptors
+  // vary this way and the type is provided on lookup so this won't cause any problems in practice
+  DescriptorSlotType aType = RDCMIN(type, o.type);
+  DescriptorSlotType bType = RDCMAX(type, o.type);
+
+  if(aType == DescriptorSlotType::SampledImage && bType == DescriptorSlotType::StorageImage)
+    return true;
+  if(aType == DescriptorSlotType::SampledImage && bType == DescriptorSlotType::InputAttachment)
+    return true;
+  if(aType == DescriptorSlotType::StorageImage && bType == DescriptorSlotType::InputAttachment)
+    return true;
+
+  if(aType == DescriptorSlotType::UniformBuffer && bType == DescriptorSlotType::StorageBuffer)
+    return true;
+  if(aType == DescriptorSlotType::UniformTexelBuffer &&
+     bType == DescriptorSlotType::StorageTexelBuffer)
+    return true;
+
+  // could maybe allow all buffer types to alias but we'll stick to this for now
+
+  return false;
 }
 
 uint64_t DescriptorTrieNode::rangeToleranceMask = ~0ULL;
@@ -1159,6 +1182,10 @@ static const VkExtensionProperties supportedExtensions[] = {
         VK_EXT_FRAGMENT_DENSITY_MAP_2_SPEC_VERSION,
     },
     {
+        VK_EXT_FRAGMENT_DENSITY_MAP_OFFSET_EXTENSION_NAME,
+        VK_EXT_FRAGMENT_DENSITY_MAP_OFFSET_SPEC_VERSION,
+    },
+    {
         VK_EXT_FRAGMENT_SHADER_INTERLOCK_EXTENSION_NAME,
         VK_EXT_FRAGMENT_SHADER_INTERLOCK_SPEC_VERSION,
     },
@@ -2035,6 +2062,10 @@ static const VkExtensionProperties supportedExtensions[] = {
         VK_QCOM_RENDER_PASS_STORE_OPS_SPEC_VERSION,
     },
     {
+        VK_VALVE_FRAGMENT_DENSITY_MAP_LAYERED_EXTENSION_NAME,
+        VK_VALVE_FRAGMENT_DENSITY_MAP_LAYERED_SPEC_VERSION,
+    },
+    {
         VK_VALVE_MUTABLE_DESCRIPTOR_TYPE_EXTENSION_NAME,
         VK_VALVE_MUTABLE_DESCRIPTOR_TYPE_SPEC_VERSION,
     },
@@ -2801,6 +2832,8 @@ bool WrappedVulkan::EndFrameCapture(DeviceOwnedWindow devWnd)
 
   rdcarray<VkDeviceMemory> DeadMemories;
   rdcarray<VkBuffer> DeadBuffers;
+  rdcarray<VkImage> DeadImages;
+  rdcarray<VkImageView> DeadImageViews;
 
   // transition back to IDLE atomically
   {
@@ -2827,6 +2860,8 @@ bool WrappedVulkan::EndFrameCapture(DeviceOwnedWindow devWnd)
       SCOPED_LOCK(m_DeviceAddressResourcesLock);
       DeadMemories.swap(m_DeviceAddressResources.DeadMemories);
       DeadBuffers.swap(m_DeviceAddressResources.DeadBuffers);
+      DeadImages.swap(m_DeviceAddressResources.DeadImages);
+      DeadImageViews.swap(m_DeviceAddressResources.DeadImageViews);
     }
   }
 
@@ -2835,6 +2870,12 @@ bool WrappedVulkan::EndFrameCapture(DeviceOwnedWindow devWnd)
 
   for(VkBuffer b : DeadBuffers)
     vkDestroyBuffer(m_Device, b, NULL);
+
+  for(VkImage i : DeadImages)
+    vkDestroyImage(m_Device, i, NULL);
+
+  for(VkImageView v : DeadImageViews)
+    vkDestroyImageView(m_Device, v, NULL);
 
   // gather backbuffer screenshot
   const uint32_t maxSize = 2048;
@@ -3205,6 +3246,11 @@ bool WrappedVulkan::DiscardFrameCapture(DeviceOwnedWindow devWnd)
 
   m_CapturedFrames.pop_back();
 
+  rdcarray<VkDeviceMemory> DeadMemories;
+  rdcarray<VkBuffer> DeadBuffers;
+  rdcarray<VkImage> DeadImages;
+  rdcarray<VkImageView> DeadImageViews;
+
   // transition back to IDLE atomically
   {
     SCOPED_WRITELOCK(m_CapTransitionLock);
@@ -3224,7 +3270,27 @@ bool WrappedVulkan::DiscardFrameCapture(DeviceOwnedWindow devWnd)
         (*it)->memMapState->needRefData = false;
       }
     }
+
+    {
+      SCOPED_LOCK(m_DeviceAddressResourcesLock);
+      DeadMemories.swap(m_DeviceAddressResources.DeadMemories);
+      DeadBuffers.swap(m_DeviceAddressResources.DeadBuffers);
+      DeadImages.swap(m_DeviceAddressResources.DeadImages);
+      DeadImageViews.swap(m_DeviceAddressResources.DeadImageViews);
+    }
   }
+
+  for(VkDeviceMemory m : DeadMemories)
+    vkFreeMemory(m_Device, m, NULL);
+
+  for(VkBuffer b : DeadBuffers)
+    vkDestroyBuffer(m_Device, b, NULL);
+
+  for(VkImage i : DeadImages)
+    vkDestroyImage(m_Device, i, NULL);
+
+  for(VkImageView v : DeadImageViews)
+    vkDestroyImageView(m_Device, v, NULL);
 
   Atomic::Inc32(&m_ReuseEnabled);
 
@@ -4597,6 +4663,8 @@ bool WrappedVulkan::ProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
     case VulkanChunk::vkCmdBeginRendering:
       return Serialise_vkCmdBeginRendering(ser, VK_NULL_HANDLE, NULL);
     case VulkanChunk::vkCmdEndRendering: return Serialise_vkCmdEndRendering(ser, VK_NULL_HANDLE);
+    case VulkanChunk::vkCmdEndRendering2EXT:
+      return Serialise_vkCmdEndRendering2EXT(ser, VK_NULL_HANDLE, NULL);
     case VulkanChunk::vkCmdSetRenderingAttachmentLocations:
       return Serialise_vkCmdSetRenderingAttachmentLocations(ser, VK_NULL_HANDLE, NULL);
     case VulkanChunk::vkCmdSetRenderingInputAttachmentIndices:

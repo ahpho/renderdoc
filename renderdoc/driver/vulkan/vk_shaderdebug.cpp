@@ -3738,7 +3738,7 @@ static void CreateInputFetcher(rdcarray<uint32_t> &spv,
       laneValue subid;
       subid.name = "__rd_subgroupid";
       subid.structIndex = structMembers.size();
-      subid.type = uint3Type;
+      subid.type = uint32Type;
       subid.base = editor.AddBuiltinInputLoad(subid.loadOps, newGlobals, stage,
                                               rdcspv::BuiltIn::SubgroupId, uint32Type);
       editor.SetName(subid.base, subid.name);
@@ -6281,7 +6281,7 @@ ShaderDebugTrace *VulkanReplay::DebugComputeCommon(ShaderStage stage, uint32_t e
                compData->threadid[1] * threadDim[0] + compData->threadid[0];
       }
 
-      if(rdcfixedarray<uint32_t, 3>(compData->threadid) == threadid)
+      if(rdcfixedarray<uint32_t, 3>(compData->threadid) == threadid && subgroupData->isActive)
         laneIndex = lane;
 
       apiWrapper->thread_props[lane][(size_t)rdcspv::ThreadProperty::Active] = subgroupData->isActive;

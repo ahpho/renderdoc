@@ -854,7 +854,7 @@ uint32_t GetDescriptorSizeOfBind(VulkanResourceManager *resourceMan,
 }
 
 static void ProcessStaticDescriptorAccess(VulkanResourceManager *resourceMan,
-                                          ShaderReflection *refl, ResourceId specStorage,
+                                          const ShaderReflection *refl, ResourceId specStorage,
                                           rdcarray<DescriptorAccess> &descriptorAccess,
                                           rdcarray<const DescSetLayout *> setLayoutInfos)
 {
@@ -1268,6 +1268,13 @@ void VulkanCreationInfo::Pipeline::Init(VulkanResourceManager *resourceMan,
           pCreateInfo, VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO);
   if(robustness)
     vertexInputRobustness = robustness->vertexInputs;
+
+  maxFragmentDensityMapLayers = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DEVICE_DEFAULT;
+  const VkPipelineFragmentDensityMapLayeredCreateInfoVALVE *layered =
+      (const VkPipelineFragmentDensityMapLayeredCreateInfoVALVE *)FindNextStruct(
+          pCreateInfo, VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_DENSITY_MAP_LAYERED_CREATE_INFO_VALVE);
+  if(layered)
+    maxFragmentDensityMapLayers = layered->maxFragmentDensityMapLayers;
 
   // VkPipelineShaderStageCreateInfo
   for(uint32_t i = 0; i < pCreateInfo->stageCount; i++)

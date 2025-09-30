@@ -163,7 +163,7 @@ RDResult D3D12Replay::FatalErrorCheck()
 IReplayDriver *D3D12Replay::MakeDummyDriver()
 {
   // gather up the shaders we've allocated to pass to the dummy driver
-  rdcarray<ShaderReflection *> shaders;
+  rdcarray<const ShaderReflection *> shaders;
   WrappedID3D12Shader::GetReflections(shaders);
 
   IReplayDriver *dummy = new DummyDriver(this, shaders, m_pDevice->DetachStructuredFile());
@@ -530,13 +530,13 @@ rdcarray<ShaderEntryPoint> D3D12Replay::GetShaderEntryPoints(ResourceId shader)
 
   WrappedID3D12Shader *sh = (WrappedID3D12Shader *)res;
 
-  ShaderReflection &ret = sh->GetDetails();
+  const ShaderReflection &ret = sh->GetDetails();
 
   return {{"main", ret.stage}};
 }
 
-ShaderReflection *D3D12Replay::GetShader(ResourceId pipeline, ResourceId shader,
-                                         ShaderEntryPoint entry)
+const ShaderReflection *D3D12Replay::GetShader(ResourceId pipeline, ResourceId shader,
+                                               ShaderEntryPoint entry)
 {
   WrappedID3D12Shader *sh =
       m_pDevice->GetResourceManager()->GetCurrentAs<WrappedID3D12Shader>(shader);
@@ -594,13 +594,11 @@ rdcstr D3D12Replay::DisassembleShader(ResourceId pipeline, const ShaderReflectio
   if(!sh)
     return "; Invalid Shader Specified";
 
-  DXBC::DXBCContainer *dxbc = sh->GetDXBC();
-
   if(target == DXBCDXILDisassemblyTarget || target.empty())
-    return dxbc->GetDisassembly(false);
+    return sh->GetWriteableDXBC()->GetDisassembly(false);
 
   if(target == DXCDXILDisassemblyTarget)
-    return dxbc->GetDisassembly(true);
+    return sh->GetWriteableDXBC()->GetDisassembly(true);
 
   if(target == LiveDriverDisassemblyTarget)
   {
@@ -4300,22 +4298,6 @@ void D3D12Replay::GetTextureData(ResourceId tex, const Subresource &sub,
         memcpy(dst, src, dstRowPitch);
       }
     }
-
-    // for 3D textures if we wanted a particular slice (slice3DCopy > 0) copy it into the beginning.
-    if(layouts[0].Footprint.Depth > 1 && slice3DCopy > 0 &&
-       (int)slice3DCopy < layouts[0].Footprint.Depth)
-    {
-      for(UINT y = 0; y < rowcount; y++)
-      {
-        UINT srcrow = y + slice3DCopy * rowcount;
-        UINT dstrow = y;
-
-        byte *src = pData + layouts[0].Footprint.RowPitch * srcrow;
-        byte *dst = data.data() + dstRowPitch * dstrow;
-
-        memcpy(dst, src, dstRowPitch);
-      }
-    }
   }
 
   SAFE_DELETE_ARRAY(layouts);
@@ -4810,7 +4792,7 @@ RDResult D3D12_CreateReplayDevice(RDCFile *rdc, const ReplayOptions &opts, IRepl
       RETURN_ERROR_RESULT(
           ResultCode::APIHardwareUnsupported,
           "This capture needs AGS extensions to replay, but device selected for replay can't "
-          "support nvapi extensions");
+          "support AGS extensions");
     }
   }
 
