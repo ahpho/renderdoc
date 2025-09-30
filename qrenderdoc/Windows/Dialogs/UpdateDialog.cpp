@@ -36,6 +36,9 @@
 #include "ui_UpdateDialog.h"
 #include "version.h"
 
+#define STRINGIZE2(a) #a
+#define STRINGIZE(a) STRINGIZE2(a)
+
 UpdateDialog::UpdateDialog(QString updateResponse, QWidget *parent)
     : QDialog(parent), ui(new Ui::UpdateDialog)
 {
@@ -255,8 +258,8 @@ void UpdateDialog::on_update_clicked()
 
       bool success = true;
 
-      QString dll = lit("renderdoc.dll");
-      QString cmd = lit("renderdoccmd.exe");
+      QString dll = lit(STRINGIZE(RDOC_BASE_NAME) ".dll");
+      QString cmd = lit(STRINGIZE(RDOC_BASE_NAME) "cmd.exe");
 
       QFile::remove(dir.absoluteFilePath(dll));
       QFile::remove(dir.absoluteFilePath(cmd));

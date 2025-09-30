@@ -735,7 +735,7 @@ rdcpair<RDResult, uint32_t> Process::InjectIntoProcess(uint32_t pid,
 
       renderdocPath[idx] = 0;
 
-      wcscat_s(renderdocPath, L"\\Win32\\Development\\renderdoccmd.exe");
+      wcscat_s(renderdocPath, L"\\Win32\\Development\\" STRINGIZE(RDOC_BASE_NAME) "cmd.exe");
     }
 
     if(!devLocation)
@@ -748,7 +748,7 @@ rdcpair<RDResult, uint32_t> Process::InjectIntoProcess(uint32_t pid,
 
         renderdocPath[idx] = 0;
 
-        wcscat_s(renderdocPath, L"\\Win32\\Release\\renderdoccmd.exe");
+        wcscat_s(renderdocPath, L"\\Win32\\Release\\" STRINGIZE(RDOC_BASE_NAME) "cmd.exe");
       }
     }
 
@@ -763,7 +763,7 @@ rdcpair<RDResult, uint32_t> Process::InjectIntoProcess(uint32_t pid,
         *slash = 0;
 
       // append path
-      wcscat_s(renderdocPath, L"\\x86\\renderdoccmd.exe");
+      wcscat_s(renderdocPath, L"\\x86\\" STRINGIZE(RDOC_BASE_NAME) "cmd.exe");
     }
 #else
     // if it looks like we're in the development environment, look for the alternate bitness in the
@@ -775,7 +775,7 @@ rdcpair<RDResult, uint32_t> Process::InjectIntoProcess(uint32_t pid,
 
       renderdocPath[idx] = 0;
 
-      wcscat_s(renderdocPath, L"\\x64\\Development\\renderdoccmd.exe");
+      wcscat_s(renderdocPath, L"\\x64\\Development\\" STRINGIZE(RDOC_BASE_NAME) "cmd.exe");
     }
 
     if(!devLocation)
@@ -788,7 +788,7 @@ rdcpair<RDResult, uint32_t> Process::InjectIntoProcess(uint32_t pid,
 
         renderdocPath[idx] = 0;
 
-        wcscat_s(renderdocPath, L"\\x64\\Release\\renderdoccmd.exe");
+        wcscat_s(renderdocPath, L"\\x64\\Release\\" STRINGIZE(RDOC_BASE_NAME) "cmd.exe");
       }
     }
 
@@ -808,7 +808,7 @@ rdcpair<RDResult, uint32_t> Process::InjectIntoProcess(uint32_t pid,
         *slash = 0;
 
       // append path
-      wcscat_s(renderdocPath, L"\\renderdoccmd.exe");
+      wcscat_s(renderdocPath, L"\\" STRINGIZE(RDOC_BASE_NAME) "cmd.exe");
     }
 #endif
 

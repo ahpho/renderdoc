@@ -3,6 +3,7 @@
 #include <Windows.h>
 #include <psapi.h>
 #include <tlhelp32.h>
+#include <string>
 #include <fstream>
 #include <iostream>
 

@@ -159,7 +159,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="!Exists('$(SolutionDir)\qrenderdoc\3rdparty\pyside\include\PySide2\pyside.h') OR '$(CustomPythonUsed)'!='0'">
     <ClCompile>
-      <PreprocessorDefinitions>PYSIDE2_ENABLED=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>RDOC_BASE_NAME=senderdod;PYSIDE2_ENABLED=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Development'">
@@ -186,7 +186,10 @@
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
     <PostBuildEvent>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">call ..\_post_build.cmd $(OutputDirectory)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">call ..\_post_build.cmd $(OutputDirectory) $(SolutionDir)_install\</Command>
+    </PostBuildEvent>
+    <PostBuildEvent>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">call ..\_post_build_x86.cmd $(OutputDirectory) $(SolutionDir)_install\</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>

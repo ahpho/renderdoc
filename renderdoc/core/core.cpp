@@ -319,7 +319,7 @@ void RenderDoc::RecreateCrashHandler()
 
   // only create crash handler when we're not in renderdoccmd (to prevent infinite loop as
   // the crash handler itself launches renderdoccmd)
-  if(exename.contains("renderdoccmd"))
+  if(exename.contains(STRINGIZE(RDOC_BASE_NAME) "cmd"))
     return;
 
 #if ENABLED(RDOC_WIN32)

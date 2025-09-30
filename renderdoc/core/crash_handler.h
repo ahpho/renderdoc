@@ -26,6 +26,9 @@
 // currently breakpad crash-handler is only available on windows
 #if ENABLED(RDOC_RELEASE) && ENABLED(RDOC_WIN32) && RENDERDOC_OFFICIAL_BUILD
 
+#define STRINGIZE2(a) #a
+#define STRINGIZE(a) STRINGIZE2(a)
+
 #define RDOC_CRASH_HANDLER OPTION_ON
 
 // breakpad
@@ -135,7 +138,7 @@ public:
 
     rdcstr cmdline = "\"";
     cmdline += get_dirname(dllpath);
-    cmdline += "/renderdoccmd.exe\" crashhandle --pipe ";
+    cmdline += "/" STRINGIZE(RDOC_BASE_NAME) "cmd.exe\" crashhandle --pipe ";
     cmdline += m_PipeName;
 
     rdcwstr params = StringFormat::UTF82Wide(cmdline);

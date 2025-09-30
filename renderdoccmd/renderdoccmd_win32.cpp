@@ -37,6 +37,9 @@
 #include <shlobj.h>
 #include <tlhelp32.h>
 
+#define STRINGIZE2(a) #a
+#define STRINGIZE(a) STRINGIZE2(a)
+
 static std::string conv(const std::wstring &str)
 {
   std::string ret;
@@ -434,7 +437,7 @@ public:
     // run original UI exe (as admin still) and tell it an update succeeded so that it can do any last updates
     std::wstring cmdline = L"\"";
     cmdline += wide_path;
-    cmdline += L"/qrenderdoc.exe\" ";
+    cmdline += L"/q" STRINGIZE(RDOC_BASE_NAME) ".exe\" ";
     if(successful)
       cmdline += L"--updatedone_admin";
     else
@@ -509,7 +512,7 @@ public:
           show.vt = VT_I4;
           show.lVal = SW_SHOWNORMAL;
 
-          std::wstring qrenderdoc = wide_path + L"/qrenderdoc.exe";
+          std::wstring qrenderdoc = wide_path + L"/q" STRINGIZE(RDOC_BASE_NAME) ".exe";
 
           BSTR path = SysAllocStringLen(qrenderdoc.c_str(), (UINT)qrenderdoc.size());
           memcpy(path, qrenderdoc.c_str(), qrenderdoc.size());
@@ -533,7 +536,7 @@ public:
 
     cmdline = L"\"";
     cmdline += wide_path;
-    cmdline += L"/qrenderdoc.exe\" --updatedone";
+    cmdline += L"/q" STRINGIZE(RDOC_BASE_NAME) ".exe\" --updatedone";
     ZeroMemory(paramsAlloc, sizeof(wchar_t) * 512);
     wcscpy_s(paramsAlloc, 511, cmdline.c_str());
 
@@ -729,7 +732,7 @@ public:
 
           ZeroMemory(paramsAlloc, sizeof(wchar_t) * 512);
 
-          _snwprintf_s(paramsAlloc, 511, 511, L"%s/qrenderdoc.exe --crash %s", exepath.c_str(),
+          _snwprintf_s(paramsAlloc, 511, 511, L"%s/q" STRINGIZE(RDOC_BASE_NAME) ".exe --crash %s", exepath.c_str(),
                        destjson.c_str());
 
           PROCESS_INFORMATION pi;
@@ -815,7 +818,7 @@ public:
     wchar_t rdocpath[1024];
 
     // fetch path to our matching renderdoc.dll
-    HMODULE rdoc = GetModuleHandleA("renderdoc.dll");
+    HMODULE rdoc = GetModuleHandleA(STRINGIZE(RDOC_BASE_NAME) ".dll");
 
     if(rdoc == NULL)
     {

@@ -1,2 +1,7 @@
 windows构建：visual studio=2022、platform toolset=v140、winsdk=10.0.18362
 android构建：ubuntu 20.04、ndk=android-ndk-r21e
+
+windows构建：
+1. 直接打开renderdoc.sln，选择Release|x64，rebuild
+2. 选择Release|Win32，rebuild（可选）
+3. 编译后的东西在_install目录
