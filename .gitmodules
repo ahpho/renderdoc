@@ -1,3 +1,6 @@
 [submodule "tools/Detours"]
 	path = tools/Detours
 	url = https://github.com/microsoft/Detours.git
+[submodule "tools/FakeD3dDll"]
+	path = tools/FakeD3dDll
+	url = https://github.com/ahpho/RenderDocInjector.git
