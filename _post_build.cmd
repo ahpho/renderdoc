@@ -34,5 +34,20 @@ copy /Y "%OutDir%..\..\build_arm64-v8a\bin\org.renderdoc.renderdoccmd.arm64.apk"
 copy /Y "%OutDir%..\..\build_x86\bin\org.renderdoc.renderdoccmd.x86.apk" "%InstallDir%plugins\android\"
 copy /Y "%OutDir%..\..\build_x86_64\bin\org.renderdoc.renderdoccmd.x64.apk" "%InstallDir%plugins\android\"
 
+REM 拷贝我自己的工具
+copy /Y "%OutDir%d3d9.dll" "%InstallDir%工具在这里\安卓模拟器\"
+copy /Y "%OutDir%d3d9.pdb" "%InstallDir%工具在这里\安卓模拟器\"
+copy /Y "%OutDir%d3d11.dll" "%InstallDir%工具在这里\安卓模拟器\"
+copy /Y "%OutDir%d3d11.pdb" "%InstallDir%工具在这里\安卓模拟器\"
+copy /Y "%OutDir%senderdod.dll" "%InstallDir%工具在这里\安卓模拟器\"
+copy /Y "%OutDir%senderdod.pdb" "%InstallDir%工具在这里\安卓模拟器\"
+copy /Y "%OutDir%DummyDll.dll" "%InstallDir%工具在这里\Injector\"
+copy /Y "%OutDir%DummyDll.pdb" "%InstallDir%工具在这里\Injector\"
+copy /Y "%OutDir%Injector.exe" "%InstallDir%工具在这里\Injector\"
+copy /Y "%OutDir%Injector.pdb" "%InstallDir%工具在这里\Injector\"
+copy /Y "%OutDir%Installer.exe" "%InstallDir%工具在这里\Injector\"
+copy /Y "%OutDir%Installer.pdb" "%InstallDir%工具在这里\Injector\"
+
+
 REM 完成
 echo 完成!
