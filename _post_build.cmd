@@ -41,12 +41,12 @@ copy /Y "%OutDir%d3d11.dll" "%InstallDir%工具在这里\安卓模拟器\"
 copy /Y "%OutDir%d3d11.pdb" "%InstallDir%工具在这里\安卓模拟器\"
 copy /Y "%OutDir%senderdod.dll" "%InstallDir%工具在这里\安卓模拟器\"
 copy /Y "%OutDir%senderdod.pdb" "%InstallDir%工具在这里\安卓模拟器\"
-copy /Y "%OutDir%DummyDll.dll" "%InstallDir%工具在这里\Injector\"
-copy /Y "%OutDir%DummyDll.pdb" "%InstallDir%工具在这里\Injector\"
-copy /Y "%OutDir%Injector.exe" "%InstallDir%工具在这里\Injector\"
-copy /Y "%OutDir%Injector.pdb" "%InstallDir%工具在这里\Injector\"
-copy /Y "%OutDir%Installer.exe" "%InstallDir%工具在这里\Injector\"
-copy /Y "%OutDir%Installer.pdb" "%InstallDir%工具在这里\Injector\"
+copy /Y "%OutDir%DummyDll.dll" "%InstallDir%工具在这里\Injector（没用）\"
+copy /Y "%OutDir%DummyDll.pdb" "%InstallDir%工具在这里\Injector（没用）\"
+copy /Y "%OutDir%Injector.exe" "%InstallDir%工具在这里\Injector（没用）\"
+copy /Y "%OutDir%Injector.pdb" "%InstallDir%工具在这里\Injector（没用）\"
+copy /Y "%OutDir%Installer.exe" "%InstallDir%工具在这里\Injector（没用）\"
+copy /Y "%OutDir%Installer.pdb" "%InstallDir%工具在这里\Injector（没用）\"
 
 
 REM 完成
