@@ -602,6 +602,25 @@ RenderDoc::~RenderDoc()
   StringFormat::Shutdown();
 }
 
+void RenderDoc::SetDebugIniValue(const rdcstr &section, const rdcstr &key, const rdcstr &value)
+{
+  rdcstr toFind((rdcstr)section + "/" + key);
+  m_DebugIniMap[toFind] = value;
+}
+bool RenderDoc::GetDebugIniBool(const rdcstr &section, const rdcstr &key)
+{
+  rdcstr toFind((rdcstr)section + "/" + key);
+  auto it = m_DebugIniMap.find(toFind);
+  if(it == m_DebugIniMap.end())
+    return false;
+  const char *value = it->second.c_str();
+  if(!strcmp(value, "true") || !strcmp(value, "True") || !strcmp(value, "TRUE") ||
+     !strcmp(value, "1"))
+    return true;
+  else
+    return false;
+}
+
 void RenderDoc::RemoveHooks()
 {
   if(m_ExHandler)

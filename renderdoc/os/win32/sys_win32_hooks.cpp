@@ -132,6 +132,8 @@ public:
 
     m_RecurseSlot = Threading::AllocateTLSSlot();
     Threading::SetTLSValue(m_RecurseSlot, NULL);
+
+    RDCLOG("Registering Win32 system hooks ends.");
   }
 
 private:

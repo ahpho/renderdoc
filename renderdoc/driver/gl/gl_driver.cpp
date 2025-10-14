@@ -1026,11 +1026,15 @@ GLResourceRecord *WrappedOpenGL::GetContextRecord()
 
 void WrappedOpenGL::UseUnusedSupportedFunction(const char *name)
 {
-  // ksh: OpenGL时强行忽略指定函数，参考：https://zhuanlan.zhihu.com/p/688951417
-  if (strcmp(name, "glEGLImageTargetTexture2DOES") == 0)
+  // ksh: OpenGL时强行忽略指定函数，参考：
+  // https://zhuanlan.zhihu.com/p/688951417
+  if (!RenderDoc::Inst().GetDebugIniBool(RFX_SECTION, "disableIgnoreEGLImageTargetTexture"))
   {
-    RDCERR("Unsupported function %s used, but skip remove all frame capturer", name);
-    return;
+    if(strcmp(name, "glEGLImageTargetTexture2DOES") == 0)
+    {
+      RDCERR("Unsupported function %s used, but skip remove all frame capturer", name);
+      return;
+    }
   }
 
   // if this is the first time an unused function is called, remove all frame capturers immediately

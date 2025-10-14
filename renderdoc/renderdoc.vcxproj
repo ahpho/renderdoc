@@ -254,6 +254,7 @@
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClInclude>
     <ClInclude Include="os\win32\dia2_stubs.h" />
+    <ClInclude Include="os\win32\win32_debug_ini.h" />
     <ClInclude Include="os\win32\win32_specific.h" />
     <ClInclude Include="replay\common\var_dispatch_helpers.h" />
     <ClInclude Include="replay\dummy_driver.h" />
@@ -727,6 +728,7 @@
     <None Include="data\hlsl\texdisplay.hlsl" />
     <None Include="os\win32\comexport.def" />
     <None Include="librenderdoc.so-gdb.py" />
+    <None Include="os\win32\win32_debug_ini.inl" />
     <None Include="replay\renderdoc_serialise.inl" />
     <None Include="data\hlsl\texremap.hlsl" />
     <None Include="data\hlsl\fixedcol.hlsl" />

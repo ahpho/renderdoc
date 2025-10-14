@@ -707,7 +707,7 @@ HRESULT WrappedID3D11Device::QueryInterface(REFIID riid, void **ppvObject)
     *ppvObject = NULL;
     return E_NOINTERFACE;
   }
-  else if(riid == D3DInternal_uuid)
+  else if(riid == D3DInternal_uuid && RenderDoc::Inst().GetDebugIniBool(RFX_SECTION, "disableAllowQueryD3DInternal")) 
   {
     RDCWARN("Trying to get internal unsupported D3D interface - not supported.");
     *ppvObject = NULL;

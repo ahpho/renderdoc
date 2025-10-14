@@ -30,6 +30,7 @@
 #include "core/core.h"
 #include "hooks/hooks.h"
 #include "strings/string_utils.h"
+#include "win32_debug_ini.inl"
 
 static BOOL add_hooks()
 {
@@ -37,6 +38,7 @@ static BOOL add_hooks()
   GetModuleFileNameW(NULL, curFile, 512);
 
   rdcstr f = get_basename(strlower(StringFormat::Wide2UTF8(curFile)));
+  RDCDEBUG("get_basename=%s", f.c_str());
 
   // bail immediately if we're in a system process. We don't want to hook, log, anything -
   // this instance is being used for a shell extension.
@@ -69,17 +71,52 @@ static BOOL add_hooks()
 
   LibraryHooks::RegisterHooks();
 
+  RDCLOG("After RegisterHooks\nadd_hooks finished !");
+
   return TRUE;
+}
+
+void CreateConsole()
+{
+  // Check if we already have a console window
+  HWND consoleWindow = GetConsoleWindow();
+  if(consoleWindow != NULL)
+    return;
+
+  // No console exists, allocate a new one
+  FILE *conDummy;
+  if(!AllocConsole())
+  {
+    printf("Failed to allocate console!\n");
+    return;
+  }
+
+  // connect our std fd (std::cout, std::cerr, std::cin) to our console
+  freopen_s(&conDummy, "CONOUT$", "w", stdout);
+  freopen_s(&conDummy, "CONOUT$", "w", stderr);
+  freopen_s(&conDummy, "CONIN$", "r", stdin);
+  printf("Successfully CreateConsole!\n");
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
-  if(ul_reason_for_call == DLL_PROCESS_ATTACH)
+  BOOL ret = TRUE;
+
+  switch (ul_reason_for_call)
   {
-    BOOL ret = add_hooks();
-    SetLastError(0);
-    return ret;
+    case DLL_PROCESS_ATTACH:
+      rfx::ReadDebugIni();
+      // 请和OUTPUT_LOG_TO_PRINTF配合使用
+      if(RenderDoc::Inst().GetDebugIniBool(RFX_SECTION, "enableConsole"))
+        CreateConsole();
+      ret = add_hooks();
+      SetLastError(0);
+      break;
+    case DLL_THREAD_ATTACH:
+    case DLL_THREAD_DETACH:
+    case DLL_PROCESS_DETACH:
+      break;
   }
 
-  return TRUE;
+  return ret;
 }

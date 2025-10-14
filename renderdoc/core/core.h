@@ -440,6 +440,13 @@ public:
     cb(progress);
   }
 
+  // Rfx: debug.ini
+  #ifndef RFX_SECTION
+  #define RFX_SECTION "RfxSo"
+  #endif
+  void SetDebugIniValue(const rdcstr &section, const rdcstr &key, const rdcstr &value);
+  bool GetDebugIniBool(const rdcstr &section, const rdcstr &key);
+
   // set from outside of the device creation interface
   void SetCaptureFileTemplate(const rdcstr &logFile);
   const char *GetCaptureFileTemplate() const { return m_CaptureFileTemplate.c_str(); }
@@ -627,6 +634,8 @@ private:
   void SyncAvailableGPUThread();
 
   bool m_Replay;
+
+  std::map<rdcstr, rdcstr> m_DebugIniMap; // Rfx
 
   uint32_t m_Cap;
 

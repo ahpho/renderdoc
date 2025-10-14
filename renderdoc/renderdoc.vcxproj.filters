@@ -582,6 +582,9 @@
     <ClInclude Include="core\rdcbytetrie.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="os\win32\win32_debug_ini.h">
+      <Filter>OS\Win32</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="maths\camera.cpp">
@@ -1156,6 +1159,9 @@
     </None>
     <None Include="data\hlsl\quadswizzle.hlsl">
       <Filter>Resources\hlsl</Filter>
+    </None>
+    <None Include="os\win32\win32_debug_ini.inl">
+      <Filter>OS\Win32</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

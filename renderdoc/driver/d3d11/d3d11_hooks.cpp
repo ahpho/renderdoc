@@ -63,6 +63,8 @@ public:
 
     m_RecurseSlot = Threading::AllocateTLSSlot();
     Threading::SetTLSValue(m_RecurseSlot, NULL);
+
+    RDCLOG("Registering D3D11 hooks ends.");
   }
 
 private:
