@@ -47,6 +47,16 @@ copy /Y "%OutDir%Injector.exe" "%InstallDir%工具在这里\Injector（没用）\"
 copy /Y "%OutDir%Injector.pdb" "%InstallDir%工具在这里\Injector（没用）\"
 copy /Y "%OutDir%Installer.exe" "%InstallDir%工具在这里\Injector（没用）\"
 copy /Y "%OutDir%Installer.pdb" "%InstallDir%工具在这里\Injector（没用）\"
+del /Q "%InstallDir%d3d9.dll"
+del /Q "%InstallDir%d3d9.pdb"
+del /Q "%InstallDir%d3d11.dll"
+del /Q "%InstallDir%d3d11.pdb"
+del /Q "%InstallDir%DummyDll.dll"
+del /Q "%InstallDir%DummyDll.pdb"
+del /Q "%InstallDir%Injector.exe"
+del /Q "%InstallDir%Injector.pdb"
+del /Q "%InstallDir%Installer.exe"
+del /Q "%InstallDir%Installer.pdb"
 
 
 REM 完成
