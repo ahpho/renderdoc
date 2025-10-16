@@ -1,4 +1,4 @@
-/******************************************************************************
+﻿/******************************************************************************
  * The MIT License (MIT)
  *
  * Copyright (c) 2019-2025 Baldur Karlsson
@@ -1248,7 +1248,12 @@ RDResult BackupAndChangeRegistry(GlobalHookData &hookdata, const rdcstr &shimpat
     RETURN_ERROR_RESULT(
         ResultCode::FileIOFailed,
         "RenderDoc is installed on a volume or system that has short paths disabled.\n"
-        "For the global hook, short paths must be enabled where RenderDoc is installed.");
+        "For the global hook, short paths must be enabled where RenderDoc is installed."
+        "\n管理员权限打开cmd控制台，运行以下命令:\n"
+        "短目录功能查询: fsutil 8dot3name query D:\n"
+        "短目录功能启用: fsutil 8dot3name set D: 0\n"
+        "\n此功能启用后只影响新创建的文件、目录，故需把整个RenderDoc目录复制一份。"
+    );
   }
 
   if(!shimpathWow32.empty())
@@ -1261,7 +1266,12 @@ RDResult BackupAndChangeRegistry(GlobalHookData &hookdata, const rdcstr &shimpat
       RETURN_ERROR_RESULT(
           ResultCode::FileIOFailed,
           "RenderDoc is installed on a volume or system that has short paths disabled.\n"
-          "For the global hook, short paths must be enabled where RenderDoc is installed.");
+          "For the global hook, short paths must be enabled where RenderDoc is installed."
+          "\n管理员权限打开cmd控制台，运行以下命令:\n"
+          "短目录功能查询: fsutil 8dot3name query D:\n"
+          "短目录功能启用: fsutil 8dot3name set D: 0\n"
+          "\n此功能启用后只影响新创建的文件、目录，故需把整个RenderDoc目录复制一份。"
+      );
     }
   }
 
