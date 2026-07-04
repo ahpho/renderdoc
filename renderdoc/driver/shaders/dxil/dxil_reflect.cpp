@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2020-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,8 +27,6 @@
 #include "strings/string_utils.h"
 #include "dxil_bytecode.h"
 #include "dxil_common.h"
-
-RDOC_EXTERN_CONFIG(bool, D3D_Hack_EnableGroups);
 
 namespace DXIL
 {
@@ -322,7 +320,7 @@ EntryPointInterface::ResourceBase::ResourceBase(ResourceClass resourceClass, con
     srv.shape = getival<ResourceKind>(md->children[(size_t)ResField::SRVShape]);
     srv.sampleCount = getival<uint32_t>(md->children[(size_t)ResField::SRVSampleCount]);
     srv.compType = ComponentType::Invalid;
-    srv.elementStride = ~0U;
+    srv.elementStride = (srv.shape == DXIL::ResourceKind::RawBuffer) ? 1 : ~0U;
     const Metadata *tags = md->children[(size_t)ResField::SRVTags];
     for(size_t t = 0; tags && t < tags->children.size(); t += 2)
     {
@@ -350,7 +348,7 @@ EntryPointInterface::ResourceBase::ResourceBase(ResourceClass resourceClass, con
     uav.rasterizerOrderedView =
         (getival<uint32_t>(md->children[(size_t)ResField::UAVRasterOrder]) == 1);
     uav.compType = ComponentType::Invalid;
-    uav.elementStride = ~0U;
+    uav.elementStride = (uav.shape == DXIL::ResourceKind::RawBuffer) ? 1 : ~0U;
     uav.samplerFeedback = SamplerFeedbackType::LastEntry;
     uav.atomic64Use = false;
 
@@ -1862,58 +1860,97 @@ rdcstr Program::GetDebugStatus()
             RDCASSERT(dxOpCode < DXOp::NumOpCodes, dxOpCode, DXOp::NumOpCodes);
             switch(dxOpCode)
             {
-              case DXOp::QuadReadLaneAt:
-              case DXOp::QuadOp:
-                // Only supported on pixel shaders
-                if(m_Type != DXBC::ShaderType::Pixel)
-                  return StringFormat::Fmt(
-                      "Only supported when debugging pixel shaders dx.op call `%s` %s",
-                      callFunc->name.c_str(), ToStr(dxOpCode).c_str());
-                continue;
-              case DXOp::WaveIsFirstLane:
-              case DXOp::WaveGetLaneIndex:
-              case DXOp::WaveGetLaneCount:
-              case DXOp::WaveAnyTrue:
-              case DXOp::WaveAllTrue:
-              case DXOp::WaveActiveAllEqual:
-              case DXOp::WaveActiveBallot:
-              case DXOp::WaveReadLaneAt:
-              case DXOp::WaveReadLaneFirst:
-              case DXOp::WaveActiveOp:
-              case DXOp::WaveActiveBit:
-              case DXOp::WavePrefixOp:
-              case DXOp::WavePrefixBitCount:
-              case DXOp::WaveAllBitCount:
-              case DXOp::WaveMatch:
-              case DXOp::WaveMultiPrefixOp:
-              case DXOp::WaveMultiPrefixBitCount:
-                if(!D3D_Hack_EnableGroups())
-                  return StringFormat::Fmt("Unsupported dx.op call `%s` %s", callFunc->name.c_str(),
-                                           ToStr(dxOpCode).c_str());
-                continue;
+              // Implement when required
+              case DXOp::CBufferLoad:
+                // loads single value from byte offset in constant buffer, 8-byte alignment on the offset
+
+              // SM6.1
+              case DXOp::AttributeAtVertex:
+                // Pixel shader: load input signature attributes for a specific vertexID (0-2)
+                // HLSL : GetAttributeAtVertex
+
+              // SM6.7
+              case DXOp::TextureStoreSample:
+                // stores texel data at specified sample index
+              case DXOp::TextureGatherRaw:
+                // Gather raw elements from 4 texels with no type conversions (SRV type is constrained)
+
+              // SM 6.8 : when SM6.8 is supporting by RenderDoc
+              case DXOp::StartVertexLocation:
+                // SV_BaseVertexLocation
+                // BaseVertexLocation from DrawIndexedInstanced or StartVertexLocation from DrawInstanced
+              case DXOp::StartInstanceLocation:
+                // SV_StartInstanceLocation
+                // StartInstanceLocation from Draw*Instanced
+              case DXOp::BarrierByMemoryType:
+              case DXOp::BarrierByMemoryHandle:
+
+              // No plans to implement
+
+              // MSAA
+              case DXOp::EvalSnapped:
+                // HLSL : EvaluateAttributeSnapped
+              case DXOp::EvalSampleIndex:
+                // HLSL : EvaluateAttributeAtSample
+              case DXOp::EvalCentroid:
+                // HLSL : EvaluateAttributeCentroid
+
+              case DXOp::CycleCounterLegacy:
+                // DXBC Shader-Internal Cycle Counter (Debug Only)
+
+              case DXOp::CheckAccessFullyMapped:
+                // determines whether all values from a Sample, Gather, or Load operation
+                // accessed mapped tiles in a tiled resource
+              case DXOp::WriteSamplerFeedback:
+              case DXOp::WriteSamplerFeedbackBias:
+              case DXOp::WriteSamplerFeedbackLevel:
+              case DXOp::WriteSamplerFeedbackGrad:
+
+              // DXIL Internal operations used during DXBC conversion
               case DXOp::TempRegLoad:
               case DXOp::TempRegStore:
               case DXOp::MinPrecXRegLoad:
               case DXOp::MinPrecXRegStore:
-              case DXOp::CBufferLoad:
-              case DXOp::BufferUpdateCounter:
-              case DXOp::CheckAccessFullyMapped:
-              case DXOp::EvalSnapped:
-              case DXOp::EvalSampleIndex:
-              case DXOp::EvalCentroid:
-              case DXOp::EmitStream:
-              case DXOp::CutStream:
-              case DXOp::EmitThenCutStream:
+
+              // Mesh Shaders
+              case DXOp::SetMeshOutputCounts:
+              case DXOp::EmitIndices:
+              case DXOp::StoreVertexOutput:
+              case DXOp::StorePrimitiveOutput:
+              case DXOp::GetMeshPayload:
+              case DXOp::DispatchMesh:
+
+              // Geometry Shaders: Hull/Domain
               case DXOp::GSInstanceID:
               case DXOp::LoadOutputControlPoint:
               case DXOp::LoadPatchConstant:
               case DXOp::DomainLocation:
               case DXOp::StorePatchConstant:
               case DXOp::OutputControlPointID:
-              case DXOp::CycleCounterLegacy:
-              case DXOp::AttributeAtVertex:
+              case DXOp::EmitStream:
+              case DXOp::CutStream:
+              case DXOp::EmitThenCutStream:
+
+              // Wave Matrix Operations
+              case DXOp::WaveMatrix_Annotate:
+              case DXOp::WaveMatrix_Depth:
+              case DXOp::WaveMatrix_Fill:
+              case DXOp::WaveMatrix_LoadRawBuf:
+              case DXOp::WaveMatrix_LoadGroupShared:
+              case DXOp::WaveMatrix_StoreRawBuf:
+              case DXOp::WaveMatrix_StoreGroupShared:
+              case DXOp::WaveMatrix_Multiply:
+              case DXOp::WaveMatrix_MultiplyAccumulate:
+              case DXOp::WaveMatrix_ScalarOp:
+              case DXOp::WaveMatrix_SumAccumulate:
+              case DXOp::WaveMatrix_Add:
+
+              // Ray Tracing
+              case DXOp::CreateHandleForLib:
+              case DXOp::CallShader:
               case DXOp::InstanceID:
               case DXOp::InstanceIndex:
+              case DXOp::PrimitiveIndex:
               case DXOp::HitKind:
               case DXOp::RayFlags:
               case DXOp::DispatchRaysIndex:
@@ -1930,19 +1967,6 @@ rdcstr Program::GetDebugStatus()
               case DXOp::AcceptHitAndEndSearch:
               case DXOp::TraceRay:
               case DXOp::ReportHit:
-              case DXOp::CallShader:
-              case DXOp::CreateHandleForLib:
-              case DXOp::PrimitiveIndex:
-              case DXOp::SetMeshOutputCounts:
-              case DXOp::EmitIndices:
-              case DXOp::GetMeshPayload:
-              case DXOp::StoreVertexOutput:
-              case DXOp::StorePrimitiveOutput:
-              case DXOp::DispatchMesh:
-              case DXOp::WriteSamplerFeedback:
-              case DXOp::WriteSamplerFeedbackBias:
-              case DXOp::WriteSamplerFeedbackLevel:
-              case DXOp::WriteSamplerFeedbackGrad:
               case DXOp::AllocateRayQuery:
               case DXOp::RayQuery_TraceRayInline:
               case DXOp::RayQuery_Proceed:
@@ -1978,32 +2002,16 @@ rdcstr Program::GetDebugStatus()
               case DXOp::RayQuery_CommittedPrimitiveIndex:
               case DXOp::RayQuery_CommittedObjectRayOrigin:
               case DXOp::RayQuery_CommittedObjectRayDirection:
-              case DXOp::GeometryIndex:
               case DXOp::RayQuery_CandidateInstanceContributionToHitGroupIndex:
               case DXOp::RayQuery_CommittedInstanceContributionToHitGroupIndex:
-              case DXOp::TextureGatherRaw:
-              case DXOp::TextureStoreSample:
-              case DXOp::WaveMatrix_Annotate:
-              case DXOp::WaveMatrix_Depth:
-              case DXOp::WaveMatrix_Fill:
-              case DXOp::WaveMatrix_LoadRawBuf:
-              case DXOp::WaveMatrix_LoadGroupShared:
-              case DXOp::WaveMatrix_StoreRawBuf:
-              case DXOp::WaveMatrix_StoreGroupShared:
-              case DXOp::WaveMatrix_Multiply:
-              case DXOp::WaveMatrix_MultiplyAccumulate:
-              case DXOp::WaveMatrix_ScalarOp:
-              case DXOp::WaveMatrix_SumAccumulate:
-              case DXOp::WaveMatrix_Add:
+              case DXOp::GeometryIndex:
+
+              // Workgraphs
               case DXOp::AllocateNodeOutputRecords:
               case DXOp::GetNodeRecordPtr:
               case DXOp::IncrementOutputCount:
-              case DXOp::OutputComplete:
               case DXOp::GetInputRecordCount:
-              case DXOp::FinishedCrossGroupSharing:
-              case DXOp::BarrierByMemoryType:
-              case DXOp::BarrierByMemoryHandle:
-              case DXOp::BarrierByNodeRecordHandle:
+              case DXOp::OutputComplete:
               case DXOp::CreateNodeOutputHandle:
               case DXOp::IndexNodeHandle:
               case DXOp::AnnotateNodeHandle:
@@ -2011,8 +2019,9 @@ rdcstr Program::GetDebugStatus()
               case DXOp::AnnotateNodeRecordHandle:
               case DXOp::NodeOutputIsValid:
               case DXOp::GetRemainingRecursionLevels:
-              case DXOp::StartVertexLocation:
-              case DXOp::StartInstanceLocation:
+              case DXOp::FinishedCrossGroupSharing:
+              case DXOp::BarrierByNodeRecordHandle:
+
               case DXOp::NumOpCodes:
                 return StringFormat::Fmt("Unsupported dx.op call `%s` %s", callFunc->name.c_str(),
                                          ToStr(dxOpCode).c_str());
@@ -2039,6 +2048,34 @@ rdcstr Program::GetDebugStatus()
           break;
         }
         default: break;
+      }
+    }
+  }
+
+  // Check the reflection for unbounded CBV resources
+  DXMeta dx(m_NamedMeta);
+  if(dx.resources)
+  {
+    RDCASSERTEQUAL(dx.resources->children.size(), 1);
+
+    const Metadata *resList = dx.resources->children[0];
+    RDCASSERTEQUAL(resList->children.size(), 4);
+
+    const Metadata *CBVs = resList->children[2];
+    if(CBVs)
+    {
+      for(const Metadata *r : CBVs->children)
+      {
+        uint32_t bindCount = getival<uint32_t>(r->children[(size_t)ResField::RegCount]);
+        if(bindCount == UINT32_MAX)
+        {
+          const rdcstr &name = r->children[(size_t)ResField::Name]->str;
+          uint32_t space = getival<uint32_t>(r->children[(size_t)ResField::Space]);
+          uint32_t regBase = getival<uint32_t>(r->children[(size_t)ResField::RegBase]);
+          return StringFormat::Fmt(
+              "Unsupported unbounded ConstantBuffer array '%s' Space:%d Register:%d", name.c_str(),
+              space, regBase);
+        }
       }
     }
   }
@@ -2082,7 +2119,8 @@ void Program::GetLineInfo(size_t instruction, uintptr_t offset, LineColumnInfo &
         RDCASSERT(!shaderFilePath.empty());
         for(int32_t iFile = 0; iFile < Files.count(); iFile++)
         {
-          rdcstr filePath = Files[iFile].filename;
+          // Files[] might come from DXIL or DXBC data : ensure the path separator is standardised in all cases
+          rdcstr filePath = standardise_directory_separator(Files[iFile].filename);
           if(filePath == shaderFilePath)
           {
             fileIndex = iFile;

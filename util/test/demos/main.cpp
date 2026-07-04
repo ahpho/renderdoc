@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -824,7 +824,11 @@ void android_main(struct android_app *state)
   android_poll_source *source;
   do
   {
+#if __NDK_MAJOR__ >= 27
+    if(ALooper_pollOnce(1, nullptr, &events, (void **)&source) >= 0)
+#else
     if(ALooper_pollAll(1, nullptr, &events, (void **)&source) >= 0)
+#endif
     {
       if(source != NULL)
         source->process(android_state, source);

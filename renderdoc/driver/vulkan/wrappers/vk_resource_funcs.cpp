@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -199,8 +199,6 @@ bool WrappedVulkan::CheckMemoryRequirements(const char *resourceName, ResourceId
   // bail loading this capture. This is a bit of an under-estimate since we just make sure
   // there's enough space left in the memory, that doesn't mean that there aren't overlaps due
   // to increased size requirements.
-  ResourceId memOrigId = GetResourceManager()->GetOriginalID(memId);
-
   VulkanCreationInfo::Memory &memInfo = m_CreationInfo.m_Memory[memId];
   uint32_t bit = 1U << memInfo.memoryTypeIndex;
 
@@ -234,7 +232,7 @@ bool WrappedVulkan::CheckMemoryRequirements(const char *resourceName, ResourceId
         m_FailedReplayResult, ResultCode::APIHardwareUnsupported,
         "Trying to bind %s to %s, but memory type is %u and only types %s are allowed.\n"
         "\n%s",
-        resourceName, GetResourceDesc(memOrigId).name.c_str(), memInfo.memoryTypeIndex,
+        resourceName, GetResourceDesc(memId).name.c_str(), memInfo.memoryTypeIndex,
         bitsString.c_str(), GetPhysDeviceCompatString(external, origInvalid).c_str());
     return false;
   }
@@ -255,7 +253,7 @@ bool WrappedVulkan::CheckMemoryRequirements(const char *resourceName, ResourceId
         m_FailedReplayResult, ResultCode::APIHardwareUnsupported,
         "Trying to bind %s to %s, but memory offset 0x%llx doesn't satisfy alignment 0x%llx.\n"
         "\n%s",
-        resourceName, GetResourceDesc(memOrigId).name.c_str(), memoryOffset, mrq.alignment,
+        resourceName, GetResourceDesc(memId).name.c_str(), memoryOffset, mrq.alignment,
         GetPhysDeviceCompatString(external, origInvalid).c_str());
     return false;
   }
@@ -276,7 +274,7 @@ bool WrappedVulkan::CheckMemoryRequirements(const char *resourceName, ResourceId
                      "Trying to bind %s to %s, but at memory offset 0x%llx the reported size of "
                      "0x%llx won't fit the 0x%llx bytes of memory.\n"
                      "\n%s",
-                     resourceName, GetResourceDesc(memOrigId).name.c_str(), memoryOffset, size,
+                     resourceName, GetResourceDesc(memId).name.c_str(), memoryOffset, size,
                      memInfo.allocSize, GetPhysDeviceCompatString(external, origInvalid).c_str());
     return false;
   }
@@ -366,8 +364,7 @@ bool WrappedVulkan::Serialise_vkAllocateMemory(SerialiserType &ser, VkDevice dev
     }
     else
     {
-      ResourceId live = GetResourceManager()->WrapResource(Unwrap(device), mem);
-      GetResourceManager()->AddLiveResource(Memory, mem);
+      ResourceId live = GetResourceManager()->WrapResource(Memory, Unwrap(device), mem);
 
       m_CreationInfo.m_Memory[live].Init(GetResourceManager(), m_CreationInfo, &AllocateInfo);
 
@@ -463,18 +460,30 @@ bool WrappedVulkan::Serialise_vkAllocateMemory(SerialiserType &ser, VkDevice dev
         VkMemoryRequirements mrq = {};
         ObjDisp(device)->GetBufferMemoryRequirements(Unwrap(device), buf, &mrq);
 
+        // Can't create a memory-spanning buffer for this allocation.
+        // For descriptor buffers try again if that is enabled as those memory types are sometimes unique.
+        if((((1 << AllocateInfo.memoryTypeIndex) & mrq.memoryTypeBits) == 0) && DescriptorBuffers())
+        {
+          ObjDisp(device)->DestroyBuffer(Unwrap(device), buf, NULL);
+
+          bufInfo.usage |= VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
+
+          ret = ObjDisp(device)->CreateBuffer(Unwrap(device), &bufInfo, NULL, &buf);
+          RDCASSERTEQUAL(ret, VK_SUCCESS);
+
+          mrq = {};
+          ObjDisp(device)->GetBufferMemoryRequirements(Unwrap(device), buf, &mrq);
+        }
+
         // check that this allocation type can actually be bound to a buffer. Allocations that can't
         // be used with buffers we can just skip and leave wholeMemBuf as NULL.
         if((1 << AllocateInfo.memoryTypeIndex) & mrq.memoryTypeBits)
         {
           RDCASSERT(mrq.size <= AllocateInfo.allocationSize, mrq.size, AllocateInfo.allocationSize);
 
-          ResourceId bufid = GetResourceManager()->WrapResource(Unwrap(device), buf);
+          ResourceId bufid = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), buf);
 
           ObjDisp(device)->BindBufferMemory(Unwrap(device), Unwrap(buf), Unwrap(mem), 0);
-
-          // register as a live-only resource, so it is cleaned up properly
-          GetResourceManager()->AddLiveResource(bufid, buf);
 
           m_CreationInfo.m_Memory[live].wholeMemBuf = buf;
         }
@@ -638,7 +647,7 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pMemory);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pMemory);
 
     const VkMemoryDedicatedAllocateInfo *dedicated =
         (const VkMemoryDedicatedAllocateInfo *)FindNextStruct(
@@ -709,17 +718,44 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
 
       if((mrq.memoryTypeBits & (1U << info.memoryTypeIndex)) != 0)
       {
-        bufid = GetResourceManager()->WrapResource(Unwrap(device), wholeMemBuf);
+        bufid = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), wholeMemBuf);
 
         ObjDisp(device)->BindBufferMemory(Unwrap(device), Unwrap(wholeMemBuf), Unwrap(*pMemory), 0);
       }
       else
       {
-        // can't create a memory-spanning buffer for this allocation. Assume this is a case where
-        // this memory type is only available to images and is not mappable - in which case the
-        // whole memory buffer won't be needed so we can skip this.
         ObjDisp(device)->DestroyBuffer(Unwrap(device), wholeMemBuf, NULL);
         wholeMemBuf = VK_NULL_HANDLE;
+
+        // can't create a memory-spanning buffer for this allocation. Try again with descriptor
+        // buffers if that is enabled as those memory types are sometimes unique.
+        if(DescriptorBuffers())
+        {
+          bufInfo.usage |= VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
+
+          ret = ObjDisp(device)->CreateBuffer(Unwrap(device), &bufInfo, NULL, &wholeMemBuf);
+          RDCASSERTEQUAL(ret, VK_SUCCESS);
+
+          ObjDisp(device)->GetBufferMemoryRequirements(Unwrap(device), wholeMemBuf, &mrq);
+
+          RDCASSERTEQUAL(mrq.size, info.allocationSize);
+
+          if((mrq.memoryTypeBits & (1U << info.memoryTypeIndex)) != 0)
+          {
+            bufid = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), wholeMemBuf);
+
+            ObjDisp(device)->BindBufferMemory(Unwrap(device), Unwrap(wholeMemBuf), Unwrap(*pMemory),
+                                              0);
+          }
+          else
+          {
+            ObjDisp(device)->DestroyBuffer(Unwrap(device), wholeMemBuf, NULL);
+            wholeMemBuf = VK_NULL_HANDLE;
+          }
+        }
+
+        // Otherwise this could be a case where this memory type is only available to images and is
+        // not mappable - in which case the whole memory buffer shouldn't be needed so we can skip this.
       }
     }
 
@@ -821,10 +857,7 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
 
         memFlags->flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
 
-        {
-          SCOPED_LOCK(m_DeviceAddressResourcesLock);
-          m_DeviceAddressResources.IDs.push_back(record->GetResourceID());
-        }
+        record->hasBDA = true;
       }
 
       {
@@ -886,15 +919,7 @@ VkResult WrappedVulkan::vkAllocateMemory(VkDevice device, const VkMemoryAllocate
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, *pMemory);
-
       m_CreationInfo.m_Memory[id].Init(GetResourceManager(), m_CreationInfo, &info);
-
-      if(dedicated == NULL && dedicatedNV == NULL && wholeMemBuf != VK_NULL_HANDLE)
-      {
-        // register as a live-only resource, so it is cleaned up properly
-        GetResourceManager()->AddLiveResource(bufid, wholeMemBuf);
-      }
 
       m_CreationInfo.m_Memory[id].wholeMemBuf = wholeMemBuf;
     }
@@ -937,13 +962,12 @@ void WrappedVulkan::vkFreeMemory(VkDevice device, VkDeviceMemory memory, const V
     // opaque capture address isn't re-used before the capture completes
     {
       SCOPED_READLOCK(m_CapTransitionLock);
-      SCOPED_LOCK(m_DeviceAddressResourcesLock);
-      if(IsActiveCapturing(m_State) && m_DeviceAddressResources.IDs.contains(GetResID(memory)))
+      if(IsActiveCapturing(m_State) && wrapped->record->hasBDA)
       {
+        SCOPED_LOCK(m_DeviceAddressResourcesLock);
         m_DeviceAddressResources.DeadMemories.push_back(memory);
         return;
       }
-      m_DeviceAddressResources.IDs.removeOne(GetResID(memory));
     }
 
     MemMapState *memMapState = wrapped->record->memMapState;
@@ -1450,13 +1474,11 @@ bool WrappedVulkan::Serialise_vkFlushMappedMemoryRanges(SerialiserType &ser, VkD
       {
         if(IsLoading(m_State))
         {
-          AddDebugMessage(
-              MessageCategory::Performance, MessageSeverity::Medium,
-              MessageSource::GeneralPerformance,
-              StringFormat::Fmt(
-                  "Unmapped memory %s overlaps tiled-only memory region. "
-                  "Taking slow path to mask tiled memory writes",
-                  ToStr(GetResourceManager()->GetOriginalID(GetResID(MemRange.memory))).c_str()));
+          AddDebugMessage(MessageCategory::Performance, MessageSeverity::Medium,
+                          MessageSource::GeneralPerformance,
+                          StringFormat::Fmt("Unmapped memory %s overlaps tiled-only memory region. "
+                                            "Taking slow path to mask tiled memory writes",
+                                            ToStr(GetResID(MemRange.memory)).c_str()));
         }
         directStream = false;
         m_MaskedMapData.resize((size_t)memRangeSize);
@@ -1675,15 +1697,15 @@ bool WrappedVulkan::Serialise_vkBindBufferMemory(SerialiserType &ser, VkDevice d
 
   if(IsReplayingAndReading())
   {
-    ResourceId resOrigId = GetResourceManager()->GetOriginalID(GetResID(buffer));
-    ResourceId memOrigId = GetResourceManager()->GetOriginalID(GetResID(memory));
+    ResourceId resId = GetResID(buffer);
+    ResourceId memId = GetResID(memory);
 
     VulkanCreationInfo::Buffer &bufInfo = m_CreationInfo.m_Buffer[GetResID(buffer)];
 
     VkMemoryRequirements mrq = {};
     ObjDisp(device)->GetBufferMemoryRequirements(Unwrap(device), Unwrap(buffer), &mrq);
 
-    bool ok = CheckMemoryRequirements(GetResourceDesc(resOrigId).name.c_str(), GetResID(memory),
+    bool ok = CheckMemoryRequirements(GetResourceDesc(resId).name.c_str(), GetResID(memory),
                                       memoryOffset, mrq, bufInfo.external, bufInfo.mrq);
 
     if(!ok)
@@ -1691,11 +1713,11 @@ bool WrappedVulkan::Serialise_vkBindBufferMemory(SerialiserType &ser, VkDevice d
 
     ObjDisp(device)->BindBufferMemory(Unwrap(device), Unwrap(buffer), Unwrap(memory), memoryOffset);
 
-    GetResourceDesc(memOrigId).derivedResources.push_back(resOrigId);
-    GetResourceDesc(resOrigId).parentResources.push_back(memOrigId);
+    GetResourceDesc(memId).derivedResources.push_back(resId);
+    GetResourceDesc(resId).parentResources.push_back(memId);
 
-    AddResourceCurChunk(memOrigId);
-    AddResourceCurChunk(resOrigId);
+    AddResourceCurChunk(memId);
+    AddResourceCurChunk(resId);
 
     // for buffers created with device addresses, fetch it now as that's possible for both EXT and
     // KHR variants now.
@@ -1786,15 +1808,15 @@ bool WrappedVulkan::Serialise_vkBindImageMemory(SerialiserType &ser, VkDevice de
 
   if(IsReplayingAndReading())
   {
-    ResourceId resOrigId = GetResourceManager()->GetOriginalID(GetResID(image));
-    ResourceId memOrigId = GetResourceManager()->GetOriginalID(GetResID(memory));
+    ResourceId resId = GetResID(image);
+    ResourceId memId = GetResID(memory);
 
     VkMemoryRequirements mrq = {};
     ObjDisp(device)->GetImageMemoryRequirements(Unwrap(device), Unwrap(image), &mrq);
 
     VulkanCreationInfo::Image &imgInfo = m_CreationInfo.m_Image[GetResID(image)];
 
-    bool ok = CheckMemoryRequirements(GetResourceDesc(resOrigId).name.c_str(), GetResID(memory),
+    bool ok = CheckMemoryRequirements(GetResourceDesc(resId).name.c_str(), GetResID(memory),
                                       memoryOffset, mrq, imgInfo.external, imgInfo.mrq);
 
     if(!ok)
@@ -1817,11 +1839,11 @@ bool WrappedVulkan::Serialise_vkBindImageMemory(SerialiserType &ser, VkDevice de
       }
     }
 
-    GetResourceDesc(memOrigId).derivedResources.push_back(resOrigId);
-    GetResourceDesc(resOrigId).parentResources.push_back(memOrigId);
+    GetResourceDesc(memId).derivedResources.push_back(resId);
+    GetResourceDesc(resId).parentResources.push_back(memId);
 
-    AddResourceCurChunk(memOrigId);
-    AddResourceCurChunk(resOrigId);
+    AddResourceCurChunk(memId);
+    AddResourceCurChunk(resId);
 
     m_CreationInfo.m_Memory[GetResID(memory)].BindMemory(
         memoryOffset, mrq.size,
@@ -1943,7 +1965,7 @@ VkResult WrappedVulkan::vkBindImageMemory(VkDevice device, VkImage image, VkDevi
       // AddForcedReference will also call MarkResourceFrameReferenced() on the image in case
       // we're currently capturing, do the same with the memory with the correct semantics.
       GetResourceManager()->MarkMemoryFrameReferenced(
-          GetResID(mem), memOffset, record->resInfo->memreqs.size, eFrameRef_ReadBeforeWrite);
+          GetResID(mem), memOffset, record->resInfo->memreqs.size, eFrameRef_Read);
     }
 
     // images are a base resource but we want to track where their memory comes from.
@@ -2042,8 +2064,7 @@ bool WrappedVulkan::Serialise_vkCreateBuffer(SerialiserType &ser, VkDevice devic
     }
     else
     {
-      ResourceId live = GetResourceManager()->WrapResource(Unwrap(device), buf);
-      GetResourceManager()->AddLiveResource(Buffer, buf);
+      ResourceId live = GetResourceManager()->WrapResource(Buffer, Unwrap(device), buf);
 
       m_CreationInfo.m_Buffer[live].Init(GetResourceManager(), m_CreationInfo, &CreateInfo,
                                          memoryRequirements);
@@ -2054,11 +2075,6 @@ bool WrappedVulkan::Serialise_vkCreateBuffer(SerialiserType &ser, VkDevice devic
             ResourceIDGen::GetNewUniqueID();
         m_InlineBuffers[inlineDescriptorId] = live;
       }
-    }
-
-    if(patchedusage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
-    {
-      m_DeviceAddressResources.IDs.push_back(GetResID(buf));
     }
 
     if(patchedusage & VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT)
@@ -2135,7 +2151,7 @@ VkResult WrappedVulkan::vkCreateBuffer(VkDevice device, const VkBufferCreateInfo
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pBuffer);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pBuffer);
 
     if(IsCaptureMode(m_State))
     {
@@ -2221,10 +2237,7 @@ VkResult WrappedVulkan::vkCreateBuffer(VkDevice device, const VkBufferCreateInfo
         // address
         AddForcedReference(record);
 
-        {
-          SCOPED_LOCK(m_DeviceAddressResourcesLock);
-          m_DeviceAddressResources.IDs.push_back(record->GetResourceID());
-        }
+        record->hasBDA = true;
 
         if(DescriptorBuffers())
         {
@@ -2338,8 +2351,6 @@ VkResult WrappedVulkan::vkCreateBuffer(VkDevice device, const VkBufferCreateInfo
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, *pBuffer);
-
       m_CreationInfo.m_Buffer[id].Init(GetResourceManager(), m_CreationInfo, pCreateInfo, {});
     }
   }
@@ -2382,21 +2393,10 @@ bool WrappedVulkan::Serialise_vkCreateBufferView(SerialiserType &ser, VkDevice d
     {
       ResourceId live;
 
-      if(GetResourceManager()->HasWrapper(ToTypedHandle(view)))
-      {
-        live = GetResourceManager()->GetNonDispWrapper(view)->id;
+      GetResourceManager()->OverrideWrapper(ToTypedHandle(view));
 
-        // destroy this instance of the duplicate, as we must have matching create/destroy
-        // calls and there won't be a wrapped resource hanging around to destroy this one.
-        ObjDisp(device)->DestroyBufferView(Unwrap(device), view, NULL);
-
-        // whenever the new ID is requested, return the old ID, via replacements.
-        GetResourceManager()->ReplaceResource(View, GetResourceManager()->GetOriginalID(live));
-      }
-      else
       {
-        live = GetResourceManager()->WrapResource(Unwrap(device), view);
-        GetResourceManager()->AddLiveResource(View, view);
+        live = GetResourceManager()->WrapResource(View, Unwrap(device), view);
 
         m_CreationInfo.m_BufferView[live].Init(GetResourceManager(), m_CreationInfo, &CreateInfo);
       }
@@ -2421,7 +2421,7 @@ VkResult WrappedVulkan::vkCreateBufferView(VkDevice device, const VkBufferViewCr
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pView);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pView);
 
     if(IsCaptureMode(m_State))
     {
@@ -2455,8 +2455,6 @@ VkResult WrappedVulkan::vkCreateBufferView(VkDevice device, const VkBufferViewCr
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, *pView);
-
       m_CreationInfo.m_BufferView[id].Init(GetResourceManager(), m_CreationInfo, pCreateInfo);
     }
   }
@@ -2495,6 +2493,9 @@ bool WrappedVulkan::Serialise_vkCreateImage(SerialiserType &ser, VkDevice device
     CreateInfo.usage |= VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                         VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     CreateInfo.usage &= ~VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+
+    if(CreateInfo.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
+      CreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 
     // remap the queue family indices
     if(CreateInfo.sharingMode == VK_SHARING_MODE_CONCURRENT)
@@ -2610,6 +2611,118 @@ bool WrappedVulkan::Serialise_vkCreateImage(SerialiserType &ser, VkDevice device
       }
     }
 
+    VkExternalMemoryImageCreateInfo *extCreateInfo =
+        (VkExternalMemoryImageCreateInfo *)FindNextStruct(
+            &CreateInfo, VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO);
+
+    // if we've allowed an external memory image create info to stay, validate that the handle types
+    // are still supported
+    if(extCreateInfo)
+    {
+      VkExternalImageFormatProperties externalResult = {
+          VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
+      };
+      VkImageFormatProperties2 resultBase = {
+          VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+          &externalResult,
+      };
+
+      VkPhysicalDeviceExternalImageFormatInfo externalQuery = {
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
+      };
+      VkPhysicalDeviceImageFormatInfo2 queryBase = {
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+          &externalQuery,
+      };
+
+      // pass creation info
+      queryBase.flags = CreateInfo.flags;
+      queryBase.format = CreateInfo.format;
+      queryBase.tiling = CreateInfo.tiling;
+      queryBase.type = CreateInfo.imageType;
+      queryBase.usage = CreateInfo.usage;
+
+      // pass image format list, if the application did
+      VkImageFormatListCreateInfo *appFormatInfo = (VkImageFormatListCreateInfo *)FindNextStruct(
+          &CreateInfo, VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO);
+      VkImageFormatListCreateInfo formatInfo;
+      if(appFormatInfo)
+      {
+        formatInfo = *appFormatInfo;
+        formatInfo.pNext = queryBase.pNext;
+        queryBase.pNext = &formatInfo;
+      }
+
+      for(uint32_t i = 0; i < 32; i++)
+      {
+        VkExternalMemoryHandleTypeFlagBits checkBit = VkExternalMemoryHandleTypeFlagBits(1U << i);
+
+        // only check compatibility for set bits
+        if(extCreateInfo->handleTypes & checkBit)
+        {
+          externalQuery.handleType = checkBit;
+
+          VkResult queryResult = ObjDisp(m_PhysicalDevice)
+                                     ->GetPhysicalDeviceImageFormatProperties2(
+                                         Unwrap(m_PhysicalDevice), &queryBase, &resultBase);
+          if(queryResult != VK_SUCCESS)
+          {
+            RDCERR("vkGetPhysicalDeviceImageFormatProperties2 returned %s",
+                   ToStr(queryResult).c_str());
+            externalResult.externalMemoryProperties.externalMemoryFeatures = 0;
+          }
+
+          // we don't know what the application wanted to use this handle type for, but if at least
+          // one of import/export is supported we can replay this OK
+          if(externalResult.externalMemoryProperties.externalMemoryFeatures &
+             (VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT))
+            continue;
+
+          // add in special quite hacky handling for dma external types.
+          // this can fail on some drivers if we aren't using drm tiling, and although we're not
+          // actually going to import or export this image the driver is within its rights to fail
+          // at this stage. we take a narrow path here, on the assumption that drivers don't care
+          // about *which* external types we declare only that *some* are declared. If dma isn't
+          // supported, check for fd instead and switch to that if it is supported.
+          if(checkBit == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT)
+          {
+            externalQuery.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+            queryResult = ObjDisp(m_PhysicalDevice)
+                              ->GetPhysicalDeviceImageFormatProperties2(Unwrap(m_PhysicalDevice),
+                                                                        &queryBase, &resultBase);
+
+            if(queryResult != VK_SUCCESS)
+            {
+              RDCERR("vkGetPhysicalDeviceImageFormatProperties2 returned %s",
+                     ToStr(queryResult).c_str());
+              externalResult.externalMemoryProperties.externalMemoryFeatures = 0;
+            }
+
+            if(externalResult.externalMemoryProperties.externalMemoryFeatures &
+               (VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT))
+            {
+              extCreateInfo->handleTypes &= ~VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+              extCreateInfo->handleTypes |= VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+              continue;
+            }
+          }
+
+          // otherwise we must fail because this handle type isn't supported at all
+          SET_ERROR_RESULT(
+              m_FailedReplayResult, ResultCode::APIHardwareUnsupported,
+              "Tried to create image with external handle types %s, but on replay handle type %s "
+              "can't "
+              "be imported or exported.\n"
+              "\n%s",
+              ToStr((VkExternalMemoryHandleTypeFlagBits)extCreateInfo->handleTypes).c_str(),
+              ToStr(checkBit).c_str(), GetPhysDeviceCompatString(false, false).c_str());
+
+          return false;
+        }
+      }
+    }
+
     VkImageCreateInfo patched = CreateInfo;
 
     byte *tempMem = GetTempMemory(GetNextPatchSize(patched.pNext));
@@ -2628,8 +2741,7 @@ bool WrappedVulkan::Serialise_vkCreateImage(SerialiserType &ser, VkDevice device
     }
     else
     {
-      ResourceId live = GetResourceManager()->WrapResource(Unwrap(device), img);
-      GetResourceManager()->AddLiveResource(Image, img);
+      ResourceId live = GetResourceManager()->WrapResource(Image, Unwrap(device), img);
 
       NameVulkanObject(img, StringFormat::Fmt("Image %s", ToStr(Image).c_str()));
 
@@ -2859,7 +2971,7 @@ VkResult WrappedVulkan::vkCreateImage(VkDevice device, const VkImageCreateInfo *
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pImage);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pImage);
 
     const bool isSparse = (pCreateInfo->flags & (VK_IMAGE_CREATE_SPARSE_BINDING_BIT |
                                                  VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT)) != 0;
@@ -2912,9 +3024,12 @@ VkResult WrappedVulkan::vkCreateImage(VkDevice device, const VkImageCreateInfo *
       {
         if(next->sType == VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_NV ||
            next->sType == VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO ||
-           next->sType == VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID)
+           next->sType == VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID ||
+           next->sType == VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT ||
+           next->sType == VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT)
         {
           isExternal = true;
+          resInfo.imageInfo.isExternal = true;
 
           // we can't call vkGetImageMemoryRequirements on AHB-backed images until they are bound
           if(next->sType == VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO)
@@ -2968,6 +3083,14 @@ VkResult WrappedVulkan::vkCreateImage(VkDevice device, const VkImageCreateInfo *
                                       VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO);
           removed |=
               RemoveNextStruct(&createInfo_adjusted, VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID);
+          removed |=
+              RemoveNextStruct(&createInfo_adjusted,
+                               VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT);
+          removed |= RemoveNextStruct(
+              &createInfo_adjusted, VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT);
+
+          if(createInfo_adjusted.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
+            createInfo_adjusted.tiling = VK_IMAGE_TILING_OPTIMAL;
 
           RDCASSERTMSG("Couldn't find next struct indicating external memory", removed);
 
@@ -2989,10 +3112,10 @@ VkResult WrappedVulkan::vkCreateImage(VkDevice device, const VkImageCreateInfo *
               resInfo.memreqs.alignment = mrq.alignment;
               resInfo.memreqs.memoryTypeBits = mrq.memoryTypeBits;
 
-              RDCWARN(
-                  "Android hardware buffer backed image, so pre-emptively banning dedicated "
-                  "memory");
-              resInfo.banDedicated = true;
+              resInfo.banDedicated =
+                  m_PhysicalDeviceData.driverProps.driverID != VK_DRIVER_ID_MESA_PANVK;
+              RDCWARN("Android hardware buffer backed image, %s dedicated memory",
+                      resInfo.banDedicated ? "banning" : "allowing");
             }
             else
             {
@@ -3103,8 +3226,6 @@ VkResult WrappedVulkan::vkCreateImage(VkDevice device, const VkImageCreateInfo *
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, *pImage);
-
       m_CreationInfo.m_Image[id].Init(GetResourceManager(), m_CreationInfo, pCreateInfo, {});
     }
 
@@ -3195,21 +3316,10 @@ bool WrappedVulkan::Serialise_vkCreateImageView(SerialiserType &ser, VkDevice de
     {
       ResourceId live;
 
-      if(GetResourceManager()->HasWrapper(ToTypedHandle(view)))
-      {
-        live = GetResourceManager()->GetNonDispWrapper(view)->id;
+      GetResourceManager()->OverrideWrapper(ToTypedHandle(view));
 
-        // destroy this instance of the duplicate, as we must have matching create/destroy
-        // calls and there won't be a wrapped resource hanging around to destroy this one.
-        ObjDisp(device)->DestroyImageView(Unwrap(device), view, NULL);
-
-        // whenever the new ID is requested, return the old ID, via replacements.
-        GetResourceManager()->ReplaceResource(View, GetResourceManager()->GetOriginalID(live));
-      }
-      else
       {
-        live = GetResourceManager()->WrapResource(Unwrap(device), view);
-        GetResourceManager()->AddLiveResource(View, view);
+        live = GetResourceManager()->WrapResource(View, Unwrap(device), view);
 
         m_CreationInfo.m_ImageView[live].Init(GetResourceManager(), m_CreationInfo, &CreateInfo);
       }
@@ -3282,7 +3392,7 @@ VkResult WrappedVulkan::vkCreateImageView(VkDevice device, const VkImageViewCrea
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pView);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pView);
 
     if(IsCaptureMode(m_State))
     {
@@ -3339,8 +3449,6 @@ VkResult WrappedVulkan::vkCreateImageView(VkDevice device, const VkImageViewCrea
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, *pView);
-
       m_CreationInfo.m_ImageView[id].Init(GetResourceManager(), m_CreationInfo, pCreateInfo);
     }
   }
@@ -3368,13 +3476,13 @@ bool WrappedVulkan::Serialise_vkBindBufferMemory2(SerialiserType &ser, VkDevice 
       const VkBindBufferMemoryInfo &bindInfo = pBindInfos[i];
       const VulkanCreationInfo::Buffer &bufInfo = m_CreationInfo.m_Buffer[GetResID(bindInfo.buffer)];
 
-      ResourceId resOrigId = GetResourceManager()->GetOriginalID(GetResID(bindInfo.buffer));
+      ResourceId resId = GetResID(bindInfo.buffer);
 
       ObjDisp(device)->GetBufferMemoryRequirements(Unwrap(device), Unwrap(bindInfo.buffer), &mrqs[i]);
 
-      bool ok = CheckMemoryRequirements(GetResourceDesc(resOrigId).name.c_str(),
-                                        GetResID(bindInfo.memory), bindInfo.memoryOffset, mrqs[i],
-                                        bufInfo.external, bufInfo.mrq);
+      bool ok =
+          CheckMemoryRequirements(GetResourceDesc(resId).name.c_str(), GetResID(bindInfo.memory),
+                                  bindInfo.memoryOffset, mrqs[i], bufInfo.external, bufInfo.mrq);
 
       if(!ok)
         return false;
@@ -3387,16 +3495,16 @@ bool WrappedVulkan::Serialise_vkBindBufferMemory2(SerialiserType &ser, VkDevice 
     {
       const VkBindBufferMemoryInfo &bindInfo = pBindInfos[i];
 
-      ResourceId resOrigId = GetResourceManager()->GetOriginalID(GetResID(bindInfo.buffer));
-      ResourceId memOrigId = GetResourceManager()->GetOriginalID(GetResID(bindInfo.memory));
+      ResourceId resId = GetResID(bindInfo.buffer);
+      ResourceId memId = GetResID(bindInfo.memory);
 
       VulkanCreationInfo::Buffer &bufInfo = m_CreationInfo.m_Buffer[GetResID(bindInfo.buffer)];
 
-      GetResourceDesc(memOrigId).derivedResources.push_back(resOrigId);
-      GetResourceDesc(resOrigId).parentResources.push_back(memOrigId);
+      GetResourceDesc(memId).derivedResources.push_back(resId);
+      GetResourceDesc(resId).parentResources.push_back(memId);
 
-      AddResourceCurChunk(memOrigId);
-      AddResourceCurChunk(resOrigId);
+      AddResourceCurChunk(memId);
+      AddResourceCurChunk(resId);
 
       // for buffers created with device addresses, fetch it now as that's possible for both EXT and
       // KHR variants now.
@@ -3503,8 +3611,8 @@ bool WrappedVulkan::Serialise_vkBindImageMemory2(SerialiserType &ser, VkDevice d
     {
       const VkBindImageMemoryInfo &bindInfo = pBindInfos[i];
 
-      ResourceId resOrigId = GetResourceManager()->GetOriginalID(GetResID(bindInfo.image));
-      ResourceId memOrigId = GetResourceManager()->GetOriginalID(GetResID(bindInfo.memory));
+      ResourceId resId = GetResID(bindInfo.image);
+      ResourceId memId = GetResID(bindInfo.memory);
 
       VulkanCreationInfo::Image &imgInfo = m_CreationInfo.m_Image[GetResID(bindInfo.image)];
 
@@ -3541,9 +3649,9 @@ bool WrappedVulkan::Serialise_vkBindImageMemory2(SerialiserType &ser, VkDevice d
       }
       else
       {
-        bool ok = CheckMemoryRequirements(GetResourceDesc(resOrigId).name.c_str(),
-                                          GetResID(bindInfo.memory), bindInfo.memoryOffset, mrq,
-                                          imgInfo.external, imgInfo.mrq);
+        bool ok =
+            CheckMemoryRequirements(GetResourceDesc(resId).name.c_str(), GetResID(bindInfo.memory),
+                                    bindInfo.memoryOffset, mrq, imgInfo.external, imgInfo.mrq);
 
         if(!ok)
           return false;
@@ -3565,14 +3673,14 @@ bool WrappedVulkan::Serialise_vkBindImageMemory2(SerialiserType &ser, VkDevice d
         }
       }
 
-      AddResourceCurChunk(resOrigId);
+      AddResourceCurChunk(resId);
 
-      if(memOrigId != ResourceId())
+      if(memId != ResourceId())
       {
-        GetResourceDesc(memOrigId).derivedResources.push_back(resOrigId);
-        GetResourceDesc(resOrigId).parentResources.push_back(memOrigId);
+        GetResourceDesc(memId).derivedResources.push_back(resId);
+        GetResourceDesc(resId).parentResources.push_back(memId);
 
-        AddResourceCurChunk(memOrigId);
+        AddResourceCurChunk(memId);
 
         m_CreationInfo.m_Memory[GetResID(bindInfo.memory)].BindMemory(
             bindInfo.memoryOffset, mrq.size,
@@ -3700,11 +3808,11 @@ VkResult WrappedVulkan::vkBindImageMemory2(VkDevice device, uint32_t bindInfoCou
       // if the image was force-referenced, do the same with the memory
       if(IsForcedReference(imgrecord))
       {
-        // AddForcedReference will also call MarkResourceFrameReferenced() on the buffer in case
+        // AddForcedReference will also call MarkResourceFrameReferenced() on the image in case
         // we're currently capturing, do the same with the memory with the correct semantics.
         GetResourceManager()->MarkMemoryFrameReferenced(
             GetResID(pBindInfos[i].memory), pBindInfos[i].memoryOffset,
-            imgrecord->resInfo->memreqs.size, eFrameRef_ReadBeforeWrite);
+            imgrecord->resInfo->memreqs.size, eFrameRef_Read);
       }
 
       const VkBindImageMemorySwapchainInfoKHR *swapBind =
@@ -3760,7 +3868,7 @@ bool WrappedVulkan::Serialise_vkSetDeviceMemoryPriorityEXT(SerialiserType &ser, 
   {
     ObjDisp(device)->SetDeviceMemoryPriorityEXT(Unwrap(device), Unwrap(memory), priority);
 
-    AddResourceCurChunk(GetResourceManager()->GetOriginalID(GetResID(memory)));
+    AddResourceCurChunk(GetResID(memory));
   }
 
   return true;
@@ -3848,22 +3956,10 @@ bool WrappedVulkan::Serialise_vkCreateAccelerationStructureKHR(
     {
       ResourceId live;
 
-      if(GetResourceManager()->HasWrapper(ToTypedHandle(acc)))
-      {
-        live = GetResourceManager()->GetNonDispWrapper(acc)->id;
+      GetResourceManager()->OverrideWrapper(ToTypedHandle(acc));
 
-        // destroy this instance of the duplicate, as we must have matching create/destroy
-        // calls and there won't be a wrapped resource hanging around to destroy this one.
-        ObjDisp(device)->DestroyAccelerationStructureKHR(Unwrap(device), acc, NULL);
-
-        // whenever the new ID is requested, return the old ID, via replacements.
-        GetResourceManager()->ReplaceResource(AccelerationStructure,
-                                              GetResourceManager()->GetOriginalID(live));
-      }
-      else
       {
-        live = GetResourceManager()->WrapResource(Unwrap(device), acc);
-        GetResourceManager()->AddLiveResource(AccelerationStructure, acc);
+        live = GetResourceManager()->WrapResource(AccelerationStructure, Unwrap(device), acc);
 
         m_CreationInfo.m_AccelerationStructure[live].Init(GetResourceManager(), m_CreationInfo,
                                                           &CreateInfo);
@@ -3911,7 +4007,8 @@ VkResult WrappedVulkan::vkCreateAccelerationStructureKHR(
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pAccelerationStructure);
+    ResourceId id =
+        GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pAccelerationStructure);
 
     if(IsCaptureMode(m_State))
     {
@@ -3999,8 +4096,6 @@ VkResult WrappedVulkan::vkCreateAccelerationStructureKHR(
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, *pAccelerationStructure);
-
       m_CreationInfo.m_AccelerationStructure[id].Init(GetResourceManager(), m_CreationInfo,
                                                       pCreateInfo);
     }

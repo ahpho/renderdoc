@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2017-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -167,6 +167,12 @@ public:
   bool HasCallstacks();
   ResultDetails InitResolver(bool interactive, RENDERDOC_ProgressCallback progress);
   rdcarray<rdcstr> GetResolve(const rdcarray<uint64_t> &callstack);
+
+  ResultDetails EmbedDependenciesIntoCapture();
+  ResultDetails RemoveDependenciesFromCapture();
+  bool HasEmbeddedDependencies();
+  bool HasPendingDependencies();
+  rdcarray<rdcstr> GetPendingDependenciesNicknames();
 
 private:
   ResultDetails Init();
@@ -367,6 +373,12 @@ rdcpair<ResultDetails, IReplayController *> CaptureFile::OpenCapture(const Repla
   LogReplayOptions(opts);
 
   RenderDoc::Inst().SetProgressCallback<LoadProgress>(progress);
+
+  // This has to be before the device is created for the capture
+  RenderDoc::Inst().ClearTrackedFiles();
+  // This section is optional any errors do not block opening the capture
+  if(m_RDC->SectionIndex(SectionType::EmbeddedExternalFiles) >= 0)
+    ret = RenderDoc::Inst().ReadExternalFiles(m_RDC);
 
   ret = render->CreateDevice(m_RDC, opts);
 
@@ -849,6 +861,31 @@ rdcarray<rdcstr> CaptureFile::GetResolve(const rdcarray<uint64_t> &callstack)
   }
 
   return ret;
+}
+
+ResultDetails CaptureFile::EmbedDependenciesIntoCapture()
+{
+  return RenderDoc::Inst().EmbedExternalFiles(m_RDC);
+}
+
+ResultDetails CaptureFile::RemoveDependenciesFromCapture()
+{
+  return RenderDoc::Inst().RemoveExternalFiles(m_RDC);
+}
+
+bool CaptureFile::HasEmbeddedDependencies()
+{
+  return RenderDoc::Inst().HasEmbeddedFiles(m_RDC);
+}
+
+bool CaptureFile::HasPendingDependencies()
+{
+  return RenderDoc::Inst().HasTrackedFileData();
+}
+
+rdcarray<rdcstr> CaptureFile::GetPendingDependenciesNicknames()
+{
+  return RenderDoc::Inst().GetTrackedFileNicknames();
 }
 
 extern "C" RENDERDOC_API ICaptureFile *RENDERDOC_CC RENDERDOC_OpenCaptureFile()

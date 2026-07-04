@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -370,10 +370,9 @@ bool GLReplay::RenderTextureInternal(TextureDisplay cfg, TexDisplayFlags flags)
 
   GLuint customProgram = 0;
 
-  if(cfg.customShaderId != ResourceId() &&
-     drv.GetResourceManager()->HasCurrentResource(cfg.customShaderId))
+  if(cfg.customShaderId != ResourceId() && drv.GetResourceManager()->HasResource(cfg.customShaderId))
   {
-    GLuint customShader = drv.GetResourceManager()->GetCurrentResource(cfg.customShaderId).name;
+    GLuint customShader = drv.GetResourceManager()->GetResource(cfg.customShaderId).name;
 
     customProgram = drv.glCreateProgram();
 

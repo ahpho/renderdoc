@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2024-2025 Baldur Karlsson
+ * Copyright (c) 2024-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -34,5 +34,6 @@ void NVAftermath_Init();
 void NVAftermath_EnableVK(const std::set<rdcstr> &supportedExtensions, rdcarray<rdcstr> &Extensions,
                           const void **deviceCreateNext);
 void NVAftermath_EnableD3D12(ID3D12Device *dev);
+void NVAftermath_Shader(ShaderEncoding encoding, const void *shader, size_t len);
 void NVAftermath_DumpCrash();
 void NVAftermath_DumpRTValidation(ID3D12Device5 *dev5);

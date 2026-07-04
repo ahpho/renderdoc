@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2017-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -70,6 +70,11 @@ extern "C" void QueueDecRef(PyObject *obj)
 
 extern "C" void ProcessDecRefQueue()
 {
+}
+
+extern "C" RENDERDOC_EXPORT_API int _rd_python_minor_version()
+{
+  return PY_MINOR_VERSION;
 }
 
 REPLAY_PROGRAM_MARKER()

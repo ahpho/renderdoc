@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -573,34 +573,6 @@ int main(int argc, char *argv[])
     Resources::Initialise();
 
     GUIInvoke::init();
-
-    {
-      QString homePath = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
-#if defined(Q_OS_WIN32)
-      QString fn = homePath + lit("/AppData/Local/LunarG/vkconfig/override/");
-#else
-      QString fn = homePath + lit("/.local/share/vulkan/implicit_layer.d/");
-#endif
-      // documentation is unclear, mentions both these files so check both just in case
-      QFileInfo vkconfigcheck1(fn + lit("VkLayerOverride.json"));
-      QFileInfo vkconfigcheck2(fn + lit("VkLayer_Override.json"));
-      // lower case might be used on linux
-      QFileInfo vkconfigcheck3(fn + lit("VkLayer_override.json"));
-      if((vkconfigcheck1.exists() && vkconfigcheck1.isFile()) ||
-         (vkconfigcheck2.exists() && vkconfigcheck2.isFile()) ||
-         (vkconfigcheck3.exists() && vkconfigcheck3.isFile()))
-      {
-        RDDialog::warning(
-            NULL, tr("vkconfig detected - possible incompatibility"),
-            tr("Configuration from 'vkconfig' tool detected.\n\n"
-               "This program has caused problems in the past and it is \n"
-               "strongly recommended that you disable it while using RenderDoc.\n\n"
-               "If this program is not active check the path below for any leftover files:\n\n%1")
-                .arg(fn));
-
-        qInfo() << "vkconfig detected and warned";
-      }
-    }
 
     {
       GlobalEnvironment env;

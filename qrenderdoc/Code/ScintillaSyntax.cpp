@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2017-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -335,6 +335,8 @@ row_major column_major unsigned signed rgb
 
 void ConfigureSyntax(ScintillaEdit *scintilla, int language)
 {
+  scintilla->setCodePage(SC_CP_UTF8);
+
   bool hlsl = false;
   bool glsl = false;
   int lexLang = language;

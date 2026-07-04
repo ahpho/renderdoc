@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2022-2025 Baldur Karlsson
+ * Copyright (c) 2022-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -293,6 +293,12 @@ rdcarray<GPUCounter> NVD3D12Counters::EnumerateCounters(WrappedID3D12Device &dev
   {
     return {GPUCounter::FirstNvidia};
   }
+  // NOTE: Nsight Perf SDK needs access to a D3D12 device handle and command
+  //       queue in order to determine which counters are available on a
+  //       particular NVIDIA device. However, since the D3D12 command queue is
+  //       not available at the time NVD3D12Counters::Init() is called this
+  //       determination must be deferred until the first time
+  //       NVD3D12Counters::EnumerateCounters() is called.
   if(!m_Impl->InitCounterEnumerator(device))
   {
     return {GPUCounter::FirstNvidia};
@@ -305,6 +311,10 @@ bool NVD3D12Counters::HasCounter(GPUCounter counterID) const
   if(m_Impl->LibraryNotFound || m_Impl->LibraryNotSupported)
   {
     return counterID == GPUCounter::FirstNvidia;
+  }
+  if(!m_Impl->CounterEnumerator)
+  {
+    return false;
   }
   return m_Impl->CounterEnumerator->HasCounter(counterID);
 }

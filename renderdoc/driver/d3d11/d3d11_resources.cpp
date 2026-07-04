@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -144,6 +144,31 @@ void WrappedShader::ShaderEntry::BuildReflection()
                                     m_Details->readWriteResources[i].fixedBindNumber});
     m_Access.push_back(access);
   }
+}
+
+void WrappedShader::ReloadShaderDebugInformation()
+{
+  SCOPED_LOCK(m_ShaderListLock);
+  for(auto it = m_ShaderList.begin(); it != m_ShaderList.end(); ++it)
+  {
+    if(ResourceIDGen::IsReplayOnlyID(it->first))
+      continue;
+    it->second->Reload();
+  }
+}
+
+void WrappedShader::ShaderEntry::Reload()
+{
+  m_Built = false;
+  *m_Details = ShaderReflection();
+  m_Access.clear();
+  if(m_Bytecode.empty() && m_DXBCFile)
+  {
+    m_Bytecode = m_DXBCFile->GetInitialShaderBlob();
+    if(m_Bytecode.empty())
+      m_Bytecode = m_DXBCFile->GetShaderBlob();
+  }
+  SAFE_DELETE(m_DXBCFile);
 }
 
 UINT GetSubresourceCount(ID3D11Resource *res)
@@ -714,9 +739,10 @@ void GetDXTextureProperties(void *dxObject, ResourceFormat &fmt, uint32_t &width
   RDCERR("Getting DX texture properties for unknown/unhandled objects %p", dxObject);
 }
 
-WrappedID3DDeviceContextState::WrappedID3DDeviceContextState(ID3DDeviceContextState *real,
+WrappedID3DDeviceContextState::WrappedID3DDeviceContextState(ResourceId id,
+                                                             ID3DDeviceContextState *real,
                                                              WrappedID3D11Device *device)
-    : WrappedDeviceChild11(real, device)
+    : WrappedDeviceChild11(id, real, device)
 {
   state = new D3D11RenderState(D3D11RenderState::Empty);
 

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2019-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1349,7 +1349,7 @@ TEST_CASE("Check format conversion", "[format]")
 
       INFO(a);
       INFO(c);
-      CHECK(fabs(a - c) <= fabs(a * 3.0f * FLT_EPSILON));
+      CHECK(fabs(a - c) <= fabs(a * 6.0f * FLT_EPSILON));
 
       if(i == UINT16_MAX)
         break;

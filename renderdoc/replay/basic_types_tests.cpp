@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2017-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -2111,6 +2111,12 @@ TEST_CASE("Test string type", "[basictypes][string]")
     CHECK_FALSE(test == rdcstr("Hello, World!"));
     CHECK_FALSE(test == rdcinflexiblestr("Hello, World!"));
     CHECK_FALSE(test.empty());
+
+    CHECK(test.beginsWith("Hello"));
+    CHECK(test.beginsWith(""));
+    CHECK_FALSE(test.beginsWith(NULL));
+    CHECK_FALSE(test.beginsWith("Hello!"));
+    CHECK_FALSE(test.beginsWith("Hello, World!!"));
 
     rdcstr str = test;
 

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -70,7 +70,7 @@ void D3D12RenderState::ResolvePendingIndirectState(WrappedID3D12Device *device)
   device->DeviceWaitForIdle();
 
   D3D12_RANGE range = {0, D3D12CommandData::m_IndirectSize};
-  byte *mapPtr = NULL;
+  const byte *mapPtr = NULL;
   CHECK_HR(device, indirectState.argsBuf->Map(0, &range, (void **)&mapPtr));
 
   if(device->HasFatalError())
@@ -79,7 +79,7 @@ void D3D12RenderState::ResolvePendingIndirectState(WrappedID3D12Device *device)
   WrappedID3D12CommandSignature *comSig = (WrappedID3D12CommandSignature *)indirectState.comSig;
 
   {
-    byte *data = mapPtr + indirectState.argsOffs;
+    const byte *data = mapPtr + indirectState.argsOffs;
 
     for(uint32_t argIdx = 0; argIdx < indirectState.argsToProcess; argIdx++)
     {
@@ -110,16 +110,12 @@ void D3D12RenderState::ResolvePendingIndirectState(WrappedID3D12Device *device)
           if(comSig->sig.graphics)
           {
             graphics.sigelems.resize_for_index(arg.Constant.RootParameterIndex);
-            graphics.sigelems[arg.Constant.RootParameterIndex].constants.resize_for_index(
-                arg.Constant.Num32BitValuesToSet + arg.Constant.DestOffsetIn32BitValues);
             graphics.sigelems[arg.Constant.RootParameterIndex].SetConstants(
                 arg.Constant.Num32BitValuesToSet, data32, arg.Constant.DestOffsetIn32BitValues);
           }
           else
           {
             compute.sigelems.resize_for_index(arg.Constant.RootParameterIndex);
-            compute.sigelems[arg.Constant.RootParameterIndex].constants.resize_for_index(
-                arg.Constant.Num32BitValuesToSet + arg.Constant.DestOffsetIn32BitValues);
             compute.sigelems[arg.Constant.RootParameterIndex].SetConstants(
                 arg.Constant.Num32BitValuesToSet, data32, arg.Constant.DestOffsetIn32BitValues);
           }
@@ -136,7 +132,7 @@ void D3D12RenderState::ResolvePendingIndirectState(WrappedID3D12Device *device)
           D3D12_GPU_VIRTUAL_ADDRESS va = vb->BufferLocation;
           device->GetResIDFromOrigAddr(va, id, offs);
 
-          ID3D12Resource *res = GetResourceManager()->GetLiveAs<ID3D12Resource>(id);
+          ID3D12Resource *res = GetResourceManager()->GetResAs<ID3D12Resource>(id);
 
           if(arg.VertexBuffer.Slot >= vbuffers.size())
             vbuffers.resize(arg.VertexBuffer.Slot + 1);
@@ -157,7 +153,7 @@ void D3D12RenderState::ResolvePendingIndirectState(WrappedID3D12Device *device)
           uint64_t offs = 0;
           device->GetResIDFromOrigAddr(ib->BufferLocation, id, offs);
 
-          ID3D12Resource *res = GetResourceManager()->GetLiveAs<ID3D12Resource>(id);
+          ID3D12Resource *res = GetResourceManager()->GetResAs<ID3D12Resource>(id);
 
           ibuffer.buf = GetResID(res);
           ibuffer.offs = offs;
@@ -177,7 +173,7 @@ void D3D12RenderState::ResolvePendingIndirectState(WrappedID3D12Device *device)
           uint64_t offs = 0;
           device->GetResIDFromOrigAddr(*addr, id, offs);
 
-          ID3D12Resource *res = GetResourceManager()->GetLiveAs<ID3D12Resource>(id);
+          ID3D12Resource *res = GetResourceManager()->GetResAs<ID3D12Resource>(id);
 
           SignatureElementType t = eRootCBV;
           if(arg.Type == D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW)
@@ -207,6 +203,7 @@ void D3D12RenderState::ResolvePendingIndirectState(WrappedID3D12Device *device)
     }
   }
 
+  range.End = 0;
   indirectState.argsBuf->Unmap(0, &range);
   indirectState.argsBuf = NULL;
   indirectState.argsOffs = 0;
@@ -221,12 +218,16 @@ void D3D12RenderState::ApplyState(WrappedID3D12Device *dev, ID3D12GraphicsComman
   ID3D12PipelineState *pipeState = NULL;
   if(pipe != ResourceId())
   {
-    pipeState = GetResourceManager()->GetCurrentAs<ID3D12PipelineState>(pipe);
+    pipeState = GetResourceManager()->GetResAs<ID3D12PipelineState>(pipe);
     cmd->SetPipelineState(pipeState);
   }
 
+  if(predication.buffer != ResourceId())
+    cmd->SetPredication(GetResourceManager()->GetResAs<ID3D12Resource>(predication.buffer),
+                        predication.offset, predication.op);
+
   if(stateobj != ResourceId())
-    cmd->SetPipelineState1(GetResourceManager()->GetCurrentAs<ID3D12StateObject>(stateobj));
+    cmd->SetPipelineState1(GetResourceManager()->GetResAs<ID3D12StateObject>(stateobj));
 
   if(type == D3D12_COMMAND_LIST_TYPE_DIRECT || type == D3D12_COMMAND_LIST_TYPE_BUNDLE)
   {
@@ -273,8 +274,7 @@ void D3D12RenderState::ApplyState(WrappedID3D12Device *dev, ID3D12GraphicsComman
       {
         cmd->RSSetShadingRate(shadingRate, shadingRateCombiners);
         if(shadingRateImage != ResourceId())
-          cmd->RSSetShadingRateImage(
-              GetResourceManager()->GetCurrentAs<ID3D12Resource>(shadingRateImage));
+          cmd->RSSetShadingRateImage(GetResourceManager()->GetResAs<ID3D12Resource>(shadingRateImage));
       }
     }
 
@@ -298,7 +298,7 @@ void D3D12RenderState::ApplyState(WrappedID3D12Device *dev, ID3D12GraphicsComman
     {
       D3D12_INDEX_BUFFER_VIEW ib;
 
-      ID3D12Resource *res = GetResourceManager()->GetCurrentAs<ID3D12Resource>(ibuffer.buf);
+      ID3D12Resource *res = GetResourceManager()->GetResAs<ID3D12Resource>(ibuffer.buf);
       if(res)
         ib.BufferLocation = res->GetGPUVirtualAddress() + ibuffer.offs;
       else
@@ -317,7 +317,7 @@ void D3D12RenderState::ApplyState(WrappedID3D12Device *dev, ID3D12GraphicsComman
 
       if(vbuffers[i].buf != ResourceId())
       {
-        ID3D12Resource *res = GetResourceManager()->GetCurrentAs<ID3D12Resource>(vbuffers[i].buf);
+        ID3D12Resource *res = GetResourceManager()->GetResAs<ID3D12Resource>(vbuffers[i].buf);
         if(res)
           vb.BufferLocation = res->GetGPUVirtualAddress() + vbuffers[i].offs;
         else
@@ -352,15 +352,14 @@ void D3D12RenderState::ApplyState(WrappedID3D12Device *dev, ID3D12GraphicsComman
   if(graphics.rootsig != ResourceId())
   {
     cmd->SetGraphicsRootSignature(
-        GetResourceManager()->GetCurrentAs<ID3D12RootSignature>(graphics.rootsig));
+        GetResourceManager()->GetResAs<ID3D12RootSignature>(graphics.rootsig));
 
     ApplyGraphicsRootElements(cmd);
   }
 
   if(compute.rootsig != ResourceId())
   {
-    cmd->SetComputeRootSignature(
-        GetResourceManager()->GetCurrentAs<ID3D12RootSignature>(compute.rootsig));
+    cmd->SetComputeRootSignature(GetResourceManager()->GetResAs<ID3D12RootSignature>(compute.rootsig));
 
     ApplyComputeRootElements(cmd);
   }
@@ -372,7 +371,7 @@ void D3D12RenderState::ApplyDescriptorHeaps(ID3D12GraphicsCommandList *cmd) cons
   descHeaps.resize(heaps.size());
 
   for(size_t i = 0; i < heaps.size(); i++)
-    descHeaps[i] = GetResourceManager()->GetCurrentAs<ID3D12DescriptorHeap>(heaps[i]);
+    descHeaps[i] = GetResourceManager()->GetResAs<ID3D12DescriptorHeap>(heaps[i]);
 
   if(!descHeaps.empty())
     cmd->SetDescriptorHeaps((UINT)descHeaps.size(), &descHeaps[0]);

@@ -21,7 +21,7 @@
 #define RESOURCE_d3d12_pixelhistory_hlsl  119
 #define RESOURCE_depth_copy_hlsl    120
 #define RESOURCE_raytracing_hlsl    121
-#define RESOURCE_quadswizzle_hlsl   131
+#define RESOURCE_hlsl_quadswizzle_hlsl   131
 
 #define RESOURCE_fixedcol_0_dxbc    113
 #define RESOURCE_fixedcol_1_dxbc    114
@@ -80,6 +80,8 @@
 #define RESOURCE_glsl_vk_depthbuf2ms_frag		     450
 #define RESOURCE_glsl_depth_copy_frag                451
 #define RESOURCE_glsl_depth_copyms_frag              452
+#define RESOURCE_glsl_debug_math_comp                453
+#define RESOURCE_glsl_debug_sample_frag              454
 
 // Next default values for new objects
 // 

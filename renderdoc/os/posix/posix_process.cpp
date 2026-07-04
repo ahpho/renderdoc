@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -814,11 +814,11 @@ void GetHookingEnvMods(rdcarray<EnvironmentModification> &modifications, const C
   RDCLOG("[rf-rd] GetHookingEnvMods, push_back, RENDERDOC_ORIGPRELOAD, %s, %s", PRELOAD_ENV_VAR, Process::GetEnvVariable(PRELOAD_ENV_VAR).c_str());
 
   modifications.push_back(
+      EnvironmentModification(EnvMod::Append, EnvSep::Platform, LIB_PATH_ENV_VAR, ownlibpath));
+  modifications.push_back(
       EnvironmentModification(EnvMod::Append, EnvSep::Platform, LIB_PATH_ENV_VAR, binpath));
   modifications.push_back(
       EnvironmentModification(EnvMod::Append, EnvSep::Platform, LIB_PATH_ENV_VAR, libpath));
-  modifications.push_back(
-      EnvironmentModification(EnvMod::Append, EnvSep::Platform, LIB_PATH_ENV_VAR, ownlibpath));
   modifications.push_back(
       EnvironmentModification(EnvMod::Append, EnvSep::Platform, PRELOAD_ENV_VAR, libfile));
   modifications.push_back(

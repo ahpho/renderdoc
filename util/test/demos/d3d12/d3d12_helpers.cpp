@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -264,6 +264,13 @@ D3D12BufferCreator &D3D12BufferCreator::ASB()
 {
   m_InitialState = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
   m_BufDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+  return *this;
+}
+
+D3D12BufferCreator &D3D12BufferCreator::GPUUpload()
+{
+  m_HeapDesc.Type = D3D12_HEAP_TYPE_GPU_UPLOAD;
+  m_InitialState = D3D12_RESOURCE_STATE_COMMON;
   return *this;
 }
 
@@ -993,7 +1000,7 @@ D3D12_CPU_DESCRIPTOR_HANDLE D3D12ViewCreator::CreateCPU(ID3D12DescriptorHeap *he
   }
   else if(m_Type == ViewType::SRV)
   {
-    if(desc.uav.ViewDimension == D3D12_SRV_DIMENSION_BUFFER)
+    if(desc.srv.ViewDimension == D3D12_SRV_DIMENSION_BUFFER)
     {
       D3D12_RESOURCE_DESC bufdesc = m_Res->GetDesc();
 

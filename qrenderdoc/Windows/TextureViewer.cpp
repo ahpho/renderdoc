@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -2392,7 +2392,7 @@ void TextureViewer::OpenResourceContextMenu(ResourceId id, bool input,
       m_Ctx.GetResourceInspector()->Inspect(id);
     });
 
-    CombineUsageEvents(m_Ctx, usage,
+    CombineUsageEvents(m_Ctx, usage, false,
                        [this, &contextMenu](uint32_t start, uint32_t end, ResourceUsage use) {
                          AddResourceUsageEntry(contextMenu, start, end, use);
                        });
@@ -4145,7 +4145,7 @@ void TextureViewer::on_debugPixelContext_clicked()
   if(!trace)
   {
     if(m_Ctx.APIProps().pixelHistory)
-      on_pixelHistory_clicked();
+      ShowPixelHistory(true);
     else
       RDDialog::critical(this, tr("Debug Error"), tr("Error debugging pixel."));
     return;
@@ -4162,6 +4162,11 @@ void TextureViewer::on_debugPixelContext_clicked()
 }
 
 void TextureViewer::on_pixelHistory_clicked()
+{
+  ShowPixelHistory(false);
+}
+
+void TextureViewer::ShowPixelHistory(bool failedDebug)
 {
   TextureDescription *texptr = GetCurrentTexture();
 
@@ -4180,6 +4185,9 @@ void TextureViewer::on_pixelHistory_clicked()
 
   uint32_t view = m_TexDisplay.subresource.slice - m_Following.GetFirstArraySlice(m_Ctx);
   IPixelHistoryView *hist = m_Ctx.ViewPixelHistory(texptr->resourceId, x, y, view, m_TexDisplay);
+
+  if(failedDebug)
+    hist->SetFailedDebug();
 
   m_Ctx.AddDockWindow(hist->Widget(), DockReference::TransientPopupArea, this, 0.3f);
 

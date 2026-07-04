@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -52,7 +52,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_AtomicCopyBufferUINT(
       return false;
     }
 
-    m_Cmd->m_LastCmdListID = GetResourceManager()->GetOriginalID(GetResID(pCommandList));
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     if(IsActiveReplaying(m_State))
     {
@@ -84,8 +84,8 @@ bool WrappedID3D12GraphicsCommandList::Serialise_AtomicCopyBufferUINT(
         m_Cmd->AddEvent();
 
         ActionDescription action;
-        action.copySource = GetResourceManager()->GetOriginalID(GetResID(pSrcBuffer));
-        action.copyDestination = GetResourceManager()->GetOriginalID(GetResID(pDstBuffer));
+        action.copySource = GetResID(pSrcBuffer);
+        action.copyDestination = GetResID(pDstBuffer);
 
         action.flags |= ActionFlags::Copy;
 
@@ -165,7 +165,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_AtomicCopyBufferUINT64(
       return false;
     }
 
-    m_Cmd->m_LastCmdListID = GetResourceManager()->GetOriginalID(GetResID(pCommandList));
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     if(IsActiveReplaying(m_State))
     {
@@ -197,8 +197,8 @@ bool WrappedID3D12GraphicsCommandList::Serialise_AtomicCopyBufferUINT64(
         m_Cmd->AddEvent();
 
         ActionDescription action;
-        action.copySource = GetResourceManager()->GetOriginalID(GetResID(pSrcBuffer));
-        action.copyDestination = GetResourceManager()->GetOriginalID(GetResID(pDstBuffer));
+        action.copySource = GetResID(pSrcBuffer);
+        action.copyDestination = GetResID(pDstBuffer);
 
         action.flags |= ActionFlags::Copy;
 
@@ -287,7 +287,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_OMSetDepthBounds(SerialiserType
       return false;
     }
 
-    m_Cmd->m_LastCmdListID = GetResourceManager()->GetOriginalID(GetResID(pCommandList));
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
 
@@ -375,7 +375,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetSamplePositions(
       return false;
     }
 
-    m_Cmd->m_LastCmdListID = GetResourceManager()->GetOriginalID(GetResID(pCommandList));
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
 
@@ -457,7 +457,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ResolveSubresourceRegion(
       return false;
     }
 
-    m_Cmd->m_LastCmdListID = GetResourceManager()->GetOriginalID(GetResID(pCommandList));
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     if(IsActiveReplaying(m_State))
     {
@@ -480,8 +480,8 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ResolveSubresourceRegion(
         m_Cmd->AddEvent();
 
         ActionDescription action;
-        action.copySource = GetResourceManager()->GetOriginalID(GetResID(pSrcResource));
-        action.copyDestination = GetResourceManager()->GetOriginalID(GetResID(pDstResource));
+        action.copySource = GetResID(pSrcResource);
+        action.copyDestination = GetResID(pDstResource);
 
         action.flags |= ActionFlags::Resolve;
 
@@ -564,7 +564,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetViewInstanceMask(SerialiserT
       return false;
     }
 
-    m_Cmd->m_LastCmdListID = GetResourceManager()->GetOriginalID(GetResID(pCommandList));
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
 

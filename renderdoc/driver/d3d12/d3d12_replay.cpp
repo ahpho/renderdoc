@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -49,6 +49,9 @@
 
 RDOC_CONFIG(bool, D3D12_HardwareCounters, true,
             "Enable support for IHV-specific hardware counters on D3D12.");
+
+RDOC_CONFIG(bool, D3D12_AttemptExperimentalGPUUploadEnable, true,
+            "Try to enable 'experimental' support for GPU upload heaps on D3D12.");
 
 // this is global so we can free it even after D3D12Replay is destroyed
 static HMODULE D3D12Lib = NULL;
@@ -391,7 +394,8 @@ rdcarray<BufferDescription> D3D12Replay::GetBuffers()
   rdcarray<BufferDescription> ret;
 
   for(auto it = m_pDevice->GetResourceList().begin(); it != m_pDevice->GetResourceList().end(); it++)
-    if(it->second->GetDesc().Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
+    if(it->second->GetDesc().Dimension == D3D12_RESOURCE_DIMENSION_BUFFER &&
+       !ResourceIDGen::IsReplayOnlyID(it->first))
       ret.push_back(GetBuffer(it->first));
 
   return ret;
@@ -404,7 +408,7 @@ rdcarray<TextureDescription> D3D12Replay::GetTextures()
   for(auto it = m_pDevice->GetResourceList().begin(); it != m_pDevice->GetResourceList().end(); it++)
   {
     if(it->second->GetDesc().Dimension != D3D12_RESOURCE_DIMENSION_BUFFER &&
-       m_pDevice->GetResourceManager()->GetOriginalID(it->first) != it->first)
+       !ResourceIDGen::IsReplayOnlyID(it->first))
       ret.push_back(GetTexture(it->first));
   }
 
@@ -414,7 +418,7 @@ rdcarray<TextureDescription> D3D12Replay::GetTextures()
 BufferDescription D3D12Replay::GetBuffer(ResourceId id)
 {
   BufferDescription ret = {};
-  ret.resourceId = m_pDevice->GetResourceManager()->GetOriginalID(id);
+  ret.resourceId = id;
 
   auto it = m_pDevice->GetResourceList().find(id);
 
@@ -456,7 +460,7 @@ BufferDescription D3D12Replay::GetBuffer(ResourceId id)
 TextureDescription D3D12Replay::GetTexture(ResourceId id)
 {
   TextureDescription ret = {};
-  ret.resourceId = m_pDevice->GetResourceManager()->GetOriginalID(id);
+  ret.resourceId = id;
 
   auto it = m_pDevice->GetResourceList().find(id);
 
@@ -523,7 +527,7 @@ rdcarray<ShaderEntryPoint> D3D12Replay::GetShaderEntryPoints(ResourceId shader)
   if(!WrappedID3D12Shader::IsShader(shader))
     return {};
 
-  ID3D12DeviceChild *res = m_pDevice->GetResourceManager()->GetCurrentResource(shader);
+  ID3D12DeviceChild *res = m_pDevice->GetResourceManager()->GetResource(shader);
 
   if(!res)
     return {};
@@ -538,8 +542,7 @@ rdcarray<ShaderEntryPoint> D3D12Replay::GetShaderEntryPoints(ResourceId shader)
 const ShaderReflection *D3D12Replay::GetShader(ResourceId pipeline, ResourceId shader,
                                                ShaderEntryPoint entry)
 {
-  WrappedID3D12Shader *sh =
-      m_pDevice->GetResourceManager()->GetCurrentAs<WrappedID3D12Shader>(shader);
+  WrappedID3D12Shader *sh = m_pDevice->GetResourceManager()->GetResAs<WrappedID3D12Shader>(shader);
 
   if(sh)
     return &sh->GetDetails();
@@ -589,7 +592,7 @@ rdcstr D3D12Replay::DisassembleShader(ResourceId pipeline, const ShaderReflectio
                                       const rdcstr &target)
 {
   WrappedID3D12Shader *sh =
-      m_pDevice->GetResourceManager()->GetLiveAs<WrappedID3D12Shader>(refl->resourceId);
+      m_pDevice->GetResourceManager()->GetResAs<WrappedID3D12Shader>(refl->resourceId);
 
   if(!sh)
     return "; Invalid Shader Specified";
@@ -609,7 +612,7 @@ rdcstr D3D12Replay::DisassembleShader(ResourceId pipeline, const ShaderReflectio
     }
 
     WrappedID3D12PipelineState *pipe =
-        m_pDevice->GetResourceManager()->GetCurrentAs<WrappedID3D12PipelineState>(pipeline);
+        m_pDevice->GetResourceManager()->GetResAs<WrappedID3D12PipelineState>(pipeline);
 
     UINT size = 0;
     pipe->GetPrivateData(WKPDID_CommentStringW, &size, NULL);
@@ -705,9 +708,9 @@ rdcstr D3D12Replay::DisassembleShader(ResourceId pipeline, const ShaderReflectio
 
 void D3D12Replay::FreeTargetResource(ResourceId id)
 {
-  if(m_pDevice->GetResourceManager()->HasLiveResource(id))
+  if(m_pDevice->GetResourceManager()->HasResource(id))
   {
-    ID3D12DeviceChild *resource = m_pDevice->GetResourceManager()->GetLiveResource(id);
+    ID3D12DeviceChild *resource = m_pDevice->GetResourceManager()->GetResource(id);
 
     SAFE_RELEASE(resource);
   }
@@ -715,19 +718,12 @@ void D3D12Replay::FreeTargetResource(ResourceId id)
 
 void D3D12Replay::FreeCustomShader(ResourceId id)
 {
-  if(m_pDevice->GetResourceManager()->HasLiveResource(id))
+  if(m_pDevice->GetResourceManager()->HasResource(id))
   {
-    ID3D12DeviceChild *resource = m_pDevice->GetResourceManager()->GetLiveResource(id);
+    ID3D12DeviceChild *resource = m_pDevice->GetResourceManager()->GetResource(id);
 
     SAFE_RELEASE(resource);
   }
-}
-
-ResourceId D3D12Replay::GetLiveID(ResourceId id)
-{
-  if(!m_pDevice->GetResourceManager()->HasLiveResource(id))
-    return ResourceId();
-  return m_pDevice->GetResourceManager()->GetLiveID(id);
 }
 
 rdcarray<EventUsage> D3D12Replay::GetUsage(ResourceId id)
@@ -755,7 +751,8 @@ void D3D12Replay::FillDescriptor(Descriptor &dst, const D3D12Descriptor *src)
     return;
   }
 
-  dst.resource = rm->GetOriginalID(src->GetResResourceId());
+  dst = {};
+  dst.resource = src->GetResResourceId();
 
   if(dst.resource == ResourceId())
   {
@@ -774,7 +771,7 @@ void D3D12Replay::FillDescriptor(Descriptor &dst, const D3D12Descriptor *src)
   D3D12_RESOURCE_DESC res = {};
 
   {
-    ID3D12Resource *r = rm->GetCurrentAs<ID3D12Resource>(src->GetResResourceId());
+    ID3D12Resource *r = rm->GetResAs<ID3D12Resource>(src->GetResResourceId());
     if(r)
       res = r->GetDesc();
   }
@@ -830,7 +827,7 @@ void D3D12Replay::FillDescriptor(Descriptor &dst, const D3D12Descriptor *src)
         WrappedID3D12Resource::GetResIDFromAddr(srv.RaytracingAccelerationStructure.Location, asID,
                                                 dst.byteOffset);
 
-        WrappedID3D12Resource *asRes = rm->GetCurrentAs<WrappedID3D12Resource>(asID);
+        WrappedID3D12Resource *asRes = rm->GetResAs<WrappedID3D12Resource>(asID);
 
         if(asRes)
         {
@@ -838,13 +835,13 @@ void D3D12Replay::FillDescriptor(Descriptor &dst, const D3D12Descriptor *src)
           D3D12AccelerationStructure *as = NULL;
           if(asRes->GetAccStructIfExist(dst.byteOffset, &as))
           {
-            dst.resource = rm->GetOriginalID(as->GetResourceID());
+            dst.resource = as->GetResourceID();
             dst.byteOffset = 0;
             dst.byteSize = as->Size();
           }
           else
           {
-            dst.resource = rm->GetOriginalID(asID);
+            dst.resource = asID;
           }
         }
         else
@@ -925,7 +922,7 @@ void D3D12Replay::FillDescriptor(Descriptor &dst, const D3D12Descriptor *src)
 
       fmt = uav.Format;
 
-      dst.secondary = rm->GetOriginalID(src->GetCounterResourceId());
+      dst.secondary = src->GetCounterResourceId();
 
       dst.textureType = MakeTextureDim(uav.ViewDimension);
 
@@ -944,9 +941,8 @@ void D3D12Replay::FillDescriptor(Descriptor &dst, const D3D12Descriptor *src)
         if(dst.secondary != ResourceId())
         {
           bytebuf counterVal;
-          GetDebugManager()->GetBufferData(
-              rm->GetCurrentAs<ID3D12Resource>(src->GetCounterResourceId()),
-              uav.Buffer.CounterOffsetInBytes, 4, counterVal);
+          GetDebugManager()->GetBufferData(rm->GetResAs<ID3D12Resource>(src->GetCounterResourceId()),
+                                           uav.Buffer.CounterOffsetInBytes, 4, counterVal);
           uint32_t *val = (uint32_t *)&counterVal[0];
           dst.bufferStructCount = *val;
         }
@@ -998,7 +994,7 @@ void D3D12Replay::FillDescriptor(Descriptor &dst, const D3D12Descriptor *src)
 
       fmt = rtv.Format;
 
-      dst.secondary = rm->GetOriginalID(src->GetCounterResourceId());
+      dst.secondary = src->GetCounterResourceId();
 
       dst.textureType = MakeTextureDim(rtv.ViewDimension);
 
@@ -1050,7 +1046,7 @@ void D3D12Replay::FillDescriptor(Descriptor &dst, const D3D12Descriptor *src)
 
       fmt = dsv.Format;
 
-      dst.secondary = rm->GetOriginalID(src->GetCounterResourceId());
+      dst.secondary = src->GetCounterResourceId();
 
       dst.textureType = MakeTextureDim(dsv.ViewDimension);
       if(dsv.ViewDimension == D3D12_DSV_DIMENSION_TEXTURE1D)
@@ -1142,9 +1138,9 @@ void D3D12Replay::FillRootDescriptor(Descriptor &dst, const D3D12RenderState::Si
   {
     dst.type = DescriptorType::ConstantBuffer;
 
-    ID3D12Resource *buf = rm->GetCurrentAs<ID3D12Resource>(src.id);
+    ID3D12Resource *buf = rm->GetResAs<ID3D12Resource>(src.id);
 
-    dst.resource = rm->GetOriginalID(src.id);
+    dst.resource = src.id;
     dst.byteOffset = src.offset;
     if(buf)
       dst.byteSize = uint32_t(buf->GetDesc().Width - dst.byteOffset);
@@ -1155,10 +1151,10 @@ void D3D12Replay::FillRootDescriptor(Descriptor &dst, const D3D12RenderState::Si
   {
     dst.type = DescriptorType::Buffer;
 
-    ID3D12Resource *buf = rm->GetCurrentAs<ID3D12Resource>(src.id);
+    ID3D12Resource *buf = rm->GetResAs<ID3D12Resource>(src.id);
 
     // parameters from resource/view
-    dst.resource = rm->GetOriginalID(src.id);
+    dst.resource = src.id;
     dst.textureType = TextureType::Buffer;
     dst.format = MakeResourceFormat(DXGI_FORMAT_R32_TYPELESS);
 
@@ -1173,10 +1169,10 @@ void D3D12Replay::FillRootDescriptor(Descriptor &dst, const D3D12RenderState::Si
   {
     dst.type = DescriptorType::ReadWriteBuffer;
 
-    ID3D12Resource *buf = rm->GetCurrentAs<ID3D12Resource>(src.id);
+    ID3D12Resource *buf = rm->GetResAs<ID3D12Resource>(src.id);
 
     // parameters from resource/view
-    dst.resource = rm->GetOriginalID(src.id);
+    dst.resource = src.id;
     dst.textureType = TextureType::Buffer;
     dst.format = MakeResourceFormat(DXGI_FORMAT_R32_TYPELESS);
 
@@ -1211,12 +1207,12 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
 
   D3D12ResourceManager *rm = m_pDevice->GetResourceManager();
 
-  state.pipelineResourceId = rm->GetUnreplacedOriginalID(rs.pipe);
+  state.pipelineResourceId = rm->GetUnreplacedID(rs.pipe);
 
   WrappedID3D12PipelineState *pipe = NULL;
 
   if(rs.pipe != ResourceId())
-    pipe = rm->GetCurrentAs<WrappedID3D12PipelineState>(rs.pipe);
+    pipe = rm->GetResAs<WrappedID3D12PipelineState>(rs.pipe);
 
   if(pipe && pipe->IsGraphics())
   {
@@ -1254,13 +1250,13 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
     {
       D3D12Pipe::VertexBuffer &vb = state.inputAssembly.vertexBuffers[i];
 
-      vb.resourceId = rm->GetOriginalID(rs.vbuffers[i].buf);
+      vb.resourceId = rs.vbuffers[i].buf;
       vb.byteOffset = rs.vbuffers[i].offs;
       vb.byteSize = rs.vbuffers[i].size;
       vb.byteStride = rs.vbuffers[i].stride;
     }
 
-    state.inputAssembly.indexBuffer.resourceId = rm->GetOriginalID(rs.ibuffer.buf);
+    state.inputAssembly.indexBuffer.resourceId = rs.ibuffer.buf;
     state.inputAssembly.indexBuffer.byteOffset = rs.ibuffer.offs;
     state.inputAssembly.indexBuffer.byteSize = rs.ibuffer.size;
     state.inputAssembly.indexBuffer.byteStride = rs.ibuffer.bytewidth;
@@ -1276,7 +1272,7 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
   {
     WrappedID3D12Shader *sh = (WrappedID3D12Shader *)pipe->compute->CS.pShaderBytecode;
 
-    state.computeShader.resourceId = rm->GetUnreplacedOriginalID(sh->GetResourceID());
+    state.computeShader.resourceId = rm->GetUnreplacedID(sh->GetResourceID());
     state.computeShader.stage = ShaderStage::Compute;
     state.computeShader.reflection = &sh->GetDetails();
   }
@@ -1320,7 +1316,7 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
 
       if(sh)
       {
-        dst.resourceId = rm->GetUnreplacedOriginalID(sh->GetResourceID());
+        dst.resourceId = rm->GetUnreplacedID(sh->GetResourceID());
         dst.reflection = &sh->GetDetails();
       }
       else
@@ -1339,9 +1335,9 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
         (pipe && pipe->IsCompute()) ? rs.compute : rs.graphics;
     const rdcarray<D3D12RenderState::SignatureElement> &rootElems = sig.sigelems;
 
-    WrappedID3D12RootSignature *rootSig = rm->GetCurrentAs<WrappedID3D12RootSignature>(sig.rootsig);
+    WrappedID3D12RootSignature *rootSig = rm->GetResAs<WrappedID3D12RootSignature>(sig.rootsig);
 
-    state.rootSignature.resourceId = rm->GetOriginalID(GetResID(rootSig));
+    state.rootSignature.resourceId = GetResID(rootSig);
     state.rootSignature.parameters.clear();
     state.rootSignature.staticSamplers.clear();
 
@@ -1360,7 +1356,7 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
           {
             if(i < rootElems.size())
             {
-              dst.heap = rm->GetOriginalID(rootElems[i].id);
+              dst.heap = rootElems[i].id;
               dst.heapByteOffset = (uint32_t)rootElems[i].offset;
             }
 
@@ -1476,7 +1472,7 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
 
   state.descriptorHeaps.clear();
   for(ResourceId id : rs.heaps)
-    state.descriptorHeaps.push_back(rm->GetOriginalID(id));
+    state.descriptorHeaps.push_back(id);
 
   if(pipe && pipe->IsGraphics())
   {
@@ -1489,12 +1485,11 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
     state.streamOut.outputs.resize(rs.streamouts.size());
     for(size_t s = 0; s < rs.streamouts.size(); s++)
     {
-      state.streamOut.outputs[s].resourceId = rm->GetOriginalID(rs.streamouts[s].buf);
+      state.streamOut.outputs[s].resourceId = rs.streamouts[s].buf;
       state.streamOut.outputs[s].byteOffset = rs.streamouts[s].offs;
       state.streamOut.outputs[s].byteSize = rs.streamouts[s].size;
 
-      state.streamOut.outputs[s].writtenCountResourceId =
-          rm->GetOriginalID(rs.streamouts[s].countbuf);
+      state.streamOut.outputs[s].writtenCountResourceId = rs.streamouts[s].countbuf;
       state.streamOut.outputs[s].writtenCountByteOffset = rs.streamouts[s].countoffs;
     }
 
@@ -1582,7 +1577,7 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
 
       dst.shadingRateCombiners = {combiners[0], combiners[1]};
 
-      dst.shadingRateImage = rm->GetOriginalID(rs.shadingRateImage);
+      dst.shadingRateImage = rs.shadingRateImage;
     }
 
     state.rasterizer.scissors.resize(rs.scissors.size());
@@ -1703,6 +1698,14 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
     }
   }
 
+  /////////////////////////////////////////////////
+  // Predication
+  /////////////////////////////////////////////////
+
+  state.predication.resourceId = rs.predication.buffer;
+  state.predication.offset = rs.predication.offset;
+  state.predication.skipIfZero = rs.predication.op == D3D12_PREDICATION_OP_EQUAL_ZERO;
+
   // resource states
   {
     const std::map<ResourceId, SubresourceStateVector> &states = m_pDevice->GetSubresourceStates();
@@ -1712,7 +1715,7 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
     {
       D3D12Pipe::ResourceData &res = state.resourceStates[i];
 
-      res.resourceId = rm->GetOriginalID(it->first);
+      res.resourceId = it->first;
 
       res.states.resize(it->second.size());
       for(size_t l = 0; l < it->second.size(); l++)
@@ -1740,7 +1743,7 @@ rdcarray<Descriptor> D3D12Replay::GetDescriptors(ResourceId descriptorStore,
 
   D3D12ResourceManager *rm = m_pDevice->GetResourceManager();
 
-  ID3D12DeviceChild *res = rm->GetCurrentAs<ID3D12DeviceChild>(descriptorStore);
+  ID3D12DeviceChild *res = rm->GetResAs<ID3D12DeviceChild>(descriptorStore);
 
   if(WrappedID3D12RootSignature::IsAlloc(res))
   {
@@ -1783,7 +1786,7 @@ rdcarray<Descriptor> D3D12Replay::GetDescriptors(ResourceId descriptorStore,
           d.view = ResourceId();
           // we pretend that the pipeline has all root constants appended together as its blob of
           // data, so calculate local 'offset' into the root constants
-          d.resource = rm->GetOriginalID(descriptorStore);
+          d.resource = descriptorStore;
 
           d.byteOffset = 0;
           for(uint32_t root = 0; root < rootIndex; root++)
@@ -1829,7 +1832,7 @@ rdcarray<Descriptor> D3D12Replay::GetDescriptors(ResourceId descriptorStore,
         WrappedID3D12Resource::GetResIDFromAddr(cbv.BufferLocation, ret[dst].resource,
                                                 ret[dst].byteOffset);
 
-        ret[dst].resource = rm->GetOriginalID(ret[dst].resource);
+        ret[dst].type = DescriptorType::ConstantBuffer;
         ret[dst].byteSize = cbv.SizeInBytes;
       }
       else if(desc->GetType() == D3D12DescriptorType::Sampler)
@@ -1862,7 +1865,7 @@ rdcarray<SamplerDescriptor> D3D12Replay::GetSamplerDescriptors(ResourceId descri
 
   D3D12ResourceManager *rm = m_pDevice->GetResourceManager();
 
-  ID3D12DeviceChild *res = rm->GetCurrentAs<ID3D12DeviceChild>(descriptorStore);
+  ID3D12DeviceChild *res = rm->GetResAs<ID3D12DeviceChild>(descriptorStore);
 
   if(WrappedID3D12RootSignature::IsAlloc(res))
   {
@@ -1940,7 +1943,7 @@ rdcarray<DescriptorAccess> D3D12Replay::GetDescriptorAccess(uint32_t eventId)
   WrappedID3D12PipelineState *pipe = NULL;
 
   if(rs.pipe != ResourceId())
-    pipe = rm->GetCurrentAs<WrappedID3D12PipelineState>(rs.pipe);
+    pipe = rm->GetResAs<WrappedID3D12PipelineState>(rs.pipe);
 
   rdcarray<DescriptorAccess> ret;
 
@@ -1960,7 +1963,7 @@ rdcarray<DescriptorAccess> D3D12Replay::GetDescriptorAccess(uint32_t eventId)
     for(ResourceId id : rs.heaps)
     {
       WrappedID3D12DescriptorHeap *heap =
-          (WrappedID3D12DescriptorHeap *)rm->GetCurrentAs<ID3D12DescriptorHeap>(id);
+          (WrappedID3D12DescriptorHeap *)rm->GetResAs<ID3D12DescriptorHeap>(id);
       D3D12_DESCRIPTOR_HEAP_DESC desc = heap->GetDesc();
       if(desc.Type == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
         resourceHeap = heap;
@@ -1971,11 +1974,9 @@ rdcarray<DescriptorAccess> D3D12Replay::GetDescriptorAccess(uint32_t eventId)
     for(DescriptorAccess &access : ret)
     {
       if(access.type == DescriptorType::Sampler)
-        access.descriptorStore =
-            samplerHeap ? rm->GetOriginalID(samplerHeap->GetResourceID()) : ResourceId();
+        access.descriptorStore = samplerHeap ? samplerHeap->GetResourceID() : ResourceId();
       else
-        access.descriptorStore =
-            resourceHeap ? rm->GetOriginalID(resourceHeap->GetResourceID()) : ResourceId();
+        access.descriptorStore = resourceHeap ? resourceHeap->GetResourceID() : ResourceId();
 
       // for direct heap access, don't do anything more
       if(access.index == DescriptorAccess::NoShaderBinding)
@@ -1990,7 +1991,7 @@ rdcarray<DescriptorAccess> D3D12Replay::GetDescriptorAccess(uint32_t eventId)
       // this as root signature descriptor storage
       if(access.type == DescriptorType::Sampler && rootIndex >= rootSig.sigelems.size())
       {
-        access.descriptorStore = rm->GetOriginalID(rootSig.rootsig);
+        access.descriptorStore = rootSig.rootsig;
         // the access byteOffset is the index of the static sampler
         continue;
       }
@@ -2012,7 +2013,7 @@ rdcarray<DescriptorAccess> D3D12Replay::GetDescriptorAccess(uint32_t eventId)
         // somewhat arbitrary (we could use the command buffer, or the root signature), we just need
         // to be able to distinguish it in GetDescriptors and GetBufferData. Since we don't have
         // other types of virtual constants to handle we can use the pipeline state directly
-        access.descriptorStore = rm->GetOriginalID(pipe->GetResourceID());
+        access.descriptorStore = pipe->GetResourceID();
         access.byteOffset = rootIndex;
       }
       else
@@ -2037,7 +2038,7 @@ rdcarray<DescriptorLogicalLocation> D3D12Replay::GetDescriptorLocations(
 
   D3D12ResourceManager *rm = m_pDevice->GetResourceManager();
 
-  ID3D12DeviceChild *res = rm->GetCurrentAs<ID3D12DeviceChild>(descriptorStore);
+  ID3D12DeviceChild *res = rm->GetResAs<ID3D12DeviceChild>(descriptorStore);
 
   size_t count = 0;
   for(const DescriptorRange &r : ranges)
@@ -2288,7 +2289,10 @@ uint32_t D3D12Replay::PickVertex(uint32_t eventId, int32_t width, int32_t height
   cbuf.PickFlipY = cfg.position.flipY;
   cbuf.PickOrtho = cfg.ortho;
 
-  Matrix4f projMat = Matrix4f::Perspective(90.0f, 0.1f, 100000.0f, float(width) / float(height));
+  float nearPlane = cfg.cam ? ((Camera *)cfg.cam)->GetNear() : 0.1f;
+  float farPlane = cfg.cam ? ((Camera *)cfg.cam)->GetFar() : 100000.0f;
+
+  Matrix4f projMat = Matrix4f::Perspective(90.0f, nearPlane, farPlane, float(width) / float(height));
 
   Matrix4f camMat = cfg.cam ? ((Camera *)cfg.cam)->GetMatrix() : Matrix4f::Identity();
 
@@ -2484,10 +2488,10 @@ uint32_t D3D12Replay::PickVertex(uint32_t eventId, int32_t width, int32_t height
   ID3D12Resource *vb = NULL, *ib = NULL;
 
   if(cfg.position.vertexResourceId != ResourceId())
-    vb = m_pDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(cfg.position.vertexResourceId);
+    vb = m_pDevice->GetResourceManager()->GetResAs<ID3D12Resource>(cfg.position.vertexResourceId);
 
   if(cfg.position.indexResourceId != ResourceId())
-    ib = m_pDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(cfg.position.indexResourceId);
+    ib = m_pDevice->GetResourceManager()->GetResAs<ID3D12Resource>(cfg.position.indexResourceId);
 
   HRESULT hr = S_OK;
 
@@ -3364,7 +3368,7 @@ bool D3D12Replay::NeedRemapForFetch(const ResourceFormat &format)
 
 void D3D12Replay::GetBufferData(ResourceId buff, uint64_t offset, uint64_t length, bytebuf &ret)
 {
-  ID3D12DeviceChild *res = m_pDevice->GetResourceManager()->GetCurrentResource(buff);
+  ID3D12DeviceChild *res = m_pDevice->GetResourceManager()->GetResource(buff);
   if(WrappedID3D12PipelineState::IsAlloc(res))
   {
     const D3D12RenderState &rs = m_pDevice->GetQueue()->GetCommandData()->m_RenderState;
@@ -3406,8 +3410,7 @@ void D3D12Replay::GetBufferData(ResourceId buff, uint64_t offset, uint64_t lengt
 
   if(it == m_pDevice->GetResourceList().end() || it->second == NULL)
   {
-    RDCERR("Getting buffer data for unknown buffer %s!",
-           ToStr(m_pDevice->GetResourceManager()->GetLiveID(buff)).c_str());
+    RDCERR("Getting buffer data for unknown buffer %s!", ToStr(buff).c_str());
     return;
   }
 
@@ -3415,8 +3418,7 @@ void D3D12Replay::GetBufferData(ResourceId buff, uint64_t offset, uint64_t lengt
 
   if(buffer->GetDesc().Dimension != D3D12_RESOURCE_DIMENSION_BUFFER)
   {
-    RDCERR("Getting buffer data for non-buffer %s!",
-           ToStr(m_pDevice->GetResourceManager()->GetLiveID(buff)).c_str());
+    RDCERR("Getting buffer data for non-buffer %s!", ToStr(buff).c_str());
     return;
   }
 
@@ -3432,7 +3434,7 @@ void D3D12Replay::FillCBufferVariables(ResourceId pipeline, ResourceId shader, S
   if(shader == ResourceId())
     return;
 
-  ID3D12DeviceChild *res = m_pDevice->GetResourceManager()->GetCurrentResource(shader);
+  ID3D12DeviceChild *res = m_pDevice->GetResourceManager()->GetResource(shader);
 
   WrappedID3D12Shader *sh = (WrappedID3D12Shader *)res;
 
@@ -3454,14 +3456,12 @@ void D3D12Replay::FillCBufferVariables(ResourceId pipeline, ResourceId shader, S
 
   if(refl.stage == ShaderStage::Compute && rs.compute.rootsig != ResourceId())
   {
-    sig =
-        m_pDevice->GetResourceManager()->GetCurrentAs<WrappedID3D12RootSignature>(rs.compute.rootsig);
+    sig = m_pDevice->GetResourceManager()->GetResAs<WrappedID3D12RootSignature>(rs.compute.rootsig);
     sigElems = &rs.compute.sigelems;
   }
   else if(refl.stage != ShaderStage::Compute && rs.graphics.rootsig != ResourceId())
   {
-    sig = m_pDevice->GetResourceManager()->GetCurrentAs<WrappedID3D12RootSignature>(
-        rs.graphics.rootsig);
+    sig = m_pDevice->GetResourceManager()->GetResAs<WrappedID3D12RootSignature>(rs.graphics.rootsig);
     sigElems = &rs.graphics.sigelems;
   }
 
@@ -3571,7 +3571,7 @@ void D3D12Replay::BuildShader(ShaderEncoding sourceEncoding, const bytebuf &sour
   byteCode.BytecodeLength = dxbcLength;
   byteCode.pShaderBytecode = dxbcBytes;
 
-  WrappedID3D12Shader *sh = WrappedID3D12Shader::AddShader(byteCode, m_pDevice);
+  WrappedID3D12Shader *sh = WrappedID3D12Shader::AddShader(ResourceId(), byteCode, m_pDevice);
 
   sh->AddRef();
 
@@ -3593,9 +3593,9 @@ void D3D12Replay::ReplaceResource(ResourceId from, ResourceId to)
   if(WrappedID3D12Shader::IsShader(from))
   {
     WrappedID3D12Shader *fromsh =
-        (WrappedID3D12Shader *)m_pDevice->GetResourceManager()->GetCurrentResource(from);
+        (WrappedID3D12Shader *)m_pDevice->GetResourceManager()->GetResource(from);
     WrappedID3D12Shader *tosh =
-        (WrappedID3D12Shader *)m_pDevice->GetResourceManager()->GetCurrentResource(to);
+        (WrappedID3D12Shader *)m_pDevice->GetResourceManager()->GetResource(to);
 
     if(fromsh && tosh)
     {
@@ -3635,6 +3635,13 @@ void D3D12Replay::ClearReplayCache()
   ClearFeedbackCache();
 }
 
+void D3D12Replay::ReloadShaderDebugInformation()
+{
+  DXBC::ResetSearchDirsCache();
+  WrappedID3D12Shader::ReloadShaderDebugInformation();
+  ClearReplayCache();
+}
+
 void D3D12Replay::RefreshDerivedReplacements()
 {
   D3D12ResourceManager *rm = m_pDevice->GetResourceManager();
@@ -3646,16 +3653,16 @@ void D3D12Replay::RefreshDerivedReplacements()
   for(WrappedID3D12PipelineState *pipe : m_pDevice->GetPipelineList())
   {
     ResourceId pipesrcid = pipe->GetResourceID();
-    ResourceId origsrcid = rm->GetOriginalID(pipesrcid);
+    ResourceId origsrcid = pipesrcid;
 
     // only look at pipelines from the capture, no replay-time programs.
-    if(origsrcid == pipesrcid)
+    if(ResourceIDGen::IsReplayOnlyID(pipesrcid))
       continue;
 
     // if this pipeline has a replacement, remove it and delete the program generated for it
     if(rm->HasReplacement(origsrcid))
     {
-      deletequeue.push_back(rm->GetLiveAs<ID3D12PipelineState>(origsrcid));
+      deletequeue.push_back(rm->GetResAs<ID3D12PipelineState>(origsrcid));
 
       rm->RemoveReplacement(origsrcid);
     }
@@ -3667,19 +3674,19 @@ void D3D12Replay::RefreshDerivedReplacements()
       ResourceId shaders[NumShaderStages];
 
       if(pipe->VS())
-        shaders[0] = rm->GetOriginalID(pipe->VS()->GetResourceID());
+        shaders[0] = pipe->VS()->GetResourceID();
       if(pipe->HS())
-        shaders[1] = rm->GetOriginalID(pipe->HS()->GetResourceID());
+        shaders[1] = pipe->HS()->GetResourceID();
       if(pipe->DS())
-        shaders[2] = rm->GetOriginalID(pipe->DS()->GetResourceID());
+        shaders[2] = pipe->DS()->GetResourceID();
       if(pipe->GS())
-        shaders[3] = rm->GetOriginalID(pipe->GS()->GetResourceID());
+        shaders[3] = pipe->GS()->GetResourceID();
       if(pipe->PS())
-        shaders[4] = rm->GetOriginalID(pipe->PS()->GetResourceID());
+        shaders[4] = pipe->PS()->GetResourceID();
       if(pipe->AS())
-        shaders[6] = rm->GetOriginalID(pipe->AS()->GetResourceID());
+        shaders[6] = pipe->AS()->GetResourceID();
       if(pipe->MS())
-        shaders[7] = rm->GetOriginalID(pipe->MS()->GetResourceID());
+        shaders[7] = pipe->MS()->GetResourceID();
 
       for(size_t i = 0; i < ARRAY_COUNT(shaders); i++)
       {
@@ -3690,7 +3697,7 @@ void D3D12Replay::RefreshDerivedReplacements()
     }
     else
     {
-      if(rm->HasReplacement(rm->GetOriginalID(pipe->CS()->GetResourceID())))
+      if(rm->HasReplacement(pipe->CS()->GetResourceID()))
       {
         usesReplacedShader = true;
       }
@@ -3715,8 +3722,8 @@ void D3D12Replay::RefreshDerivedReplacements()
           {
             WrappedID3D12Shader *stage = (WrappedID3D12Shader *)shaders[s]->pShaderBytecode;
 
-            // remap through the original ID to pick up any replacements
-            stage = rm->GetLiveAs<WrappedID3D12Shader>(rm->GetOriginalID(stage->GetResourceID()));
+            // this will pick up any replacements
+            stage = rm->GetResAs<WrappedID3D12Shader>(stage->GetResourceID());
 
             *shaders[s] = stage->GetDesc();
           }
@@ -3730,8 +3737,8 @@ void D3D12Replay::RefreshDerivedReplacements()
 
         WrappedID3D12Shader *stage = pipe->CS();
 
-        // remap through the original ID to pick up any replacements
-        stage = rm->GetLiveAs<WrappedID3D12Shader>(rm->GetOriginalID(stage->GetResourceID()));
+        // this will pick up any replacements
+        stage = rm->GetResAs<WrappedID3D12Shader>(stage->GetResourceID());
 
         desc.CS = stage->GetDesc();
 
@@ -3768,15 +3775,13 @@ void D3D12Replay::GetTextureData(ResourceId tex, const Subresource &sub,
 
   if(resource == NULL)
   {
-    RDCERR("Trying to get texture data for unknown ID %s!",
-           ToStr(m_pDevice->GetResourceManager()->GetLiveID(tex)).c_str());
+    RDCERR("Trying to get texture data for unknown ID %s!", ToStr(tex).c_str());
     return;
   }
 
   if(resource->GetDesc().Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
   {
-    RDCERR("Getting texture data for buffer %s!",
-           ToStr(m_pDevice->GetResourceManager()->GetLiveID(tex)).c_str());
+    RDCERR("Getting texture data for buffer %s!", ToStr(tex).c_str());
     return;
   }
 
@@ -4522,6 +4527,14 @@ RDResult D3D12_CreateReplayDevice(RDCFile *rdc, const ReplayOptions &opts, IRepl
   PFN_D3D12_CREATE_DEVICE createDevicePtr =
       (PFN_D3D12_CREATE_DEVICE)GetProcAddress(D3D12Lib, "D3D12CreateDevice");
 
+  typedef HRESULT(WINAPI * PFN_D3D12_ENABLE_EXPERIMENTAL_FEATURES)(
+      UINT NumFeatures, const IID *pIIDs, void *pConfigurationStructs,
+      UINT *pConfigurationStructSizes);
+
+  PFN_D3D12_ENABLE_EXPERIMENTAL_FEATURES enableExperimentalPtr =
+      (PFN_D3D12_ENABLE_EXPERIMENTAL_FEATURES)GetProcAddress(D3D12Lib,
+                                                             "D3D12EnableExperimentalFeatures");
+
   RealD3D12CreateFunction createDevice = createDevicePtr;
 
   HMODULE dxgilib = LoadLibraryA("dxgi.dll");
@@ -4731,6 +4744,19 @@ RDResult D3D12_CreateReplayDevice(RDCFile *rdc, const ReplayOptions &opts, IRepl
   if(EnableDRED(config, NULL))
   {
     RDCLOG("DRED enabled");
+  }
+
+  if(D3D12_AttemptExperimentalGPUUploadEnable())
+  {
+    if(config)
+    {
+      config->devfactory->EnableExperimentalFeatures(1, &D3D12GPUUploadHeapsOnUnsupportedOS, NULL,
+                                                     NULL);
+    }
+    else if(enableExperimentalPtr)
+    {
+      enableExperimentalPtr(1, &D3D12GPUUploadHeapsOnUnsupportedOS, NULL, NULL);
+    }
   }
 
   ID3D12Device *dev = NULL;

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2019-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -211,7 +211,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_BeginRenderPass(
       return false;
     }
 
-    m_Cmd->m_LastCmdListID = GetResourceManager()->GetOriginalID(GetResID(pCommandList));
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     // patch the parameters so that we point into our local CPU descriptor handles that are up
     // to date
@@ -555,7 +555,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_EndRenderPass(SerialiserType &s
       return false;
     }
 
-    m_Cmd->m_LastCmdListID = GetResourceManager()->GetOriginalID(GetResID(pCommandList));
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
 
@@ -605,8 +605,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_EndRenderPass(SerialiserType &s
           D3D12_RESOURCE_BARRIER barrier = {};
           barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
           barrier.Transition.pResource = Unwrap(state.rpDSV.DepthEndingAccess.Resolve.pSrcResource);
-          barrier.Transition.StateBefore =
-              D3D12_RESOURCE_STATE_DEPTH_READ | D3D12_RESOURCE_STATE_DEPTH_WRITE;
+          barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_DEPTH_WRITE;
           barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RESOLVE_SOURCE;
 
           Unwrap4(m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID))->ResourceBarrier(1, &barrier);
@@ -736,7 +735,7 @@ bool WrappedID3D12GraphicsCommandList::ProcessASBuildAfterSubmission(
 {
   D3D12ResourceManager *rm = m_pDevice->GetResourceManager();
 
-  WrappedID3D12Resource *dstASB = rm->GetCurrentAs<WrappedID3D12Resource>(destASBId);
+  WrappedID3D12Resource *dstASB = rm->GetResAs<WrappedID3D12Resource>(destASBId);
 
   // unconditionally create a new AS at this location, never allow re-use even in the case of
   // in-place update builds. This makes it easier to track ASs and we will not run out of
@@ -746,7 +745,7 @@ bool WrappedID3D12GraphicsCommandList::ProcessASBuildAfterSubmission(
   //
   // CreateAccStruct deletes any previous overlapping ASs on the ASB
   D3D12AccelerationStructure *accStructAtDestOffset = NULL;
-  if(dstASB->CreateAccStruct(destASBOffset, type, byteSize, dstASId, &accStructAtDestOffset))
+  if(dstASB->CreateAccStruct(dstASId, destASBOffset, type, byteSize, &accStructAtDestOffset))
   {
     D3D12ResourceRecord *record = rm->AddResourceRecord(accStructAtDestOffset->GetResourceID());
     record->type = Resource_AccelerationStructure;
@@ -807,7 +806,7 @@ bool WrappedID3D12GraphicsCommandList::PatchAccStructBlasAddress(
         WrappedID3D12Resource::GetResIDFromAddr(accStructInput.Inputs.InstanceDescs);
 
     ID3D12Resource *instanceResource =
-        GetResourceManager()->GetCurrentAs<WrappedID3D12Resource>(instanceResourceId)->GetReal();
+        GetResourceManager()->GetResAs<WrappedID3D12Resource>(instanceResourceId)->GetReal();
     D3D12_GPU_VIRTUAL_ADDRESS instanceGpuAddress = instanceResource->GetGPUVirtualAddress();
     uint64_t instanceResOffset = accStructInput.Inputs.InstanceDescs - instanceGpuAddress;
 
@@ -1004,20 +1003,21 @@ bool WrappedID3D12GraphicsCommandList::Serialise_BuildRaytracingAccelerationStru
 
   if(IsReplayingAndReading())
   {
-    m_Cmd->m_LastCmdListID = GetResourceManager()->GetOriginalID(GetResID(pCommandList));
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
     BakedCmdListInfo &bakedCmdInfo = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID];
     BakedCmdListInfo::PatchRaytracing &patchInfo =
-        bakedCmdInfo.m_patchRaytracingInfo[bakedCmdInfo.curEventID];
+        bakedCmdInfo.m_patchRaytracingInfo[m_Cmd->m_CurChunkOffset & 0xffffffff];
 
     D3D12AccelerationStructure *accStructAtDstOffset = NULL;
 
     if(D3D12_Debug_RT_Auditing())
     {
-      RDCLOG("Recording %s dynamic build to %llx on %s",
+      RDCLOG("Recording %s dynamic build to %llx on %s at EID %u offset %u",
              AccStructDesc.Inputs.Type == D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL
                  ? "tlas"
                  : "blas",
-             AccStructDesc.DestAccelerationStructureData, ToStr(m_Cmd->m_LastCmdListID).c_str());
+             AccStructDesc.DestAccelerationStructureData, ToStr(m_Cmd->m_LastCmdListID).c_str(),
+             bakedCmdInfo.curEventID, m_Cmd->m_CurChunkOffset & 0xffffffff);
 
       ResourceId destASBId;
       D3D12BufferOffset destASBOffset;
@@ -1026,7 +1026,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_BuildRaytracingAccelerationStru
                                               destASBId, destASBOffset);
 
       WrappedID3D12Resource *destASB =
-          GetResourceManager()->GetCurrentAs<WrappedID3D12Resource>(destASBId);
+          GetResourceManager()->GetResAs<WrappedID3D12Resource>(destASBId);
 
       RDCASSERT(destASB->GetAccStructIfExist(destASBOffset, &accStructAtDstOffset));
     }
@@ -1188,7 +1188,7 @@ void WrappedID3D12GraphicsCommandList::BuildRaytracingAccelerationStructure(
       WrappedID3D12Resource::GetResIDFromAddr(duplicateDest, destID, destOffs);
 
       ID3D12Resource *destRes =
-          GetResourceManager()->GetCurrentAs<WrappedID3D12Resource>(destID)->GetReal();
+          GetResourceManager()->GetResAs<WrappedID3D12Resource>(destID)->GetReal();
 
       ResourceId sourceID;
       D3D12BufferOffset sourceOffs;
@@ -1196,7 +1196,7 @@ void WrappedID3D12GraphicsCommandList::BuildRaytracingAccelerationStructure(
       WrappedID3D12Resource::GetResIDFromAddr(duplicateSource, sourceID, sourceOffs);
 
       ID3D12Resource *sourceRes =
-          GetResourceManager()->GetCurrentAs<WrappedID3D12Resource>(sourceID)->GetReal();
+          GetResourceManager()->GetResAs<WrappedID3D12Resource>(sourceID)->GetReal();
 
       RDCCOMPILE_ASSERT(
           sizeof(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_CURRENT_SIZE_DESC) ==
@@ -1253,17 +1253,17 @@ void WrappedID3D12GraphicsCommandList::BuildRaytracingAccelerationStructure(
     // restore state that might have been mutated by the copying process
     if(m_CaptureComputeState.compute.rootsig != ResourceId())
     {
-      m_pList4->SetComputeRootSignature(Unwrap(GetResourceManager()->GetCurrentAs<ID3D12RootSignature>(
+      m_pList4->SetComputeRootSignature(Unwrap(GetResourceManager()->GetResAs<ID3D12RootSignature>(
           m_CaptureComputeState.compute.rootsig)));
       m_CaptureComputeState.ApplyComputeRootElementsUnwrapped(m_pList);
     }
 
     if(m_CaptureComputeState.stateobj != ResourceId())
-      m_pList4->SetPipelineState1(Unwrap(
-          GetResourceManager()->GetCurrentAs<ID3D12StateObject>(m_CaptureComputeState.stateobj)));
+      m_pList4->SetPipelineState1(
+          Unwrap(GetResourceManager()->GetResAs<ID3D12StateObject>(m_CaptureComputeState.stateobj)));
     else if(m_CaptureComputeState.pipe != ResourceId())
-      m_pList4->SetPipelineState(Unwrap(
-          GetResourceManager()->GetCurrentAs<ID3D12PipelineState>(m_CaptureComputeState.pipe)));
+      m_pList4->SetPipelineState(
+          Unwrap(GetResourceManager()->GetResAs<ID3D12PipelineState>(m_CaptureComputeState.pipe)));
 
     ResourceId asbWrappedResourceId;
     D3D12BufferOffset asbWrappedResourceBufferOffset;
@@ -1370,7 +1370,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_EmitRaytracingAccelerationStruc
       return false;
     }
 
-    m_Cmd->m_LastCmdListID = GetResourceManager()->GetOriginalID(GetResID(pCommandList));
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     if(IsActiveReplaying(m_State))
     {
@@ -1378,20 +1378,19 @@ bool WrappedID3D12GraphicsCommandList::Serialise_EmitRaytracingAccelerationStruc
       {
         Unwrap4(m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID))
             ->EmitRaytracingAccelerationStructurePostbuildInfo(
-                pDesc, NumSourceAccelerationStructures, pSourceAccelerationStructureData);
+                &Desc, NumSourceAccelerationStructures, pSourceAccelerationStructureData);
       }
     }
     else
     {
       Unwrap4(pCommandList)
-          ->EmitRaytracingAccelerationStructurePostbuildInfo(pDesc, NumSourceAccelerationStructures,
+          ->EmitRaytracingAccelerationStructurePostbuildInfo(&Desc, NumSourceAccelerationStructures,
                                                              pSourceAccelerationStructureData);
 
       m_Cmd->AddEvent();
 
       ActionDescription action;
-      action.copyDestination = GetResourceManager()->GetOriginalID(
-          WrappedID3D12Resource::GetResIDFromAddr(pDesc->DestBuffer));
+      action.copyDestination = WrappedID3D12Resource::GetResIDFromAddr(Desc.DestBuffer);
       action.copyDestinationSubresource = Subresource();
 
       action.flags |= ActionFlags::Copy;
@@ -1401,7 +1400,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_EmitRaytracingAccelerationStruc
       D3D12ActionTreeNode &actionNode = m_Cmd->GetActionStack().back()->children.back();
 
       actionNode.resourceUsage.push_back(
-          make_rdcpair(WrappedID3D12Resource::GetResIDFromAddr(pDesc->DestBuffer),
+          make_rdcpair(WrappedID3D12Resource::GetResIDFromAddr(Desc.DestBuffer),
                        EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
       for(UINT i = 0; i < NumSourceAccelerationStructures; i++)
         actionNode.resourceUsage.push_back(make_rdcpair(
@@ -1481,7 +1480,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_CopyRaytracingAccelerationStruc
 
   if(IsReplayingAndReading())
   {
-    m_Cmd->m_LastCmdListID = GetResourceManager()->GetOriginalID(GetResID(pCommandList));
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     if(IsActiveReplaying(m_State))
     {
@@ -1638,7 +1637,7 @@ void WrappedID3D12GraphicsCommandList::CopyRaytracingAccelerationStructure(
         D3D12AccelerationStructure *accStructAtSrcOffset = NULL;
 
         WrappedID3D12Resource *srcASB =
-            GetResourceManager()->GetCurrentAs<WrappedID3D12Resource>(srcASBId);
+            GetResourceManager()->GetResAs<WrappedID3D12Resource>(srcASBId);
 
         // get the source AS, we should have this and can't proceed without it to give us the size
         if(!srcASB->GetAccStructIfExist(srcASBOffset, &accStructAtSrcOffset))
@@ -1691,7 +1690,7 @@ void WrappedID3D12GraphicsCommandList::CopyRaytracingAccelerationStructure(
 
             D3D12AccelerationStructure *accStructAtSrcOffset = NULL;
 
-            WrappedID3D12Resource *srcASB = resManager->GetCurrentAs<WrappedID3D12Resource>(srcASBId);
+            WrappedID3D12Resource *srcASB = resManager->GetResAs<WrappedID3D12Resource>(srcASBId);
 
             // get the source AS, we should have this and can't proceed without it to give us the size
             if(!srcASB->GetAccStructIfExist(srcASBOffset, &accStructAtSrcOffset))
@@ -1738,7 +1737,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetPipelineState1(SerialiserTyp
       return false;
     }
 
-    m_Cmd->m_LastCmdListID = GetResourceManager()->GetOriginalID(GetResID(pCommandList));
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     bool stateUpdate = false;
 
@@ -1817,7 +1816,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_DispatchRays(SerialiserType &se
       return false;
     }
 
-    m_Cmd->m_LastCmdListID = GetResourceManager()->GetOriginalID(GetResID(pCommandList));
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
     const D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
 
@@ -1840,9 +1839,9 @@ bool WrappedID3D12GraphicsCommandList::Serialise_DispatchRays(SerialiserType &se
 
         // restore state that would have been mutated by the patching process
         Unwrap4(list)->SetComputeRootSignature(
-            Unwrap(GetResourceManager()->GetCurrentAs<ID3D12RootSignature>(state.compute.rootsig)));
+            Unwrap(GetResourceManager()->GetResAs<ID3D12RootSignature>(state.compute.rootsig)));
         Unwrap4(list)->SetPipelineState1(
-            Unwrap(GetResourceManager()->GetCurrentAs<ID3D12StateObject>(state.stateobj)));
+            Unwrap(GetResourceManager()->GetResAs<ID3D12StateObject>(state.stateobj)));
         state.ApplyComputeRootElementsUnwrapped(Unwrap4(list));
 
         m_Cmd->m_RayDispatches.push_back(std::move(patchedDispatch));
@@ -1866,11 +1865,11 @@ bool WrappedID3D12GraphicsCommandList::Serialise_DispatchRays(SerialiserType &se
 
       // restore state that would have been mutated by the patching process
       Unwrap4(pCommandList)
-          ->SetComputeRootSignature(Unwrap(
-              GetResourceManager()->GetCurrentAs<ID3D12RootSignature>(state.compute.rootsig)));
+          ->SetComputeRootSignature(
+              Unwrap(GetResourceManager()->GetResAs<ID3D12RootSignature>(state.compute.rootsig)));
       Unwrap4(pCommandList)
           ->SetPipelineState1(
-              Unwrap(GetResourceManager()->GetCurrentAs<ID3D12StateObject>(state.stateobj)));
+              Unwrap(GetResourceManager()->GetResAs<ID3D12StateObject>(state.stateobj)));
       state.ApplyComputeRootElementsUnwrapped(Unwrap4(pCommandList));
 
       m_Cmd->m_RayDispatches.push_back(patchedDispatch);
@@ -1902,10 +1901,10 @@ void WrappedID3D12GraphicsCommandList::DispatchRays(_In_ const D3D12_DISPATCH_RA
       m_pList4, m_CaptureComputeState.heaps, *pDesc);
 
   // restore state that would have been mutated by the patching process
-  m_pList4->SetComputeRootSignature(Unwrap(GetResourceManager()->GetCurrentAs<ID3D12RootSignature>(
-      m_CaptureComputeState.compute.rootsig)));
+  m_pList4->SetComputeRootSignature(Unwrap(
+      GetResourceManager()->GetResAs<ID3D12RootSignature>(m_CaptureComputeState.compute.rootsig)));
   m_pList4->SetPipelineState1(
-      Unwrap(GetResourceManager()->GetCurrentAs<ID3D12StateObject>(m_CaptureComputeState.stateobj)));
+      Unwrap(GetResourceManager()->GetResAs<ID3D12StateObject>(m_CaptureComputeState.stateobj)));
   m_CaptureComputeState.ApplyComputeRootElementsUnwrapped(m_pList);
 
   SERIALISE_TIME_CALL(m_pList4->DispatchRays(&patchedDispatch.desc));

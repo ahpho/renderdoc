@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2022-2025 Baldur Karlsson
+ * Copyright (c) 2022-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -40,4 +40,5 @@ struct AppleWindow : GraphicsWindow
 
   static MyAppDelegate *pAppDelegate;
   void *view;
+  void *layer;
 };

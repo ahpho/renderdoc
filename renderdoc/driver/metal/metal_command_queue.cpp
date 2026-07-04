@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2022-2025 Baldur Karlsson
+ * Copyright (c) 2022-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -55,7 +55,8 @@ WrappedMTLCommandBuffer *WrappedMTLCommandQueue::commandBuffer()
   MTL::CommandBuffer *realMTLCommandBuffer;
   SERIALISE_TIME_CALL(realMTLCommandBuffer = Unwrap(this)->commandBuffer());
   WrappedMTLCommandBuffer *wrappedMTLCommandBuffer;
-  ResourceId id = GetResourceManager()->WrapResource(realMTLCommandBuffer, wrappedMTLCommandBuffer);
+  ResourceId id = GetResourceManager()->WrapResource(ResourceId(), realMTLCommandBuffer,
+                                                     wrappedMTLCommandBuffer);
   wrappedMTLCommandBuffer->SetCommandQueue(this);
 
   if(IsCaptureMode(m_State))
@@ -75,7 +76,7 @@ WrappedMTLCommandBuffer *WrappedMTLCommandQueue::commandBuffer()
   else
   {
     // TODO: implement RD MTL replay
-    GetResourceManager()->AddLiveResource(id, wrappedMTLCommandBuffer);
+    GetResourceManager()->AddResource(id, wrappedMTLCommandBuffer);
   }
 
   return wrappedMTLCommandBuffer;

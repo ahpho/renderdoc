@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2017-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -44,6 +44,7 @@ class QTableWidgetItem;
 class QKeyEvent;
 class QMouseEvent;
 class QComboBox;
+class QTextEdit;
 
 // from Scintilla
 typedef intptr_t sptr_t;
@@ -189,6 +190,7 @@ private slots:
   void on_intView_clicked();
   void on_floatView_clicked();
   void on_debugToggle_clicked();
+  void on_toggleLog_clicked();
 
   void on_resources_sortByStep_clicked();
   void on_resources_sortByResource_clicked();
@@ -238,7 +240,7 @@ private:
   void PopulateCompileTools();
   void PopulateCompileToolParameters();
   bool ProcessIncludeDirectives(QString &source, const rdcstrpairs &files,
-                                const rdcarray<rdcstr> &exclude = {});
+                                rdcarray<rdcstr> &allIncluded, const rdcarray<rdcstr> &exclude = {});
 
   void updateWindowTitle();
   void gotoSourceDebugging();
@@ -358,6 +360,8 @@ private:
   static const int BOOKMARK_MAX_MENU_ENTRY_COUNT = 30;     // max number of bookmarks listed in menu
   QMap<ScintillaEdit *, QList<sptr_t>> m_Bookmarks;
 
+  QTextEdit *debugInfoLog = NULL;
+
   static const int CURRENT_MARKER = 0;
   static const int BREAKPOINT_MARKER = 2;
   static const int FINISHED_MARKER = 4;
@@ -402,8 +406,8 @@ private:
   void updateDebugState();
   void markWatchStale(RDTreeWidgetItem *item);
   bool updateWatchVariable(RDTreeWidgetItem *watchItem, const RDTreeWidgetItem *varItem,
-                           const rdcstr &path, uint32_t swizzle, const ShaderVariable &var,
-                           QChar regcast);
+                           const rdcstr &path, uint32_t swizzle, const SourceVariableMapping &mapping,
+                           const ShaderVariable &var, QChar regcast);
   void updateWatchVariables();
 
   void updateAccessedResources();
@@ -452,9 +456,11 @@ private:
 
   QString getRegNames(const RDTreeWidgetItem *item, uint32_t swizzle, uint32_t child = ~0U);
   const RDTreeWidgetItem *evaluateVar(const RDTreeWidgetItem *item, uint32_t swizzle,
-                                      ShaderVariable *var);
+                                      ShaderVariable *var, SourceVariableMapping *mapping);
   const RDTreeWidgetItem *getVarFromPath(const rdcstr &path, const RDTreeWidgetItem *root,
-                                         ShaderVariable *var, uint32_t *swizzle);
+                                         ShaderVariable *var, uint32_t *swizzle,
+                                         SourceVariableMapping *mapping);
   const RDTreeWidgetItem *getVarFromPath(const rdcstr &path, ShaderVariable *var = NULL,
-                                         uint32_t *swizzle = NULL);
+                                         uint32_t *swizzle = NULL,
+                                         SourceVariableMapping *mapping = NULL);
 };

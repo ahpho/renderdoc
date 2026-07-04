@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2019-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1608,7 +1608,7 @@ bool VulkanReplay::FetchShaderFeedback(uint32_t eventId)
         ResourceId id;
         uint64_t offs = 0;
         m_pDriver->GetResIDFromAddr(descBufs[descSets[bindset].descBufferIdx].address, id, offs);
-        access.descriptorStore = m_pDriver->GetResourceManager()->GetOriginalID(id);
+        access.descriptorStore = id;
         access.byteOffset += uint32_t(offs + descSets[bindset].descBufferOffset) +
                              descLayouts[bindset]->bindings[bind].elemOffset;
         access.byteSize =
@@ -1644,7 +1644,7 @@ bool VulkanReplay::FetchShaderFeedback(uint32_t eventId)
           arraySize = descLayouts[bindset]->bindings[bind].descriptorCount;
         }
 
-        access.descriptorStore = m_pDriver->GetResourceManager()->GetOriginalID(descSet);
+        access.descriptorStore = descSet;
         access.byteOffset =
             descLayouts[bindset]->bindings[bind].elemOffset + descLayouts[bindset]->inlineByteSize;
         access.byteSize = 1;

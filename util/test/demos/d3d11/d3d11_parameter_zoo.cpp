@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2021-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -83,6 +83,15 @@ float4 main(v2f IN) : SV_Target0
                                             __uuidof(ID3D11Device), NULL, &ctxstate_off));
 
     ctx1->SwapDeviceContextState(ctxstate_off, NULL);
+
+    D3D11_RASTERIZER_DESC rastDesc = {
+        D3D11_FILL_SOLID, D3D11_CULL_NONE, FALSE, 0, 0.00, 0.00, FALSE, TRUE, FALSE, FALSE,
+    };
+
+    // this is expected to alias a renderdoc-internal state
+    ID3D11RasterizerStatePtr rastStateObj;
+    dev->CreateRasterizerState(&rastDesc, &rastStateObj);
+    SetDebugName(rastStateObj, "RastState");
 
     std::string features1_tiled_resources("Features1: D3D11_TILED_RESOURCES_SUPPORTED");
     std::string features2_tiled_resources("Features2: D3D11_TILED_RESOURCES_SUPPORTED");
@@ -198,6 +207,11 @@ float4 main(v2f IN) : SV_Target0
       setMarker(create_tile_pool_buffer);
       setMarker(create_tiled_texture2D);
       setMarker(create_tiled_texture2D1);
+
+      ctx->RSSetState(rastStateObj);
+
+      setMarker("RastState");
+      ctx->Draw(3, 0);
 
       Present();
 

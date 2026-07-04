@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2021-2025 Baldur Karlsson
+ * Copyright (c) 2021-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -248,7 +248,7 @@ bool WrappedID3D12Device::Serialise_CreateResource(
   SetObjName(ret, StringFormat::Fmt("%s Resource %s %s", ResourceTypeName,
                                     ToStr(desc.Dimension).c_str(), ToStr(pResource).c_str()));
 
-  ret = new WrappedID3D12Resource(ret, pHeap, HeapOffset, this, gpuAddress);
+  ret = new WrappedID3D12Resource(pResource, ret, pHeap, HeapOffset, this, gpuAddress);
 
   switch(chunkType)
   {
@@ -257,10 +257,9 @@ bool WrappedID3D12Device::Serialise_CreateResource(
     case D3D12Chunk::Device_CreateReservedResource2:
       APIProps.SparseResources = true;
       m_SparseResources.insert(GetResID(ret));
+      m_ModResources.insert(GetResID(ret));
     default: break;
   }
-
-  GetResourceManager()->AddLiveResource(pResource, ret);
 
   if(desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)
     m_ModResources.insert(GetResID(ret));
@@ -447,7 +446,8 @@ HRESULT WrappedID3D12Device::CreateResource(
 
   UINT NumSubresources = GetNumSubresources(m_pDevice, &desc);
 
-  WrappedID3D12Resource *wrapped = new WrappedID3D12Resource(realRes, pHeap, HeapOffset, this);
+  WrappedID3D12Resource *wrapped =
+      new WrappedID3D12Resource(ResourceId(), realRes, pHeap, HeapOffset, this);
 
   if(IsCaptureMode(m_State))
   {
@@ -601,11 +601,20 @@ HRESULT WrappedID3D12Device::CreateResource(
     if(pHeap)
       record->AddParent(GetRecord(pHeap));
 
+    // all resources are marked dirty here, but we will skip the bytes of initial contents for
+    // sparse buffers (only the sparse tables get serialised) and initial contents entirely for
+    // placed buffer resources. It would be slightly better to never mark placed buffer resources
+    // dirty but the logic for dirtying resources with write references is generic and it's not much
+    // cost to skip them at initial contents prepare time.
     GetResourceManager()->MarkDirtyResource(wrapped->GetResourceID());
-  }
-  else
-  {
-    GetResourceManager()->AddLiveResource(wrapped->GetResourceID(), wrapped);
+
+    // for placed buffers resources, the resource itself is not going to be serialised but the heap
+    // underlying is. Sparse resources mark the heap dirty when first bound to pages
+    if(desc0.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER && pHeap)
+    {
+      GetResourceManager()->MarkDirtyResource(GetResID(pHeap));
+      GetResourceManager()->AddPlacedResource(wrapped->GetResourceID(), GetResID(pHeap));
+    }
   }
 
   {
@@ -810,9 +819,7 @@ bool WrappedID3D12Device::Serialise_OpenSharedHandle(SerialiserType &ser, HANDLE
       }
       else
       {
-        ret = new WrappedID3D12Fence(ret, this);
-
-        GetResourceManager()->AddLiveResource(resourceId, ret);
+        ret = new WrappedID3D12Fence(resourceId, ret, this);
       }
 
       AddResource(resourceId, ResourceType::Sync, "Fence");
@@ -882,9 +889,7 @@ bool WrappedID3D12Device::Serialise_OpenSharedHandle(SerialiserType &ser, HANDLE
       }
       else
       {
-        ret = new WrappedID3D12Heap(ret, this);
-
-        GetResourceManager()->AddLiveResource(resourceId, ret);
+        ret = new WrappedID3D12Heap(resourceId, ret, this);
       }
 
       AddResource(resourceId, ResourceType::Memory, "Heap");
@@ -1041,7 +1046,7 @@ HRESULT WrappedID3D12Device::OpenSharedHandleInternal(D3D12Chunk chunkType,
       if(riid_internal == __uuidof(ID3D12Fence1))
         real = (ID3D12Fence1 *)ret;
 
-      WrappedID3D12Fence *wrapped = new WrappedID3D12Fence(real, this);
+      WrappedID3D12Fence *wrapped = new WrappedID3D12Fence(ResourceId(), real, this);
 
       wrappedDeviceChild = wrapped;
 
@@ -1066,7 +1071,7 @@ HRESULT WrappedID3D12Device::OpenSharedHandleInternal(D3D12Chunk chunkType,
     }
     else if(isHeap)
     {
-      WrappedID3D12Heap *wrapped = new WrappedID3D12Heap((ID3D12Heap *)ret, this);
+      WrappedID3D12Heap *wrapped = new WrappedID3D12Heap(ResourceId(), (ID3D12Heap *)ret, this);
 
       if(HeapFlags & D3D12_HEAP_FLAG_CREATE_NOT_RESIDENT)
         wrapped->Evict();

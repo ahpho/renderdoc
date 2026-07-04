@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,7 @@
 
 #include "../vk_core.h"
 #include "../vk_debug.h"
+#include "../vk_replay.h"
 #include "core/settings.h"
 
 RDOC_CONFIG(
@@ -307,13 +308,12 @@ void WrappedVulkan::vkDestroyBuffer(VkDevice device, VkBuffer buffer, const VkAl
   // opaque capture address isn't re-used before the capture completes
   {
     SCOPED_READLOCK(m_CapTransitionLock);
-    SCOPED_LOCK(m_DeviceAddressResourcesLock);
-    if(IsActiveCapturing(m_State) && m_DeviceAddressResources.IDs.contains(GetResID(buffer)))
+    if(IsActiveCapturing(m_State) && GetRecord(buffer)->hasBDA)
     {
+      SCOPED_LOCK(m_DeviceAddressResourcesLock);
       m_DeviceAddressResources.DeadBuffers.push_back(buffer);
       return;
     }
-    m_DeviceAddressResources.IDs.removeOne(GetResID(buffer));
   }
 
   if(IsCaptureMode(m_State))
@@ -359,31 +359,61 @@ void WrappedVulkan::vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR obj,
     GetResourceManager()->ReleaseWrappedResource(info.rp, true);
     ObjDisp(device)->DestroyRenderPass(Unwrap(device), unwrappedRP, NULL);
 
+    bool fakeBackbuffers = info.imageMemory != VK_NULL_HANDLE;
+
+    // If capturing, we defer freeing swapchain fake backbuffer resources until
+    // the end of the capture to prevent potential device address reuse
+    bool deferFakeBackbuffers = false;
+    if(fakeBackbuffers)
+    {
+      SCOPED_READLOCK(m_CapTransitionLock);
+      deferFakeBackbuffers = IsActiveCapturing(m_State);
+      if(deferFakeBackbuffers)
+      {
+        SCOPED_LOCK(m_DeviceAddressResourcesLock);
+        for(size_t i = 0; i < info.images.size(); i++)
+        {
+          SwapchainInfo::SwapImage &img = info.images[i];
+          m_InternalDeviceAddressResources.DeadImages.push_back(img.userSwapImage);
+          m_InternalDeviceAddressResources.DeadImageViews.push_back(img.view);
+        }
+        m_InternalDeviceAddressResources.DeadMemories.push_back(info.imageMemory);
+      }
+    }
+
     for(size_t i = 0; i < info.images.size(); i++)
     {
-      VkFramebuffer unwrappedFB = Unwrap(info.images[i].fb);
-      VkImage unwrappedImage = Unwrap(info.images[i].userSwapImage);
-      VkImageView unwrappedView = Unwrap(info.images[i].view);
-      VkSemaphore unwrappedSem = Unwrap(info.images[i].overlaydone);
-      VkFence unwrappedFence = Unwrap(info.images[i].fence);
-      GetResourceManager()->ReleaseWrappedResource(info.images[i].fb, true);
-      GetResourceManager()->ReleaseWrappedResource(info.images[i].userSwapImage, true);
-      GetResourceManager()->ReleaseWrappedResource(info.images[i].view, true);
-      GetResourceManager()->ReleaseWrappedResource(info.images[i].overlaydone);
-      GetResourceManager()->ReleaseWrappedResource(info.images[i].fence);
-      // if we had a separate real image, then the unwrappedImage is a fake one we  created and must be destroyed
-      if(info.images[i].unwrappedRealSwapImage != VK_NULL_HANDLE)
-        ObjDisp(device)->DestroyImage(Unwrap(device), unwrappedImage, NULL);
+      SwapchainInfo::SwapImage &img = info.images[i];
+      VkFramebuffer unwrappedFB = Unwrap(img.fb);
+      VkSemaphore unwrappedSem = Unwrap(img.overlaydone);
+      VkFence unwrappedFence = Unwrap(img.fence);
+
+      if(!deferFakeBackbuffers)
+      {
+        VkImage unwrappedImage = Unwrap(img.userSwapImage);
+        VkImageView unwrappedView = Unwrap(img.view);
+        GetResourceManager()->ReleaseWrappedResource(img.userSwapImage, true);
+        GetResourceManager()->ReleaseWrappedResource(img.view, true);
+        // if we had a separate real image, then the unwrappedImage is a fake one we created
+        // and must be destroyed
+        if(img.unwrappedRealSwapImage != VK_NULL_HANDLE)
+          ObjDisp(device)->DestroyImage(Unwrap(device), unwrappedImage, NULL);
+        ObjDisp(device)->DestroyImageView(Unwrap(device), unwrappedView, NULL);
+      }
+
+      GetResourceManager()->ReleaseWrappedResource(img.fb, true);
+      GetResourceManager()->ReleaseWrappedResource(img.overlaydone);
+      GetResourceManager()->ReleaseWrappedResource(img.fence);
+
       ObjDisp(device)->DestroyFramebuffer(Unwrap(device), unwrappedFB, NULL);
-      ObjDisp(device)->DestroyImageView(Unwrap(device), unwrappedView, NULL);
       ObjDisp(device)->DestroySemaphore(Unwrap(device), unwrappedSem, NULL);
       ObjDisp(device)->DestroyFence(Unwrap(device), unwrappedFence, NULL);
 
       // return the command buffers to the pool
-      AddFreeCommandBuffer(info.images[i].cmd);
+      AddFreeCommandBuffer(img.cmd);
     }
 
-    if(info.imageMemory != VK_NULL_HANDLE)
+    if(fakeBackbuffers && !deferFakeBackbuffers)
     {
       ObjDisp(device)->FreeMemory(Unwrap(device), Unwrap(info.imageMemory), NULL);
       GetResourceManager()->ReleaseWrappedResource(info.imageMemory, true);
@@ -503,15 +533,15 @@ bool WrappedVulkan::ReleaseResource(WrappedVkRes *res)
       // On replay though we do need to tidy up book-keeping for these.
       if(IsReplayMode(m_State))
       {
-        GetResourceManager()->ReleaseCurrentResource(disp->id);
-        GetResourceManager()->RemoveWrapper(ToTypedHandle(disp->real.As<VkDevice>()));
+        GetResourceManager()->ReleaseResource(disp->id);
+        GetResourceManager()->RemoveWrapper(res, ToTypedHandle(disp->real.As<VkDevice>()));
       }
       break;
     case eResInstance:
       if(IsReplayMode(m_State))
       {
-        GetResourceManager()->ReleaseCurrentResource(disp->id);
-        GetResourceManager()->RemoveWrapper(ToTypedHandle(disp->real.As<VkInstance>()));
+        GetResourceManager()->ReleaseResource(disp->id);
+        GetResourceManager()->RemoveWrapper(res, ToTypedHandle(disp->real.As<VkInstance>()));
       }
       break;
 
@@ -720,21 +750,10 @@ bool WrappedVulkan::Serialise_vkCreateSampler(SerialiserType &ser, VkDevice devi
     {
       ResourceId live;
 
-      if(GetResourceManager()->HasWrapper(ToTypedHandle(samp)))
-      {
-        live = GetResourceManager()->GetNonDispWrapper(samp)->id;
+      GetResourceManager()->OverrideWrapper(ToTypedHandle(samp));
 
-        // destroy this instance of the duplicate, as we must have matching create/destroy
-        // calls and there won't be a wrapped resource hanging around to destroy this one.
-        ObjDisp(device)->DestroySampler(Unwrap(device), samp, NULL);
-
-        // whenever the new ID is requested, return the old ID, via replacements.
-        GetResourceManager()->ReplaceResource(Sampler, GetResourceManager()->GetOriginalID(live));
-      }
-      else
       {
-        live = GetResourceManager()->WrapResource(Unwrap(device), samp);
-        GetResourceManager()->AddLiveResource(Sampler, samp);
+        live = GetResourceManager()->WrapResource(Sampler, Unwrap(device), samp);
 
         m_CreationInfo.m_Sampler[live].Init(GetResourceManager(), m_CreationInfo, &CreateInfo);
       }
@@ -797,7 +816,7 @@ VkResult WrappedVulkan::vkCreateSampler(VkDevice device, const VkSamplerCreateIn
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pSampler);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pSampler);
 
     if(IsCaptureMode(m_State))
     {
@@ -853,8 +872,6 @@ VkResult WrappedVulkan::vkCreateSampler(VkDevice device, const VkSamplerCreateIn
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, *pSampler);
-
       m_CreationInfo.m_Sampler[id].Init(GetResourceManager(), m_CreationInfo, pCreateInfo);
     }
   }
@@ -939,21 +956,10 @@ bool WrappedVulkan::Serialise_vkCreateFramebuffer(SerialiserType &ser, VkDevice 
     {
       ResourceId live;
 
-      if(GetResourceManager()->HasWrapper(ToTypedHandle(fb)))
-      {
-        live = GetResourceManager()->GetNonDispWrapper(fb)->id;
+      GetResourceManager()->OverrideWrapper(ToTypedHandle(fb));
 
-        // destroy this instance of the duplicate, as we must have matching create/destroy
-        // calls and there won't be a wrapped resource hanging around to destroy this one.
-        ObjDisp(device)->DestroyFramebuffer(Unwrap(device), fb, NULL);
-
-        // whenever the new ID is requested, return the old ID, via replacements.
-        GetResourceManager()->ReplaceResource(Framebuffer, GetResourceManager()->GetOriginalID(live));
-      }
-      else
       {
-        live = GetResourceManager()->WrapResource(Unwrap(device), fb);
-        GetResourceManager()->AddLiveResource(Framebuffer, fb);
+        live = GetResourceManager()->WrapResource(Framebuffer, Unwrap(device), fb);
 
         NameVulkanObject(fb, StringFormat::Fmt("Framebuffer %s", ToStr(Framebuffer).c_str()));
 
@@ -987,10 +993,7 @@ bool WrappedVulkan::Serialise_vkCreateFramebuffer(SerialiserType &ser, VkDevice 
           else
           {
             ResourceId loadFBid =
-                GetResourceManager()->WrapResource(Unwrap(device), fbinfo.loadFBs[s]);
-
-            // register as a live-only resource, so it is cleaned up properly
-            GetResourceManager()->AddLiveResource(loadFBid, fbinfo.loadFBs[s]);
+                GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), fbinfo.loadFBs[s]);
 
             NameVulkanObject(fbinfo.loadFBs[s], StringFormat::Fmt("Framebuffer %s loadFB %d",
                                                                   ToStr(Framebuffer).c_str(), s));
@@ -1052,7 +1055,7 @@ VkResult WrappedVulkan::vkCreateFramebuffer(VkDevice device,
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pFramebuffer);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pFramebuffer);
 
     if(IsCaptureMode(m_State))
     {
@@ -1089,7 +1092,7 @@ VkResult WrappedVulkan::vkCreateFramebuffer(VkDevice device,
 
           fbInfo->imageAttachments[a].record = attRecord;
           fbInfo->imageAttachments[a].barrier.image =
-              GetResourceManager()->GetCurrentHandle<VkImage>(attRecord->baseResource);
+              GetResourceManager()->GetHandle<VkImage>(attRecord->baseResource);
           fbInfo->imageAttachments[a].barrier.subresourceRange = attRecord->viewRange;
 
           {
@@ -1127,8 +1130,6 @@ VkResult WrappedVulkan::vkCreateFramebuffer(VkDevice device,
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, *pFramebuffer);
-
       VulkanCreationInfo::Framebuffer fbinfo;
       fbinfo.Init(GetResourceManager(), m_CreationInfo, pCreateInfo);
 
@@ -1146,10 +1147,8 @@ VkResult WrappedVulkan::vkCreateFramebuffer(VkDevice device,
                                                  &fbinfo.loadFBs[s]);
         RDCASSERTEQUAL(ret, VK_SUCCESS);
 
-        ResourceId loadFBid = GetResourceManager()->WrapResource(Unwrap(device), fbinfo.loadFBs[s]);
-
-        // register as a live-only resource, so it is cleaned up properly
-        GetResourceManager()->AddLiveResource(loadFBid, fbinfo.loadFBs[s]);
+        ResourceId loadFBid =
+            GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), fbinfo.loadFBs[s]);
       }
 
       m_CreationInfo.m_Framebuffer[id] = fbinfo;
@@ -1236,21 +1235,10 @@ bool WrappedVulkan::Serialise_vkCreateRenderPass(SerialiserType &ser, VkDevice d
     {
       ResourceId live;
 
-      if(GetResourceManager()->HasWrapper(ToTypedHandle(rp)))
-      {
-        live = GetResourceManager()->GetNonDispWrapper(rp)->id;
+      GetResourceManager()->OverrideWrapper(ToTypedHandle(rp));
 
-        // destroy this instance of the duplicate, as we must have matching create/destroy
-        // calls and there won't be a wrapped resource hanging around to destroy this one.
-        ObjDisp(device)->DestroyRenderPass(Unwrap(device), rp, NULL);
-
-        // whenever the new ID is requested, return the old ID, via replacements.
-        GetResourceManager()->ReplaceResource(RenderPass, GetResourceManager()->GetOriginalID(live));
-      }
-      else
       {
-        live = GetResourceManager()->WrapResource(Unwrap(device), rp);
-        GetResourceManager()->AddLiveResource(RenderPass, rp);
+        live = GetResourceManager()->WrapResource(RenderPass, Unwrap(device), rp);
 
         bool badIndirectArgDep = false;
 
@@ -1328,10 +1316,7 @@ bool WrappedVulkan::Serialise_vkCreateRenderPass(SerialiserType &ser, VkDevice d
           else
           {
             ResourceId loadRPid =
-                GetResourceManager()->WrapResource(Unwrap(device), rpinfo.loadRPs[s]);
-
-            // register as a live-only resource, so it is cleaned up properly
-            GetResourceManager()->AddLiveResource(loadRPid, rpinfo.loadRPs[s]);
+                GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), rpinfo.loadRPs[s]);
           }
         }
 
@@ -1373,7 +1358,7 @@ VkResult WrappedVulkan::vkCreateRenderPass(VkDevice device, const VkRenderPassCr
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pRenderPass);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pRenderPass);
 
     if(IsCaptureMode(m_State))
     {
@@ -1395,8 +1380,6 @@ VkResult WrappedVulkan::vkCreateRenderPass(VkDevice device, const VkRenderPassCr
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, *pRenderPass);
-
       VulkanCreationInfo::RenderPass rpinfo;
       rpinfo.Init(GetResourceManager(), m_CreationInfo, pCreateInfo);
 
@@ -1440,10 +1423,8 @@ VkResult WrappedVulkan::vkCreateRenderPass(VkDevice device, const VkRenderPassCr
         ret = ObjDisp(device)->CreateRenderPass(Unwrap(device), &info, NULL, &rpinfo.loadRPs[s]);
         RDCASSERTEQUAL(ret, VK_SUCCESS);
 
-        ResourceId loadRPid = GetResourceManager()->WrapResource(Unwrap(device), rpinfo.loadRPs[s]);
-
-        // register as a live-only resource, so it is cleaned up properly
-        GetResourceManager()->AddLiveResource(loadRPid, rpinfo.loadRPs[s]);
+        ResourceId loadRPid =
+            GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), rpinfo.loadRPs[s]);
       }
 
       m_CreationInfo.m_RenderPass[id] = rpinfo;
@@ -1543,21 +1524,10 @@ bool WrappedVulkan::Serialise_vkCreateRenderPass2(SerialiserType &ser, VkDevice 
     {
       ResourceId live;
 
-      if(GetResourceManager()->HasWrapper(ToTypedHandle(rp)))
-      {
-        live = GetResourceManager()->GetNonDispWrapper(rp)->id;
+      GetResourceManager()->OverrideWrapper(ToTypedHandle(rp));
 
-        // destroy this instance of the duplicate, as we must have matching create/destroy
-        // calls and there won't be a wrapped resource hanging around to destroy this one.
-        ObjDisp(device)->DestroyRenderPass(Unwrap(device), rp, NULL);
-
-        // whenever the new ID is requested, return the old ID, via replacements.
-        GetResourceManager()->ReplaceResource(RenderPass, GetResourceManager()->GetOriginalID(live));
-      }
-      else
       {
-        live = GetResourceManager()->WrapResource(Unwrap(device), rp);
-        GetResourceManager()->AddLiveResource(RenderPass, rp);
+        live = GetResourceManager()->WrapResource(RenderPass, Unwrap(device), rp);
 
         // make a version of the render pass that loads from its attachments,
         // so it can be used for replaying a single draw after a render pass
@@ -1605,10 +1575,7 @@ bool WrappedVulkan::Serialise_vkCreateRenderPass2(SerialiserType &ser, VkDevice 
           else
           {
             ResourceId loadRPid =
-                GetResourceManager()->WrapResource(Unwrap(device), rpinfo.loadRPs[s]);
-
-            // register as a live-only resource, so it is cleaned up properly
-            GetResourceManager()->AddLiveResource(loadRPid, rpinfo.loadRPs[s]);
+                GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), rpinfo.loadRPs[s]);
           }
         }
 
@@ -1651,7 +1618,7 @@ VkResult WrappedVulkan::vkCreateRenderPass2(VkDevice device,
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pRenderPass);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pRenderPass);
 
     if(IsCaptureMode(m_State))
     {
@@ -1673,8 +1640,6 @@ VkResult WrappedVulkan::vkCreateRenderPass2(VkDevice device,
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, *pRenderPass);
-
       VulkanCreationInfo::RenderPass rpinfo;
       rpinfo.Init(GetResourceManager(), m_CreationInfo, pCreateInfo);
 
@@ -1718,10 +1683,8 @@ VkResult WrappedVulkan::vkCreateRenderPass2(VkDevice device,
         ret = ObjDisp(device)->CreateRenderPass2(Unwrap(device), &info, NULL, &rpinfo.loadRPs[s]);
         RDCASSERTEQUAL(ret, VK_SUCCESS);
 
-        ResourceId loadRPid = GetResourceManager()->WrapResource(Unwrap(device), rpinfo.loadRPs[s]);
-
-        // register as a live-only resource, so it is cleaned up properly
-        GetResourceManager()->AddLiveResource(loadRPid, rpinfo.loadRPs[s]);
+        ResourceId loadRPid =
+            GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), rpinfo.loadRPs[s]);
       }
 
       m_CreationInfo.m_RenderPass[id] = rpinfo;
@@ -1766,8 +1729,7 @@ bool WrappedVulkan::Serialise_vkCreateQueryPool(SerialiserType &ser, VkDevice de
     }
     else
     {
-      ResourceId live = GetResourceManager()->WrapResource(Unwrap(device), pool);
-      GetResourceManager()->AddLiveResource(QueryPool, pool);
+      ResourceId live = GetResourceManager()->WrapResource(QueryPool, Unwrap(device), pool);
 
       m_CreationInfo.m_QueryPool[live].Init(GetResourceManager(), m_CreationInfo, &CreateInfo);
 
@@ -1848,7 +1810,7 @@ VkResult WrappedVulkan::vkCreateQueryPool(VkDevice device, const VkQueryPoolCrea
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pQueryPool);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pQueryPool);
 
     if(IsCaptureMode(m_State))
     {
@@ -1873,10 +1835,6 @@ VkResult WrappedVulkan::vkCreateQueryPool(VkDevice device, const VkQueryPoolCrea
       }
 
       record->AddChunk(chunk);
-    }
-    else
-    {
-      GetResourceManager()->AddLiveResource(id, *pQueryPool);
     }
   }
 
@@ -1950,8 +1908,8 @@ bool WrappedVulkan::Serialise_vkCopyImageToImage(SerialiserType &ser, VkDevice d
     {
       AddEvent();
 
-      ResourceId srcid = GetResourceManager()->GetOriginalID(GetResID(CopyImageToImageInfo.srcImage));
-      ResourceId dstid = GetResourceManager()->GetOriginalID(GetResID(CopyImageToImageInfo.dstImage));
+      ResourceId srcid = GetResID(CopyImageToImageInfo.srcImage);
+      ResourceId dstid = GetResID(CopyImageToImageInfo.dstImage);
 
       ActionDescription action;
       action.flags |= ActionFlags::Copy;
@@ -2051,7 +2009,7 @@ bool WrappedVulkan::Serialise_vkCopyImageToMemory(SerialiserType &ser, VkDevice 
     {
       AddEvent();
 
-      ResourceId srcid = GetResourceManager()->GetOriginalID(GetResID(srcImage));
+      ResourceId srcid = GetResID(srcImage);
 
       ActionDescription action;
       action.flags |= ActionFlags::Copy;
@@ -2138,7 +2096,7 @@ bool WrappedVulkan::Serialise_vkCopyMemoryToImage(SerialiserType &ser, VkDevice 
     {
       AddEvent();
 
-      ResourceId dstid = GetResourceManager()->GetOriginalID(GetResID(dstImage));
+      ResourceId dstid = GetResID(dstImage);
 
       ActionDescription action;
       action.flags |= ActionFlags::Copy;
@@ -2286,22 +2244,10 @@ bool WrappedVulkan::Serialise_vkCreateSamplerYcbcrConversion(
     {
       ResourceId live;
 
-      if(GetResourceManager()->HasWrapper(ToTypedHandle(conv)))
-      {
-        live = GetResourceManager()->GetNonDispWrapper(conv)->id;
+      GetResourceManager()->OverrideWrapper(ToTypedHandle(conv));
 
-        // destroy this instance of the duplicate, as we must have matching create/destroy
-        // calls and there won't be a wrapped resource hanging around to destroy this one.
-        ObjDisp(device)->DestroySamplerYcbcrConversion(Unwrap(device), conv, NULL);
-
-        // whenever the new ID is requested, return the old ID, via replacements.
-        GetResourceManager()->ReplaceResource(ycbcrConversion,
-                                              GetResourceManager()->GetOriginalID(live));
-      }
-      else
       {
-        live = GetResourceManager()->WrapResource(Unwrap(device), conv);
-        GetResourceManager()->AddLiveResource(ycbcrConversion, conv);
+        live = GetResourceManager()->WrapResource(ycbcrConversion, Unwrap(device), conv);
 
         m_CreationInfo.m_YCbCrSampler[live].Init(GetResourceManager(), m_CreationInfo, &CreateInfo);
       }
@@ -2324,7 +2270,8 @@ VkResult WrappedVulkan::vkCreateSamplerYcbcrConversion(
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pYcbcrConversion);
+    ResourceId id =
+        GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pYcbcrConversion);
 
     if(IsCaptureMode(m_State))
     {
@@ -2341,10 +2288,6 @@ VkResult WrappedVulkan::vkCreateSamplerYcbcrConversion(
 
       VkResourceRecord *record = GetResourceManager()->AddResourceRecord(*pYcbcrConversion);
       record->AddChunk(chunk);
-    }
-    else
-    {
-      GetResourceManager()->AddLiveResource(id, *pYcbcrConversion);
     }
   }
 
@@ -2630,6 +2573,8 @@ static ObjData GetObjData(VkObjectType objType, uint64_t object)
     case VK_OBJECT_TYPE_TENSOR_ARM:
     case VK_OBJECT_TYPE_TENSOR_VIEW_ARM:
     case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM:
+    case VK_OBJECT_TYPE_GPA_SESSION_AMD:
+    case VK_OBJECT_TYPE_SHADER_INSTRUMENTATION_ARM:
     case VK_OBJECT_TYPE_MAX_ENUM: break;
   }
 
@@ -2700,6 +2645,259 @@ static ObjData GetObjData(VkDebugReportObjectTypeEXT objType, uint64_t object)
   return GetObjData(castType, object);
 }
 
+ResourceId WrappedVulkan::GetIDForUserObject(void *object)
+{
+  VkResourceType type = TryIdentifyTypeByPtr((WrappedVkRes *)object);
+
+  if(IsDispatchableRes(type))
+  {
+    WrappedVkDispRes *disp = (WrappedVkDispRes *)object;
+
+    return disp->id;
+  }
+  else if(type != eResUnknown)
+  {
+    WrappedVkNonDispRes *nondisp = (WrappedVkNonDispRes *)object;
+
+    return nondisp->id;
+  }
+  else
+  {
+    // the object was wrapped between us and the application. We'll assume it's pointer-ish and look
+    // at its dispatch table. If this crashes, not much we can do
+    void *dispatchTable = RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(object);
+
+    if(dispatchTable == RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(m_Instance))
+    {
+      // instance or physical device - they share a dispatch table
+
+      if(m_UserInstance == object)
+      {
+        return GetResID(m_Instance);
+      }
+      else
+      {
+        VkPhysicalDevice physDev = m_UserPhysicalDevices[object];
+
+        if(physDev != VK_NULL_HANDLE)
+        {
+          return GetResID(physDev);
+        }
+        else
+        {
+          // unknown object, default to the instance
+          return GetResID(m_Instance);
+        }
+      }
+    }
+    else if(dispatchTable == RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(m_Device))
+    {
+      // device, queue, or command buffer - they would share a dispatch table
+
+      if(m_UserDevice == object)
+      {
+        return GetResID(m_Device);
+      }
+      else
+      {
+        VkQueue queue = m_UserQueues[object];
+
+        if(queue != VK_NULL_HANDLE)
+        {
+          return GetResID(queue);
+        }
+        else
+        {
+          // unknown object, default to the device
+          return GetResID(m_Device);
+        }
+      }
+    }
+  }
+
+  return ResourceId();
+}
+
+uint32_t WrappedVulkan::SetObjectAnnotation(void *object, const char *key,
+                                            RENDERDOC_AnnotationType valueType,
+                                            uint32_t valueVectorWidth,
+                                            const RENDERDOC_AnnotationValue *value)
+{
+  ResourceId id = GetIDForUserObject(object);
+
+  if(id != ResourceId())
+  {
+    RENDERDOC_AnnotationValue val = value ? *value : RENDERDOC_AnnotationValue();
+
+    if(valueType == eRENDERDOC_APIObject)
+    {
+      ResourceId valId = GetIDForUserObject(val.apiObject);
+      RDCCOMPILE_ASSERT(sizeof(val.uint64) == sizeof(valId), "ResourceId isn't 64-bit!");
+      memcpy(&val.uint64, &valId, sizeof(valId));
+    }
+
+    SDObject *root = NULL;
+    {
+      SCOPED_LOCK(m_AnnotationsLock);
+      root = m_Annotations[id];
+      if(!root)
+        root = m_Annotations[id] = new SDObject("Object Annotations"_lit, "Object Annotations"_lit);
+    }
+
+    if(valueType == eRENDERDOC_Empty)
+    {
+      root->EraseChildByKeyPath(key);
+    }
+    else
+    {
+      WriteAnnotation(root->CreateChildByKeyPath(key), valueType, valueVectorWidth, val);
+    }
+
+    return 0;
+  }
+
+  return 2;
+}
+
+template <typename SerialiserType>
+bool WrappedVulkan::Serialise_SetQueueAnnotation(SerialiserType &ser, VkQueue queue, rdcstr key,
+                                                 RENDERDOC_AnnotationType valueType,
+                                                 uint32_t valueVectorWidth,
+                                                 RENDERDOC_AnnotationValue value)
+{
+  SERIALISE_ELEMENT(queue);
+  SERIALISE_ELEMENT(key);
+  SERIALISE_ELEMENT(valueType);
+  ser.SetStructArg(valueType);
+  SERIALISE_ELEMENT(valueVectorWidth);
+  SERIALISE_ELEMENT(value);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    if(IsLoading(m_State))
+    {
+      if(!m_RootAnnotation)
+        m_RootAnnotation = new SDObject("Event Annotations"_lit, "Event Annotations"_lit);
+
+      SDObject *root = m_RootAnnotation;
+
+      if(valueType == eRENDERDOC_Empty)
+      {
+        root->EraseChildByKeyPath(key);
+      }
+      else
+      {
+        WriteAnnotation(root->CreateChildByKeyPath(key), valueType, valueVectorWidth, value);
+      }
+
+      m_Replay->WriteFrameRecord().frameInfo.containsAnnotations = true;
+    }
+  }
+
+  return true;
+}
+
+template <typename SerialiserType>
+bool WrappedVulkan::Serialise_SetCommandAnnotation(SerialiserType &ser, VkCommandBuffer cmd,
+                                                   rdcstr key, RENDERDOC_AnnotationType valueType,
+                                                   uint32_t valueVectorWidth,
+                                                   RENDERDOC_AnnotationValue value)
+{
+  SERIALISE_ELEMENT(cmd);
+  SERIALISE_ELEMENT(key);
+  SERIALISE_ELEMENT(valueType);
+  ser.SetStructArg(valueType);
+  SERIALISE_ELEMENT(valueVectorWidth);
+  SERIALISE_ELEMENT(value);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    m_LastCmdBufferID = GetResID(cmd);
+
+    if(IsLoading(m_State))
+    {
+      if(!m_RootAnnotation)
+        m_RootAnnotation = new SDObject("Event Annotations"_lit, "Event Annotations"_lit);
+
+      PendingAnnotation annot = {m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID, key, valueType,
+                                 valueVectorWidth, value};
+
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].annotations.push_back(annot);
+
+      m_Replay->WriteFrameRecord().frameInfo.containsAnnotations = true;
+    }
+  }
+
+  return true;
+}
+
+uint32_t WrappedVulkan::SetCommandAnnotation(void *queueOrCommandBuffer, const char *key,
+                                             RENDERDOC_AnnotationType valueType,
+                                             uint32_t valueVectorWidth,
+                                             const RENDERDOC_AnnotationValue *value)
+{
+  if(WrappedVkQueue::IsAlloc(queueOrCommandBuffer))
+  {
+    VkQueue queue = (VkQueue)(WrappedVkQueue *)queueOrCommandBuffer;
+
+    if(IsActiveCapturing(m_State))
+    {
+      CACHE_THREAD_SERIALISER();
+      ser.SetActionChunk();
+      SCOPED_SERIALISE_CHUNK(VulkanChunk::SetQueueAnnotation);
+
+      RENDERDOC_AnnotationValue val = value ? *value : RENDERDOC_AnnotationValue();
+
+      if(valueType == eRENDERDOC_APIObject)
+      {
+        ResourceId id = GetIDForUserObject(val.apiObject);
+        RDCCOMPILE_ASSERT(sizeof(val.uint64) == sizeof(id), "ResourceId isn't 64-bit!");
+        memcpy(&val.uint64, &id, sizeof(id));
+      }
+
+      Serialise_SetQueueAnnotation(ser, queue, key, valueType, valueVectorWidth, val);
+
+      m_FrameCaptureRecord->AddChunk(scope.Get());
+      GetResourceManager()->MarkResourceFrameReferenced(GetResID(queue), eFrameRef_Read);
+    }
+
+    return 0;
+  }
+  else if(WrappedVkCommandBuffer::IsAlloc(queueOrCommandBuffer))
+  {
+    VkCommandBuffer cmd = (VkCommandBuffer)(WrappedVkCommandBuffer *)queueOrCommandBuffer;
+
+    if(IsCaptureMode(m_State))
+    {
+      CACHE_THREAD_SERIALISER();
+      ser.SetActionChunk();
+      SCOPED_SERIALISE_CHUNK(VulkanChunk::SetCommandAnnotation);
+
+      RENDERDOC_AnnotationValue val = value ? *value : RENDERDOC_AnnotationValue();
+
+      if(valueType == eRENDERDOC_APIObject)
+      {
+        ResourceId id = GetIDForUserObject(val.apiObject);
+        RDCCOMPILE_ASSERT(sizeof(val.uint64) == sizeof(id), "ResourceId isn't 64-bit!");
+        memcpy(&val.uint64, &id, sizeof(id));
+      }
+
+      Serialise_SetCommandAnnotation(ser, cmd, key, valueType, valueVectorWidth, val);
+
+      GetRecord(cmd)->AddChunk(scope.Get());
+      GetResourceManager()->MarkResourceFrameReferenced(GetResID(cmd), eFrameRef_Read);
+    }
+
+    return 0;
+  }
+
+  return 2;
+}
+
 template <typename SerialiserType>
 bool WrappedVulkan::Serialise_SetShaderDebugPath(SerialiserType &ser, VkShaderModule ShaderObject,
                                                  rdcstr DebugPath)
@@ -2714,7 +2912,7 @@ bool WrappedVulkan::Serialise_SetShaderDebugPath(SerialiserType &ser, VkShaderMo
     m_CreationInfo.m_ShaderModule[GetResID(ShaderObject)].unstrippedPath = DebugPath;
     m_CreationInfo.m_ShaderModule[GetResID(ShaderObject)].Reinit();
 
-    AddResourceCurChunk(GetResourceManager()->GetOriginalID(GetResID(ShaderObject)));
+    AddResourceCurChunk(GetResID(ShaderObject));
   }
 
   return true;
@@ -2773,13 +2971,7 @@ bool WrappedVulkan::Serialise_vkDebugMarkerSetObjectNameEXT(
     if(ObjectName == NULL)
       ObjectName = "";
 
-    // if we don't have a live resource, this is probably a command buffer being named on the
-    // virtual non-existant parent, not any of the baked IDs. Just save the name on the original ID
-    // and we'll propagate it in Serialise_vkBeginCommandBuffer
-    if(!GetResourceManager()->HasLiveResource(Object) || GetResourceManager()->HasReplacement(Object))
-      m_CreationInfo.m_Names[Object] = ObjectName;
-    else
-      m_CreationInfo.m_Names[GetResourceManager()->GetLiveID(Object)] = ObjectName;
+    m_CreationInfo.m_Names[Object] = ObjectName;
 
     ResourceDescription &descr = GetResourceDesc(Object);
 
@@ -2917,13 +3109,7 @@ bool WrappedVulkan::Serialise_vkSetDebugUtilsObjectNameEXT(
     if(ObjectName == NULL)
       ObjectName = "";
 
-    // if we don't have a live resource, this is probably a command buffer being named on the
-    // virtual non-existant parent, not any of the baked IDs. Just save the name on the original ID
-    // and we'll propagate it in Serialise_vkBeginCommandBuffer
-    if(!GetResourceManager()->HasLiveResource(Object) || GetResourceManager()->HasReplacement(Object))
-      m_CreationInfo.m_Names[Object] = ObjectName;
-    else
-      m_CreationInfo.m_Names[GetResourceManager()->GetLiveID(Object)] = ObjectName;
+    m_CreationInfo.m_Names[Object] = ObjectName;
 
     ResourceDescription &descr = GetResourceDesc(Object);
 
@@ -3007,6 +3193,17 @@ VkResult WrappedVulkan::vkSetDebugUtilsObjectTagEXT(VkDevice device,
             pTagInfo->objectType == VK_OBJECT_TYPE_INSTANCE)
     {
       m_InitParams.DescriptorsReserved = true;
+    }
+    else if(data.record && pTagInfo->tagName == RENDERDOC_APIObjectAnnotationHelper)
+    {
+      if(pTagInfo->objectType == VK_OBJECT_TYPE_INSTANCE)
+        m_UserInstance = pTagInfo->pTag;
+      else if(pTagInfo->objectType == VK_OBJECT_TYPE_PHYSICAL_DEVICE)
+        m_UserPhysicalDevices[pTagInfo->pTag] = (VkPhysicalDevice)pTagInfo->objectHandle;
+      else if(pTagInfo->objectType == VK_OBJECT_TYPE_DEVICE)
+        m_UserDevice = pTagInfo->pTag;
+      else if(pTagInfo->objectType == VK_OBJECT_TYPE_QUEUE)
+        m_UserQueues[pTagInfo->pTag] = (VkQueue)pTagInfo->objectHandle;
     }
     else if(ObjDisp(device)->SetDebugUtilsObjectTagEXT)
     {
@@ -3163,3 +3360,11 @@ INSTANTIATE_FUNCTION_SERIALISED(VkResult, vkCopyMemoryToImage, VkDevice device,
 
 INSTANTIATE_FUNCTION_SERIALISED(VkResult, vkResetQueryPool, VkDevice device, VkQueryPool queryPool,
                                 uint32_t firstQuery, uint32_t queryCount);
+
+INSTANTIATE_FUNCTION_SERIALISED(void, SetCommandAnnotation, VkCommandBuffer cmd, rdcstr key,
+                                RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                RENDERDOC_AnnotationValue value);
+
+INSTANTIATE_FUNCTION_SERIALISED(void, SetQueueAnnotation, VkQueue queue, rdcstr key,
+                                RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                RENDERDOC_AnnotationValue value);

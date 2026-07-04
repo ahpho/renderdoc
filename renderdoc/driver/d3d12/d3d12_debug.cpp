@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -146,7 +146,7 @@ D3D12DebugManager::D3D12DebugManager(WrappedID3D12Device *wrapper)
   desc.NumDescriptors = rtvCount;
   desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 
-  RDCCOMPILE_ASSERT(LAST_WIN_RTV < rtvCount, "Increase size of RTV heap");
+  RDCCOMPILE_ASSERT(MAX_RTV_SLOT < rtvCount, "Increase size of RTV heap");
 
   hr = m_pDevice->CreateDescriptorHeap(&desc, __uuidof(ID3D12DescriptorHeap), (void **)&rtvHeap);
   m_pDevice->InternalRef();
@@ -163,7 +163,7 @@ D3D12DebugManager::D3D12DebugManager(WrappedID3D12Device *wrapper)
   desc.NumDescriptors = dsvCount;
   desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 
-  RDCCOMPILE_ASSERT(LAST_WIN_DSV < dsvCount, "Increase size of DSV heap");
+  RDCCOMPILE_ASSERT(MAX_DSV_SLOT < dsvCount, "Increase size of DSV heap");
 
   hr = m_pDevice->CreateDescriptorHeap(&desc, __uuidof(ID3D12DescriptorHeap), (void **)&dsvHeap);
   m_pDevice->InternalRef();
@@ -175,10 +175,12 @@ D3D12DebugManager::D3D12DebugManager(WrappedID3D12Device *wrapper)
 
   rm->SetInternalResource(dsvHeap);
 
-  desc.NumDescriptors = 4096;
+  const uint32_t srvCount = 4096;
+
+  desc.NumDescriptors = srvCount;
   desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 
-  RDCCOMPILE_ASSERT(MAX_SRV_SLOT < 4096, "Increase size of CBV/SRV/UAV heap");
+  RDCCOMPILE_ASSERT(MAX_SRV_SLOT < srvCount, "Increase size of CBV/SRV/UAV heap");
 
   hr = m_pDevice->CreateDescriptorHeap(&desc, __uuidof(ID3D12DescriptorHeap), (void **)&uavClearHeap);
   m_pDevice->InternalRef();
@@ -203,8 +205,12 @@ D3D12DebugManager::D3D12DebugManager(WrappedID3D12Device *wrapper)
 
   rm->SetInternalResource(cbvsrvuavHeap);
 
-  desc.NumDescriptors = 16;
+  const uint32_t samplerCount = 300;
+
+  desc.NumDescriptors = samplerCount;
   desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+
+  RDCCOMPILE_ASSERT(MAX_SAMPLER_SLOT < samplerCount, "Increase size of sampler heap");
 
   hr = m_pDevice->CreateDescriptorHeap(&desc, __uuidof(ID3D12DescriptorHeap), (void **)&samplerHeap);
   m_pDevice->InternalRef();
@@ -603,6 +609,12 @@ D3D12DebugManager::~D3D12DebugManager()
 
 bool D3D12DebugManager::CreateShaderDebugResources()
 {
+  // MathOp is 2, SampleGatherOp is 6
+  const uint64_t resultMaxElementSize = sizeof(Vec4f) * (2 + 6);
+  const uint32_t maxQueuedResults = ShaderDebugConstants::MAX_SHADER_DEBUG_QUEUED_OPS;
+  const uint64_t shaderDebugReadbackSize = resultMaxElementSize * maxQueuedResults;
+  RDCCOMPILE_ASSERT(shaderDebugReadbackSize < m_ReadbackSize, "Readback buffer is not big enough");
+
   rdcstr hlsl = GetEmbeddedResource(shaderdebug_hlsl);
 
   D3D12RootSignature rootSig;
@@ -843,6 +855,9 @@ bool D3D12DebugManager::CreateShaderDebugResources()
     int smMinor = -1;
     for(smMinor = D3D_HIGHEST_SHADER_MODEL & 0xF; smMinor >= 0; smMinor--)
     {
+      if(!m_pDevice->GetOpts14().AdvancedTextureOpsSupported && smMinor >= 7)
+        continue;
+
       D3D_SHADER_MODEL smModel = (D3D_SHADER_MODEL)(smMajor << 4 | smMinor);
       D3D12_FEATURE_DATA_SHADER_MODEL smMaxSupport = {smModel};
       if(m_pDevice->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &smMaxSupport,
@@ -1394,8 +1409,15 @@ void D3D12DebugManager::FillWithDiscardPattern(ID3D12GraphicsCommandListX *cmd,
       FillBuffer(patternBuf, 0, pattern.data(), size);
     }
 
+    D3D12_RESOURCE_BARRIER b = {};
+    b.Type = D3D12_RESOURCE_BARRIER_TYPE_ALIASING;
+
+    cmd->ResourceBarrier(1, &b);
+
     // fill the destination with a copy from the pattern buffer
     cmd->CopyBufferRegion(res, 0, patternBuf, 0, size);
+
+    cmd->ResourceBarrier(1, &b);
 
     return;
   }
@@ -1895,7 +1917,7 @@ D3D12_CPU_DESCRIPTOR_HANDLE D3D12DebugManager::GetTempDescriptor(const D3D12Desc
   D3D12_CPU_DESCRIPTOR_HANDLE ret = {};
 
   ID3D12Resource *res =
-      m_pDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(desc.GetResResourceId());
+      m_pDevice->GetResourceManager()->GetResAs<ID3D12Resource>(desc.GetResResourceId());
 
   if(desc.GetType() == D3D12DescriptorType::RTV)
   {
@@ -1941,7 +1963,7 @@ D3D12_CPU_DESCRIPTOR_HANDLE D3D12DebugManager::GetTempDescriptor(const D3D12Desc
     ret = GetUAVClearHandle(TMP_UAV);
 
     ID3D12Resource *counterRes =
-        m_pDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(desc.GetCounterResourceId());
+        m_pDevice->GetResourceManager()->GetResAs<ID3D12Resource>(desc.GetCounterResourceId());
 
     D3D12_UNORDERED_ACCESS_VIEW_DESC unpacked = desc.GetUAV();
 
@@ -2081,7 +2103,7 @@ void D3D12DebugManager::PrepareExecuteIndirectPatching(GPUAddressRangeTracker &o
     b.origBase = addr.start;
     b.origEnd = addr.realEnd;
     b.newBase =
-        m_pDevice->GetResourceManager()->GetLiveAs<ID3D12Resource>(addr.id)->GetGPUVirtualAddress();
+        m_pDevice->GetResourceManager()->GetResAs<ID3D12Resource>(addr.id)->GetGPUVirtualAddress();
     buffers.push_back(b);
   }
 
@@ -3502,7 +3524,7 @@ void AddDebugDescriptorsToRenderState(WrappedID3D12Device *pDevice, D3D12RenderS
   for(size_t i = 0; i < rs.heaps.size(); i++)
   {
     WrappedID3D12DescriptorHeap *h =
-        pDevice->GetResourceManager()->GetCurrentAs<WrappedID3D12DescriptorHeap>(rs.heaps[i]);
+        pDevice->GetResourceManager()->GetResAs<WrappedID3D12DescriptorHeap>(rs.heaps[i]);
     if(h->GetDesc().Type == heapType)
     {
       // use the last descriptors
@@ -3516,8 +3538,7 @@ void AddDebugDescriptorsToRenderState(WrappedID3D12Device *pDevice, D3D12RenderS
         for(size_t j = 0; j < handles.size(); ++j)
         {
           WrappedID3D12DescriptorHeap *h2 =
-              pDevice->GetResourceManager()->GetCurrentAs<WrappedID3D12DescriptorHeap>(
-                  handles[j].heap);
+              pDevice->GetResourceManager()->GetResAs<WrappedID3D12DescriptorHeap>(handles[j].heap);
           D3D12_CPU_DESCRIPTOR_HANDLE src = h2->GetCPUDescriptorHandleForHeapStart();
           src.ptr += handles[j].index * sizeof(D3D12Descriptor);
 
@@ -3540,4 +3561,21 @@ void AddDebugDescriptorsToRenderState(WrappedID3D12Device *pDevice, D3D12RenderS
 
   sig.sigelems[sigElem] =
       D3D12RenderState::SignatureElement(eRootTable, newHandle.heap, newHandle.index);
+}
+
+// Does a command signature modify root arguments i.e. setting root constants, updating bindings.
+bool DoesCommandSignatureModifyRootArgs(ID3D12CommandSignature *comSig)
+{
+  WrappedID3D12CommandSignature *rdComSig = (WrappedID3D12CommandSignature *)comSig;
+  for(D3D12_INDIRECT_ARGUMENT_DESC &arg : rdComSig->sig.arguments)
+  {
+    D3D12_INDIRECT_ARGUMENT_TYPE argType = arg.Type;
+    if(argType == D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT ||
+       argType == D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW ||
+       argType == D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW ||
+       argType == D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW ||
+       argType == D3D12_INDIRECT_ARGUMENT_TYPE_INCREMENTING_CONSTANT)
+      return true;
+  }
+  return false;
 }

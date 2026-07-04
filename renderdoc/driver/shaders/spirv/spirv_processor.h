@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2019-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -547,6 +547,13 @@ enum class ThreadScope : uint32_t
 
 BITMASK_OPERATORS(ThreadScope);
 
+enum class ComputeDerivativeMode : uint8_t
+{
+  None,
+  Linear,
+  Quad,
+};
+
 class Processor
 {
 public:
@@ -560,6 +567,14 @@ public:
   const rdcarray<Variable> &GetGlobals() { return globals; }
   Id GetIDType(Id id) { return idTypes[id]; }
   DataType &GetDataType(Id id)
+  {
+    static DataType empty;
+    auto it = dataTypes.find(id);
+    if(it == dataTypes.end())
+      return empty;
+    return it->second;
+  }
+  const DataType &GetDataType(Id id) const
   {
     static DataType empty;
     auto it = dataTypes.find(id);

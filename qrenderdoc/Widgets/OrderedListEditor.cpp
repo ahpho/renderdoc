@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -200,6 +200,7 @@ void OrderedListEditor::addNewItemRow()
   item->setFlags(item->flags() & ~(Qt::ItemIsDragEnabled | Qt::ItemIsDropEnabled));
   setItem(rowCount() - 1, 0, item);
 
+  if(m_Prop.valid())
   {
     QWidget *w = makeCellWidget(1, OrderedItemExtras::CustomProp);
     QCheckBox *c = qobject_cast<QCheckBox *>(w);

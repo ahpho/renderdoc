@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2017-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -359,6 +359,8 @@ void RDTreeView::contextMenuEvent(QContextMenuEvent *event)
   QObject::connect(&collapseAllAction, &QAction::triggered, [this, index]() { collapseAll(index); });
 
   QObject::connect(&copy, &QAction::triggered, [this, index, pos]() { copyIndex(pos, index); });
+
+  emit customContextMenu(index, &contextMenu);
 
   RDDialog::show(&contextMenu, viewport()->mapToGlobal(pos));
 }

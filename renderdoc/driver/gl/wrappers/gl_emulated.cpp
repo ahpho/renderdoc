@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -3322,6 +3322,9 @@ void APIENTRY _glGetTexImage(GLenum target, GLint level, const GLenum format, co
     level = 0;
     readFormat = remapformat;
     readType = remaptype;
+    // always reset depthFormat. If the target format is depth, it was remapped
+    // and read-back will happen on remapped texture.
+    depthFormat = false;
 
     attachment = eGL_COLOR_ATTACHMENT0;
 

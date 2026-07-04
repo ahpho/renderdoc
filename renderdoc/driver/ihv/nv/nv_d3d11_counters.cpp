@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2022-2025 Baldur Karlsson
+ * Copyright (c) 2022-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -296,6 +296,10 @@ bool NVD3D11Counters::HasCounter(GPUCounter counterID) const
   {
     return counterID == GPUCounter::FirstNvidia;
   }
+  if(!m_Impl->CounterEnumerator)
+  {
+    return false;
+  }
   return m_Impl->CounterEnumerator->HasCounter(counterID);
 }
 
@@ -405,6 +409,8 @@ rdcarray<CounterResult> NVD3D11Counters::FetchCounters(const rdcarray<GPUCounter
       break;    // Failure
     }
 
+    d3dImmediateContext->Flush();
+
     nv::perf::profiler::DecodeResult decodeResult;
     if(!rangeProfiler.DecodeCounters(decodeResult))
     {
@@ -421,9 +427,8 @@ rdcarray<CounterResult> NVD3D11Counters::FetchCounters(const rdcarray<GPUCounter
 
     if(replayPass >= maxNumReplayPasses - 1)
     {
-      // FIXME: maxNumReplayPasses does not appear to be calculated correctly for d3d11!
-      // RDCERR("NvPerf exceeded the maximum expected number of replay passes");
-      // break;    // Failure
+      RDCERR("NvPerf exceeded the maximum expected number of replay passes");
+      break;    // Failure
     }
   }
 

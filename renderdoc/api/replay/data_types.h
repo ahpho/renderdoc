@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -669,6 +669,13 @@ typically it is one parent to many derived.
 )");
   rdcarray<ResourceId> parentResources;
 
+  DOCUMENT(R"(An optional set of annotations associated with this resource, may be ``None`` if
+annotations are not used.
+
+:type: SDObject
+)");
+  SDObject *annotations = NULL;
+
   DOCUMENT(R"(Utility function for setting up a custom name to overwrite the auto-generated one.
 
 :param str givenName: The custom name to use.
@@ -963,6 +970,13 @@ markers added to the capture after load.
 :type: int
 )");
   uint64_t fileOffset = 0;
+
+  DOCUMENT(R"(An optional set of annotations associated with this event, may be ``None`` if
+annotations are not used.
+
+:type: SDObject
+)");
+  SDObject *annotations = NULL;
 
   static const uint32_t NoChunk = ~0U;
 };
@@ -1855,6 +1869,12 @@ this counts the frame number when the capture was made.
 )");
   rdcarray<DebugMessage> debugMessages;
 
+  DOCUMENT(R"(Whether or not the capture contains any annotations.
+
+:type: bool
+)");
+  bool containsAnnotations = false;
+
   static const uint32_t NoFrameNumber = ~0U;
 };
 
@@ -1868,7 +1888,6 @@ struct EventUsage
   EventUsage() : eventId(0), usage(ResourceUsage::Unused) {}
   EventUsage(const EventUsage &) = default;
   EventUsage(uint32_t e, ResourceUsage u) : eventId(e), usage(u) {}
-  EventUsage(uint32_t e, ResourceUsage u, ResourceId v) : eventId(e), usage(u), view(v) {}
   EventUsage &operator=(const EventUsage &) = default;
   bool operator<(const EventUsage &o) const
   {
@@ -1890,12 +1909,6 @@ struct EventUsage
 :type: ResourceUsage
 )");
   ResourceUsage usage;
-
-  DOCUMENT(R"(An optional :class:`ResourceId` identifying the view through which the use happened.
-
-:type: ResourceId
-)");
-  ResourceId view;
 };
 
 DECLARE_REFLECTION_STRUCT(EventUsage);
@@ -2535,17 +2548,26 @@ struct ModificationValue
   }
   DOCUMENT(R"(The color value.
 
+If the modifications are for a color target, tthe contents will all be ``0``.
+
 :type: PixelValue
 )");
   PixelValue col;
 
-  DOCUMENT(R"(The depth output, as a ``float``.
+  DOCUMENT(R"(The depth value.
+
+If depth is not available/in-use for this modification, it will be ``-1.0``.
 
 :type: float
 )");
   float depth;
 
-  DOCUMENT(R"(The stencil output, or ``-1`` if not available.
+  DOCUMENT(R"(The stencil value.
+
+If stencil is not available for this modification, it will be negative. If stencil is not available
+at all and not in use then the stencil value will be ``-1``. If stencil was in use but can't be
+determined due to the pixel history implementation using stencil for its own purposes, the value
+will be ``-2``. This will only happen when looking at multiple modifications from the same event.
 
 :type: int
 )");
@@ -2636,7 +2658,11 @@ struct PixelModification
 )");
   bool directShaderWrite;
 
-  DOCUMENT(R"(``True`` if no pixel shader was bound at this event.
+  DOCUMENT(R"(``True`` if no pixel shader was bound at this event. On D3D APIs this may also mean
+a pixel shader exists but declares no output for the corresponding target and so is skipped.
+
+On other APIs this is only reported if the pixel shader is entirely unbound but this means the
+output may have undefined values.
 
 :type: bool
 )");
@@ -2735,6 +2761,51 @@ pixel.
     return !sampleMasked && !backfaceCulled && !depthClipped && !depthBoundsFailed &&
            !viewClipped && !scissorClipped && !shaderDiscarded && !depthTestFailed &&
            !stencilTestFailed && !predicationSkipped;
+  }
+
+  DOCUMENT(R"(Update the depth-test failure state based on known shader output depth value and
+preMod reference value, quantised to a certain number of depth bits with epsilon.
+
+This is primarily used internally and should not be needed to be called externally.
+
+:param int depthBits: How many bits are in the depth buffer: 16, 24 or 32.
+:param CompareFunction depthFunc: The comparison function active for the depth test
+)");
+  void CheckDepthTestQuantised(uint32_t depthBits, CompareFunction depthFunc)
+  {
+    float shadDepth = shaderOut.depth;
+    const float compareDepth = preMod.depth;
+
+    float eps = 1.2e-7f;
+    if(depthBits == 24)
+    {
+      shadDepth = float(uint32_t(float(shadDepth * 0xffffff))) / float(0xffffff);
+      eps = float(1.0f) / float(0xffffff);
+    }
+    else if(depthBits == 16)
+    {
+      shadDepth = float(uint32_t(float(shadDepth * 0xffff))) / float(0xffff);
+      eps = float(1.0f) / float(0xffff);
+    }
+
+    bool passed = true;
+    if(depthFunc == CompareFunction::Equal)
+      passed = shadDepth > compareDepth ? ((shadDepth - compareDepth) <= eps)
+                                        : ((compareDepth - shadDepth) <= eps);
+    else if(depthFunc == CompareFunction::NotEqual)
+      passed = shadDepth > compareDepth ? ((shadDepth - compareDepth) > eps)
+                                        : ((compareDepth - shadDepth) > eps);
+    else if(depthFunc == CompareFunction::Less)
+      passed = (shadDepth - eps < compareDepth);
+    else if(depthFunc == CompareFunction::LessEqual)
+      passed = (shadDepth - eps <= compareDepth);
+    else if(depthFunc == CompareFunction::Greater)
+      passed = (shadDepth + eps > compareDepth);
+    else if(depthFunc == CompareFunction::GreaterEqual)
+      passed = (shadDepth + eps >= compareDepth);
+
+    if(!passed)
+      depthTestFailed = true;
   }
 };
 

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -846,7 +846,7 @@ public:
   virtual void AddOptions(cmdline::parser &parser)
   {
     parser.set_footer(
-#if PYTHON_VERSION_MINOR > 0
+#if PYTHON_AVAILABLE == 1
         "<unit|functional>"
 #else
         "<unit>"
@@ -876,7 +876,7 @@ public:
     rest.erase(rest.begin());
 
     if(mode != "unit"
-#if PYTHON_VERSION_MINOR > 0
+#if PYTHON_AVAILABLE == 1
        && mode != "functional"
 #endif
     )
@@ -898,9 +898,9 @@ public:
   {
     if(mode == "unit")
       return RENDERDOC_RunUnitTests("renderdoccmd test unit", args);
-#if PYTHON_VERSION_MINOR > 0
+#if PYTHON_AVAILABLE == 1
     else if(mode == "functional")
-      return RENDERDOC_RunFunctionalTests(PYTHON_VERSION_MINOR, args);
+      return RENDERDOC_RunFunctionalTests(args);
 #endif
 
     std::cerr << "Unsupported test frame work '" << mode << "'" << std::endl << std::endl;

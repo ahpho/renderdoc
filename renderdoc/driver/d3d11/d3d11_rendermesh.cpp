@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -49,7 +49,10 @@ static uint32_t VisModeToMeshDisplayFormat(const MeshDisplay &cfg)
 void D3D11Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secondaryDraws,
                              const MeshDisplay &cfg)
 {
-  if(cfg.position.vertexResourceId == ResourceId() || cfg.position.numIndices == 0)
+  if(cfg.position.vertexResourceId == ResourceId() ||
+     WrappedID3D11Buffer::m_BufferList.find(cfg.position.vertexResourceId) ==
+         WrappedID3D11Buffer::m_BufferList.end() ||
+     cfg.position.numIndices == 0)
     return;
 
   D3D11MarkerRegion renderMesh(
@@ -60,7 +63,11 @@ void D3D11Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secon
 
   D3D11RenderStateTracker tracker(m_pImmediateContext);
 
-  Matrix4f projMat = Matrix4f::Perspective(90.0f, 0.1f, 100000.0f, m_OutputWidth / m_OutputHeight);
+  float nearPlane = cfg.cam ? ((Camera *)cfg.cam)->GetNear() : 0.1f;
+  float farPlane = cfg.cam ? ((Camera *)cfg.cam)->GetFar() : 100000.0f;
+
+  Matrix4f projMat =
+      Matrix4f::Perspective(90.0f, nearPlane, farPlane, m_OutputWidth / m_OutputHeight);
 
   Matrix4f camMat = cfg.cam ? ((Camera *)cfg.cam)->GetMatrix() : Matrix4f::Identity();
 
@@ -195,15 +202,15 @@ void D3D11Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secon
       {
         const MeshFormat &fmt = secondaryDraws[i];
 
-        if(fmt.vertexResourceId != ResourceId())
+        auto it = WrappedID3D11Buffer::m_BufferList.find(fmt.vertexResourceId);
+
+        if(fmt.vertexResourceId != ResourceId() && it != WrappedID3D11Buffer::m_BufferList.end())
         {
           pixelData.MeshColour = Vec3f(fmt.meshColor.x, fmt.meshColor.y, fmt.meshColor.z);
           GetDebugManager()->FillCBuffer(psCBuf, &pixelData, sizeof(pixelData));
           m_pImmediateContext->PSSetConstantBuffers(0, 1, &psCBuf);
 
           m_pImmediateContext->IASetPrimitiveTopology(MakeD3DPrimitiveTopology(fmt.topology));
-
-          auto it = WrappedID3D11Buffer::m_BufferList.find(fmt.vertexResourceId);
 
           ID3D11Buffer *buf = it->second.m_Buffer;
           m_pImmediateContext->IASetVertexBuffers(0, 1, &buf, (UINT *)&fmt.vertexByteStride,
@@ -282,7 +289,7 @@ void D3D11Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secon
     if(cfg.visualisationMode != Visualisation::NoSolid &&
        cfg.position.topology < Topology::PatchList_1CPs)
     {
-      m_pImmediateContext->RSSetState(m_General.RasterState);
+      m_pImmediateContext->RSSetState(m_General.RasterClipState);
 
       m_pImmediateContext->IASetPrimitiveTopology(topo);
 

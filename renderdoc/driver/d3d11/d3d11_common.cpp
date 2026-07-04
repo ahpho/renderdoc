@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -526,6 +526,10 @@ bool D3D11InitParams::IsSupportedVersion(uint64_t ver)
 
   // 0x12 -> 0x13 - added stride from stream-out to hidden counter data
   if(ver == 0x12)
+    return true;
+
+  // 0x13 -> 0x14 - added serialised annotations
+  if(ver == 0x13)
     return true;
 
   return false;

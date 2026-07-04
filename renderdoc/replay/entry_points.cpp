@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -895,8 +895,7 @@ static void TestPrintMsg(const rdcstr &msg)
   OSUtility::WriteOutput(OSUtility::Output_StdErr, msg.c_str());
 }
 
-extern "C" RENDERDOC_API int RENDERDOC_CC RENDERDOC_RunFunctionalTests(int pythonMinorVersion,
-                                                                       const rdcarray<rdcstr> &args)
+extern "C" RENDERDOC_API int RENDERDOC_CC RENDERDOC_RunFunctionalTests(const rdcarray<rdcstr> &args)
 {
 #if ENABLED(RDOC_WIN32)
   const char *moduledir = "/pymodules";
@@ -933,6 +932,26 @@ extern "C" RENDERDOC_API int RENDERDOC_CC RENDERDOC_RunFunctionalTests(int pytho
   if(!FileIO::exists(moduleFilename))
   {
     TestPrintMsg(StringFormat::Fmt("Couldn't locate python module at %s\n", moduleFilename.c_str()));
+    return 1;
+  }
+
+  void *moduleHandle = Process::LoadModule(moduleFilename);
+
+  int pythonMinorVersion = 0;
+
+  if(moduleHandle)
+  {
+    typedef int (*PFN_rd_python_minor_version)();
+
+    PFN_rd_python_minor_version py_ver_minor =
+        (PFN_rd_python_minor_version)Process::GetFunctionAddress(moduleHandle,
+                                                                 "_rd_python_minor_version");
+
+    pythonMinorVersion = py_ver_minor();
+  }
+  else
+  {
+    TestPrintMsg(StringFormat::Fmt("Couldn't load python module at %s\n", moduleFilename.c_str()));
     return 1;
   }
 

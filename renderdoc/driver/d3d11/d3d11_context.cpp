@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -69,10 +69,15 @@ HRESULT STDMETHODCALLTYPE WrappedID3DUserDefinedAnnotation::QueryInterface(REFII
 extern uint32_t NullCBOffsets[D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT];
 extern uint32_t NullCBCounts[D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT];
 
-D3DDescriptorStore::D3DDescriptorStore(WrappedID3D11Device *device)
+D3DDescriptorStore::D3DDescriptorStore(WrappedID3D11Device *device) : m_pDevice(device)
 {
   m_ID = ResourceIDGen::GetNewUniqueID();
-  device->GetResourceManager()->AddCurrentResource(GetResourceID(), this);
+  device->GetResourceManager()->AddResource(GetResourceID(), this);
+}
+
+D3DDescriptorStore::~D3DDescriptorStore()
+{
+  m_pDevice->GetResourceManager()->ReleaseResource(GetResourceID());
 }
 
 WrappedID3D11DeviceContext::WrappedID3D11DeviceContext(WrappedID3D11Device *realDevice,
@@ -146,8 +151,6 @@ WrappedID3D11DeviceContext::WrappedID3D11DeviceContext(WrappedID3D11Device *real
     m_State = CaptureState::LoadingReplaying;
 
     m_DescriptorStore = new D3DDescriptorStore(m_pDevice);
-    m_pDevice->GetResourceManager()->AddLiveResource(m_DescriptorStore->GetResourceID(),
-                                                     m_DescriptorStore);
   }
   else
   {
@@ -156,7 +159,6 @@ WrappedID3D11DeviceContext::WrappedID3D11DeviceContext(WrappedID3D11Device *real
     m_DescriptorStore = NULL;
   }
 
-  // create a temporary and grab its resource ID
   m_ResourceID = ResourceIDGen::GetNewUniqueID();
 
   m_ContextRecord = NULL;
@@ -232,11 +234,18 @@ WrappedID3D11DeviceContext::~WrappedID3D11DeviceContext()
   if(m_pRealContext && GetType() != D3D11_DEVICE_CONTEXT_IMMEDIATE)
     m_pDevice->RemoveDeferredContext(this);
 
-  // if this context is being destroyed by the resource manager the descriptor store may already be
-  // "removed"
-  if(m_DescriptorStore && GetResourceManager()->HasLiveResource(m_DescriptorStore->GetResourceID()))
-    GetResourceManager()->EraseLiveResource(m_DescriptorStore->GetResourceID());
   SAFE_DELETE(m_DescriptorStore);
+
+  // Clean up annotation data
+  for(auto it = m_Annotations.begin(); it != m_Annotations.end(); ++it)
+    delete it->second;
+  m_Annotations.clear();
+
+  SAFE_DELETE(m_RootAnnotation);
+
+  for(SDObject *obj : m_EventAnnotations)
+    delete obj;
+  m_EventAnnotations.clear();
 
   SAFE_DELETE(m_FrameReader);
 
@@ -444,14 +453,47 @@ bool WrappedID3D11DeviceContext::Serialise_BeginCaptureFrame(SerialiserType &ser
     // DrawAuto()
     for(const HiddenCounter &c : HiddenStreamOutCounters)
     {
-      if(m_pDevice->GetResourceManager()->HasLiveResource(c.id))
+      if(m_pDevice->GetResourceManager()->HasResource(c.id))
       {
-        StreamOutData &so =
-            m_pDevice->GetSOHiddenCounterForBuffer(m_pDevice->GetResourceManager()->GetLiveID(c.id));
+        StreamOutData &so = m_pDevice->GetSOHiddenCounterForBuffer(c.id);
         so.numPrims = c.counterValue;
         so.stride = c.stride;
       }
     }
+  }
+
+  // Serialize object annotations
+  if(ser.VersionAtLeast(0x14))
+  {
+    SCOPED_LOCK(m_AnnotationsLock);
+
+    SERIALISE_ELEMENT_LOCAL(numAnnotations, uint32_t(m_Annotations.size()));
+
+    auto it = m_Annotations.begin();
+    for(uint32_t i = 0; i < numAnnotations; i++)
+    {
+      SERIALISE_ELEMENT_LOCAL(id, it->first);
+      SDObject *annotation = NULL;
+      if(ser.IsReading())
+      {
+        annotation = new SDObject(""_lit, ""_lit);    // will be overwritten below
+      }
+      else
+      {
+        annotation = it->second;
+        it++;
+      }
+      ser.Serialise("annotation"_lit, *annotation);
+
+      if(ser.IsReading() && IsLoading(m_State))
+      {
+        m_Annotations[id] = annotation;
+        m_pDevice->GetReplay()->GetResourceDesc(id).annotations = annotation;
+      }
+    }
+
+    if(numAnnotations > 0)
+      m_pDevice->GetReplay()->WriteFrameRecord().frameInfo.containsAnnotations = true;
   }
 
   return true;
@@ -898,6 +940,11 @@ bool WrappedID3D11DeviceContext::ProcessChunk(ReadSerialiser &ser, D3D11Chunk ch
     case D3D11Chunk::SetMarker: ret = Serialise_SetMarker(ser, 0, L""); break;
     case D3D11Chunk::PopMarker: ret = Serialise_PopMarker(ser); break;
 
+    case D3D11Chunk::SetCommandAnnotation:
+      ret = Serialise_SetCommandAnnotation(ser, rdcstr(), eRENDERDOC_AnnotationMax, 0,
+                                           RENDERDOC_AnnotationValue());
+      break;
+
     case D3D11Chunk::DiscardResource: ret = Serialise_DiscardResource(ser, NULL); break;
     case D3D11Chunk::DiscardView: ret = Serialise_DiscardView(ser, NULL); break;
     case D3D11Chunk::DiscardView1: ret = Serialise_DiscardView1(ser, NULL, NULL, 0); break;
@@ -1017,7 +1064,8 @@ bool WrappedID3D11DeviceContext::ProcessChunk(ReadSerialiser &ser, D3D11Chunk ch
         m_ActionStack.pop_back();
     }
 
-    if(!m_AddedAction)
+    // annotations don't add events
+    if(!m_AddedAction && chunk != D3D11Chunk::SetCommandAnnotation)
       AddEvent();
   }
 
@@ -1078,8 +1126,7 @@ void WrappedID3D11DeviceContext::AddUsage(const ActionDescription &a)
       if(sh.Used_SRV(i))
       {
         WrappedID3D11ShaderResourceView1 *view = (WrappedID3D11ShaderResourceView1 *)sh.SRVs[i];
-        m_ResourceUses[view->GetResourceResID()].push_back(
-            EventUsage(e, ResUsage(s), view->GetResourceID()));
+        m_ResourceUses[view->GetResourceResID()].push_back(EventUsage(e, ResUsage(s)));
       }
     }
 
@@ -1092,7 +1139,7 @@ void WrappedID3D11DeviceContext::AddUsage(const ActionDescription &a)
           WrappedID3D11UnorderedAccessView1 *view =
               (WrappedID3D11UnorderedAccessView1 *)pipe->CSUAVs[i];
           m_ResourceUses[view->GetResourceResID()].push_back(
-              EventUsage(e, ResourceUsage::CS_RWResource, view->GetResourceID()));
+              EventUsage(e, ResourceUsage::CS_RWResource));
         }
       }
     }
@@ -1121,8 +1168,7 @@ void WrappedID3D11DeviceContext::AddUsage(const ActionDescription &a)
     {
       WrappedID3D11UnorderedAccessView1 *view =
           (WrappedID3D11UnorderedAccessView1 *)pipe->OM.UAVs[i - pipe->OM.UAVStartSlot];
-      m_ResourceUses[view->GetResourceResID()].push_back(
-          EventUsage(e, ResourceUsage::PS_RWResource, view->GetResourceID()));
+      m_ResourceUses[view->GetResourceResID()].push_back(EventUsage(e, ResourceUsage::PS_RWResource));
     }
   }
 
@@ -1130,7 +1176,7 @@ void WrappedID3D11DeviceContext::AddUsage(const ActionDescription &a)
   {
     WrappedID3D11DepthStencilView *view = (WrappedID3D11DepthStencilView *)pipe->OM.DepthView;
     m_ResourceUses[view->GetResourceResID()].push_back(
-        EventUsage(e, ResourceUsage::DepthStencilTarget, view->GetResourceID()));
+        EventUsage(e, ResourceUsage::DepthStencilTarget));
   }
 
   for(int i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++)
@@ -1139,8 +1185,7 @@ void WrappedID3D11DeviceContext::AddUsage(const ActionDescription &a)
     {
       WrappedID3D11RenderTargetView1 *view =
           (WrappedID3D11RenderTargetView1 *)pipe->OM.RenderTargets[i];
-      m_ResourceUses[view->GetResourceResID()].push_back(
-          EventUsage(e, ResourceUsage::ColorTarget, view->GetResourceID()));
+      m_ResourceUses[view->GetResourceResID()].push_back(EventUsage(e, ResourceUsage::ColorTarget));
     }
   }
 }
@@ -1161,16 +1206,16 @@ void WrappedID3D11DeviceContext::AddAction(const ActionDescription &a)
   {
     action.outputs[i] = ResourceId();
     if(m_CurrentPipelineState->OM.RenderTargets[i])
-      action.outputs[i] = m_pDevice->GetResourceManager()->GetOriginalID(
+      action.outputs[i] =
           ((WrappedID3D11RenderTargetView1 *)m_CurrentPipelineState->OM.RenderTargets[i])
-              ->GetResourceResID());
+              ->GetResourceResID();
   }
 
   {
     action.depthOut = ResourceId();
     if(m_CurrentPipelineState->OM.DepthView)
-      action.depthOut = m_pDevice->GetResourceManager()->GetOriginalID(
-          ((WrappedID3D11DepthStencilView *)m_CurrentPipelineState->OM.DepthView)->GetResourceResID());
+      action.depthOut =
+          ((WrappedID3D11DepthStencilView *)m_CurrentPipelineState->OM.DepthView)->GetResourceResID();
   }
 
   // markers don't increment action ID
@@ -1213,6 +1258,13 @@ void WrappedID3D11DeviceContext::AddEvent()
       messages[i].eventId = apievent.eventId;
       m_pDevice->AddDebugMessage(messages[i]);
     }
+  }
+
+  // Apply current annotation state to this event
+  if(m_RootAnnotation)
+  {
+    apievent.annotations = m_RootAnnotation->Duplicate();
+    m_EventAnnotations.push_back(apievent.annotations);
   }
 
   m_CurEvents.push_back(apievent);
@@ -1385,7 +1437,10 @@ RDResult WrappedID3D11DeviceContext::ReplayLog(CaptureState readType, uint32_t s
       break;
 
     m_LastChunk = chunktype;
-    m_CurEventID++;
+
+    // annotations do not produce events
+    if(chunktype != D3D11Chunk::SetCommandAnnotation)
+      m_CurEventID++;
   }
 
   if(IsLoading(m_State))
@@ -1436,10 +1491,10 @@ void WrappedID3D11DeviceContext::ClearMaps()
 
   for(; it != m_OpenMaps.end(); ++it)
   {
-    RDCASSERT(m_pDevice->GetResourceManager()->HasLiveResource(it->first.resource));
+    RDCASSERT(m_pDevice->GetResourceManager()->HasResource(it->first.resource));
 
     ID3D11Resource *res =
-        (ID3D11Resource *)m_pDevice->GetResourceManager()->GetLiveResource(it->first.resource);
+        (ID3D11Resource *)m_pDevice->GetResourceManager()->GetResource(it->first.resource);
 
     m_pRealContext->Unmap(UnwrapResource(res), it->first.subresource);
   }

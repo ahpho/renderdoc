@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2024-2025 Baldur Karlsson
+ * Copyright (c) 2024-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -218,16 +218,18 @@ void GatherInputDataForInitialValues(const DXBC::DXBCContainer *dxbc, InputFetch
 
     int arrayLength = 0;
 
-    if(included && numCols <= 2 && (sig.regChannelMask & 0x1))
+    if(included && numCols <= 3 && (sig.regChannelMask & 0x1))
     {
       uint32_t nextIdx = sig.semanticIndex + 1;
+      uint32_t nextReg = sig.regIndex + 1;
 
       for(size_t j = i + 1; j < numInputs; j++)
       {
         const SigParameter &jSig = stageInputSig[j];
 
         // if we've found the 'next' semantic
-        if(sig.semanticName == jSig.semanticName && nextIdx == jSig.semanticIndex)
+        if(sig.semanticName == jSig.semanticName && nextIdx == jSig.semanticIndex &&
+           nextReg == jSig.regIndex)
         {
           int jNumCols = (jSig.regChannelMask & 0x1 ? 1 : 0) + (jSig.regChannelMask & 0x2 ? 1 : 0) +
                          (jSig.regChannelMask & 0x4 ? 1 : 0) + (jSig.regChannelMask & 0x8 ? 1 : 0);
@@ -247,6 +249,7 @@ void GatherInputDataForInitialValues(const DXBC::DXBCContainer *dxbc, InputFetch
 
             // continue searching now
             nextIdx++;
+            nextReg++;
             j = i + 1;
             continue;
           }
@@ -288,7 +291,7 @@ void GatherInputDataForInitialValues(const DXBC::DXBCContainer *dxbc, InputFetch
     // To prevent this, we look forward and backward to check that we aren't expecting to pack
     // with anything, and if not then we just make it a 1-length array to ensure no packing.
     // Note the regChannelMask & 0x1 means it is using .x, so it's not the tail-end of a pack
-    if(included && arrayLength == 0 && numCols <= 2 && (sig.regChannelMask & 0x1))
+    if(included && arrayLength == 0 && numCols <= 3 && (sig.regChannelMask & 0x1))
     {
       if(i == numInputs - 1)
       {
@@ -390,7 +393,7 @@ void CreateLegacyInputFetcher(const DXBC::DXBCContainer *dxbc, const InputFetche
 
   // work around NV driver bug - it miscompiles the quad swizzle helper sometimes, so use the wave op instead
   if(!dxil || !cfg.waveOps)
-    fetcher.hlsl += GetEmbeddedResource(quadswizzle_hlsl);
+    fetcher.hlsl += GetEmbeddedResource(hlsl_quadswizzle_hlsl);
   else
     fetcher.hlsl +=
         "#define quadSwizzleHelper(value, quadLaneIndex, readIndex) "
@@ -675,6 +678,12 @@ void ExtractInputs(Inputs IN
 void CreateInputFetcher(const DXBC::DXBCContainer *dxbc, const DXBC::DXBCContainer *prevdxbc,
                         const InputFetcherConfig &cfg, InputFetcher &fetcher)
 {
+  if(cfg.fetchWorkgroup && dxbc->m_Type != DXBC::ShaderType::Compute)
+  {
+    RDCERR("Can only fetch workgroup inputs for Compute shaders");
+    return;
+  }
+
   bool usePrimitiveID = prevdxbc && ((prevdxbc->m_Type != DXBC::ShaderType::Geometry) &&
                                      (prevdxbc->m_Type != DXBC::ShaderType::Mesh));
 
@@ -715,7 +724,7 @@ void CopyInputs(out Inputs OUT, in Inputs IN) {}
       RDCERR("Invalid requested wave size %u vs device maximum of %u", reqWaveSize, cfg.maxWaveSize);
   }
 
-  fetcher.numLanesPerHit = waveSize;
+  fetcher.numLanesPerHit = cfg.fetchWorkgroup ? cfg.groupSize : waveSize;
 
   fetcher.hlsl += StringFormat::Fmt(
       "#define STAGE_VS %u\n"
@@ -724,9 +733,10 @@ void CopyInputs(out Inputs OUT, in Inputs IN) {}
       "#define STAGE %u\n"
       "#define MAXHIT %u\n"
       "#define MAXWAVESIZE %u\n"
-      "#define USEPRIM %u\n",
+      "#define USEPRIM %u\n"
+      "#define FETCH_WORKGROUP %u\n",
       DXBC::ShaderType::Vertex, DXBC::ShaderType::Pixel, DXBC::ShaderType::Compute, dxbc->m_Type,
-      DXDebug::maxPixelHits, waveSize, usePrimitiveID ? 1 : 0);
+      DXDebug::maxPixelHits, waveSize, usePrimitiveID ? 1 : 0, cfg.fetchWorkgroup);
 
   if(dxbc->m_Type == DXBC::ShaderType::Vertex)
   {
@@ -753,6 +763,11 @@ void CopyInputs(out Inputs OUT, in Inputs IN) {}
                                       dxbc->GetReflection()->DispatchThreadsDimension[0],
                                       dxbc->GetReflection()->DispatchThreadsDimension[1],
                                       dxbc->GetReflection()->DispatchThreadsDimension[2]);
+    fetcher.hlsl += StringFormat::Fmt(
+        "#define GROUPX %u\n"
+        "#define GROUPY %u\n"
+        "#define GROUPZ %u\n",
+        cfg.groupid[0], cfg.groupid[1], cfg.groupid[2]);
   }
   else
   {
@@ -821,7 +836,7 @@ struct CSLaneData
 {
 #if STAGE == STAGE_CS
   uint3 threadid;
-  uint pad;
+  uint activeSubgroup;
 #endif
 };
 
@@ -894,6 +909,8 @@ void ExtractInputs(Inputs IN
 
                      , uint3 threadid : SV_GroupThreadID 
                      , uint3 dtid : SV_DispatchThreadID 
+                     , uint3 groupid : SV_GroupID
+                     , uint groupindex : SV_GroupIndex
 
 #endif
 )
@@ -937,15 +954,23 @@ void ExtractInputs(Inputs IN
 
 #if STAGE == STAGE_VS
   bool candidateThread = (vert == DEST_VERT && inst == DEST_INST);
+  bool fetchWorkgroup = false;
 
   vs.vert = vert;
   vs.inst = inst;
 #elif STAGE == STAGE_PS
   bool candidateThread = (abs(debug_pixelPos.x - DESTX) < 0.5f && abs(debug_pixelPos.y - DESTY) < 0.5f);
+  bool fetchWorkgroup = false;
 
   quadLaneIndex = (2u * (uint(debug_pixelPos.y) & 1u)) + (uint(debug_pixelPos.x) & 1u);
   derivValid = ddx(debug_pixelPos.x);
+
+#if __SHADER_TARGET_MINOR >= 6
+  // IsHelperLane() can fail when software emulated on MSAA, because it checks SV_Coverage != 0
   isHelper = IsHelperLane() ? 1 : 0;
+#else
+  isHelper = (coverage & (1u << sample)) == 0;
+#endif
 
   helperBallot = WaveActiveBallot(isHelper != 0);
 
@@ -1003,11 +1028,44 @@ void ExtractInputs(Inputs IN
   ps.isFrontFace = isFrontFace;
 #elif STAGE == STAGE_CS
   bool candidateThread = (dtid.x == DESTX && dtid.y == DESTY && dtid.z == DESTZ);
-
   cs.threadid = threadid;
 #endif
 
-  if(WaveActiveAnyTrue(candidateThread))
+#if FETCH_WORKGROUP
+
+#if STAGE != STAGE_CS
+#error "Only compute shader fetches whole workgroup"
+#endif // #if STAGE != STAGE_CS
+
+  bool candidateGroup = (groupid.x == GROUPX && groupid.y == GROUPY && groupid.z == GROUPZ);
+  if (!candidateGroup)
+    return;
+
+  bool activeSubgroup = WaveActiveAnyTrue(candidateThread);
+  cs.activeSubgroup = activeSubgroup ? 1 : 0;
+  if(candidateThread)
+  {
+    HitBuffer[0].numHits = 1;
+    HitBuffer[0].pos_depth = debug_pixelPos.xyz;
+    HitBuffer[0].derivValid = derivValid;
+    HitBuffer[0].primitive = primitive;
+    HitBuffer[0].sample = sample;
+    HitBuffer[0].laneIndex = laneIndex;
+    HitBuffer[0].quadLaneIndex = quadLaneIndex;
+    HitBuffer[0].subgroupSize = WaveGetLaneCount();
+    HitBuffer[0].globalBallot = globalBallot;
+    HitBuffer[0].helperBallot = helperBallot;
+  }
+  // Use SV_GroupIndex as the output index
+  LaneBuffer[groupindex].laneIndex = laneIndex;
+  LaneBuffer[groupindex].active = 1;
+  LaneBuffer[groupindex].cs = cs;
+#else // #if FETCH_WORKGROUP
+  bool activeSubgroup = WaveActiveAnyTrue(candidateThread);
+#if STAGE == STAGE_CS
+  cs.activeSubgroup = activeSubgroup ? 1 : 0;
+#endif
+  if (activeSubgroup)
   {
     if(isHelper == 0)
     {
@@ -1055,6 +1113,7 @@ void ExtractInputs(Inputs IN
       }
     }
   }
+#endif // #if FETCH_WORKGROUP
 }
 )";
 }

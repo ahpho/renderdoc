@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2025 Baldur Karlsson
+ * Copyright (c) 2020-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,6 +22,7 @@
  * THE SOFTWARE.
  ******************************************************************************/
 
+#include "3rdparty/fmt/core.h"
 #include "d3d12_test.h"
 
 RD_TEST(D3D12_Shader_Debug_Zoo, D3D12GraphicsTest)
@@ -45,15 +46,15 @@ struct v2f { float4 pos : SV_Position; float4 col : COL; };
 
 v2f main(uint vid : SV_VertexID)
 {
-	float2 positions[] = {
-		float2(-1.0f,  1.0f),
-		float2( 1.0f,  1.0f),
-		float2(-1.0f, -1.0f),
-		float2( 1.0f, -1.0f),
-	};
+  float2 positions[] = {
+    float2(-1.0f,  1.0f),
+    float2( 1.0f,  1.0f),
+    float2(-1.0f, -1.0f),
+    float2( 1.0f, -1.0f),
+  };
 
   v2f ret = (v2f)0;
-	ret.pos = float4(positions[vid], 0, 1);
+  ret.pos = float4(positions[vid], 0, 1);
   ret.col = intex.Load(float3(0,0,0));
   return ret;
 }
@@ -66,7 +67,7 @@ struct v2f { float4 pos : SV_Position; float4 col : COL; };
 
 float4 main(v2f IN) : SV_Target0
 {
-	return IN.col;
+  return IN.col;
 }
 
 )EOSHADER";
@@ -82,9 +83,49 @@ Texture2D<float4> intex : register(t0);
 
 float4 main(float4 pos : SV_Position) : SV_Target0
 {
-	return intex.Load(float3(pos.x, pos.y - offset, 0));
+  return intex.Load(float3(pos.x, pos.y - offset, 0));
 }
 
+)EOSHADER";
+
+  std::string shaderTypes = R"EOSHADER(
+#if SM_6_6
+
+#define INT32 int32_t
+#define UINT32 uint32_t
+
+#if HAS_16BIT_SHADER_OPS 
+#define INT16 int16_t
+#define UINT16 uint16_t
+#define HALF half
+#else // #if HAS_16BIT_SHADER_OPS 
+#define INT16 int
+#define UINT16 uint
+#define HALF float
+#endif // #if HAS_16BIT_SHADER_OPS 
+
+#if HAS_DOUBLE_SHADER_OPS
+#define INT64 int64_t
+#define UINT64 uint64_t
+#define DOUBLE double
+#else // #if HAS_DOUBLE_SHADER_OPS
+#define INT64 int
+#define UINT64 uint
+#define DOUBLE float
+#endif // #if HAS_DOUBLE_SHADER_OPS
+
+#else // #if SM_6_6
+
+#define INT32 int
+#define UINT32 uint
+#define INT16 int
+#define UINT16 uint
+#define INT64 int
+#define UINT64 uint
+
+#define HALF float
+#define DOUBLE float
+#endif // #if SM_6_6
 )EOSHADER";
 
   std::string common = R"EOSHADER(
@@ -108,6 +149,7 @@ struct v2f
   float negoneVal : NEGONE;
   uint tri : TRIANGLE;
   uint intval : INTVAL;
+  row_major float2x3 mat : MAT;
 };
 
 )EOSHADER";
@@ -139,12 +181,19 @@ v2f main(consts IN, uint tri : SV_InstanceID)
   OUT.tinyVal = IN.oneVal * 1.0e-30f;
   OUT.intval = tri + 7;
 
+  OUT.mat[0].x = 1.0;
+  OUT.mat[0].y = 2.0;
+  OUT.mat[0].z = 3.0;
+  OUT.mat[1].x = 4.0;
+  OUT.mat[1].y = 5.0;
+  OUT.mat[1].z = 6.0;
+
   return OUT;
 }
 
 )EOSHADER";
 
-  std::string pixel = R"EOSHADER(
+  std::string pixel = shaderTypes + R"EOSHADER(
 
 // error X3556: integer divides may be much slower, try using uints if possible.
 // we want to do this on purpose
@@ -199,6 +248,7 @@ Buffer<float4> rgb_srv : register(t103);
 SamplerState linearclamp : register(s0);
 
 StructuredBuffer<MyStruct> rootsrv : register(t20);
+ByteAddressBuffer rootbytesrv : register(t21);
 StructuredBuffer<MyStruct> appendsrv : register(t40);
 Texture2D<float> dimtex_edge : register(t41);
 #if (SM_6_2 || SM_6_6) && HAS_16BIT_SHADER_OPS 
@@ -326,8 +376,8 @@ float4 main(v2f IN) : SV_Target0
   if(IN.tri == 33)
     return float4(-nan, abs(nan), 0.0f, 1.0f);
 
-  // check denorm flushing
-  if(IN.tri == 34)
+  // check denorm flushing (not undefined, but broken on NV currently)
+  if(IN.tri == 34) // undefined-test
     return float4(tiny * 1.5e-8f, tiny * 1.5e-9f, asfloat(intval) == 0.0f ? 1.0f : 0.0f, 1.0f);
 
   // test reading/writing byte address data
@@ -517,7 +567,7 @@ float4 main(v2f IN) : SV_Target0
     return float4(read.a, read.e, read.d.b[z+0], read.d.c);
   }
 )EOSHADER"
-                      R"EOSHADER(
+                                    R"EOSHADER(
 
   // storing in bounds
   if(IN.tri == 52)
@@ -892,15 +942,13 @@ float4 main(v2f IN) : SV_Target0
     uint res = dot4add_u8packed(a, b, c);
     return float4(res & 0xFF, (res >> 8) & 0xFF, (res >> 16) & 0xFF, (res >> 24) & 0xFF);
   }
-#if HAS_16BIT_SHADER_OPS
   if(IN.tri == 96)
   {
-    half2 a = half2(IN.tri - 96 + 0.25f, IN.tri - 96 + 0.5f);
-    half2 b = half2(IN.tri - 96 + 0.5f, IN.tri - 96 + 0.25f);
+    vector<HALF, 2> a = {IN.tri - 96 + 0.25f, IN.tri - 96 + 0.5f};
+    vector<HALF, 2> b = {IN.tri - 96 + 0.5f, IN.tri - 96 + 0.25f};
     float c = IN.tri - 96 + 0.3f;
     return dot2add(a, b, c);
   }
-#endif
   if(IN.tri == 97)
   {
     int val = IN.tri - 97;
@@ -1000,7 +1048,7 @@ float4 main(v2f IN) : SV_Target0
     // idx = 0
     int idx = intval - IN.tri - 7;
     int prev = gInt;
-    gInt += (idx+1);
+    gInt += (idx+1) + IN.s.x + IN.s.y;
     gIntArray[idx] = gInt;
     return float4(prev, gInt, gIntArray[idx], gIntArray[idx+1]);
   }
@@ -1011,13 +1059,106 @@ float4 main(v2f IN) : SV_Target0
     floattex2rwtest[uv] = value;
     return floattex2rwtest[uv];
   }
+  if(IN.tri == 108)
+  {
+    float4 Color = float4(0,0,0,0);
+    // this is intended to test triggering a mixture of GPU math and GPU sample ops
+    float2 coord = float2(zero + 0.5, zero + 0.15);
+    if (IN.s.x % 2 == 0)
+    {
+      Color = smiley.SampleLevel(linearclamp, coord, float(0));
+      for (int i = 0; i < 100; i++)
+      {
+        Color += smiley.SampleLevel(linearclamp, coord, float(i));
+      }
+    }
+    else
+    {
+      Color = float4(pow(abs(posone*2.5f), posone*1.3f), pow(abs(posone*2.5f), posone*0.45f),
+                     pow(abs(posone*2.5f), posone*0.9f), pow(abs(posone*0.9f), posone*8.5f));
+      for (int i = 0; i < 100; i++)
+      {
+        float4 value = float4(pow(abs(posone*2.5f+float(i)), posone*1.3f), pow(abs(posone*2.5f), posone*0.45f),
+                              pow(abs(posone*2.5f), posone*0.9f), pow(abs(posone*1.3), posone*8.5f));
+        Color += value / 100.0;
+      }
+    }
+    return Color;
+  }
+  if(IN.tri == 109)
+  {
+    float4 Color = float4(0,0,0,1);
+    float2 uv = IN.s.xy / float2(2.0, 2.0);
+    uv.y += 0.187;
+    Color.x = smiley.CalculateLevelOfDetail(linearclamp, uv);
+    Color.y = smiley.CalculateLevelOfDetailUnclamped(linearclamp, uv);
+    return Color;
+  }
+#if (SM_6_0 || SM_6_2 || SM_6_6)
+  enum TestEnum
+  {
+    ON,
+    OFF
+  };
+  struct TestStructEnum
+  {
+    bool bTest;
+    TestEnum eTest;
+  };
+  TestEnum testEnum = (IN.s.x > 1.0) ? ON : OFF;
+  TestStructEnum tStructEnum;
+  tStructEnum.bTest = (IN.s.x < 0.5);
+  tStructEnum.eTest = (IN.s.x < 1.0) ? ON : OFF;
+  if(IN.tri == 110)
+  {
+    float4 Color = float4(0,0,0,1);
+    if (testEnum == ON)
+      Color += float4(0.5, 0.0, 0.0, 0.0);
+    else if (testEnum == OFF)
+      Color += float4(0.2, 0.0, 0.0, 0.0);
+    if (tStructEnum.bTest)
+      Color += float4(0.0, 0.5, 0.0, 0.0);
+    else
+      Color += float4(0.0, 0.2, 0.0, 0.0);
+    if (tStructEnum.eTest == ON)
+      Color += float4(0.0, 0.0, 0.5, 0.0);
+    else if (tStructEnum.eTest == OFF)
+      Color += float4(0.0, 0.0, 0.2, 0.0);
+    return Color;
+  }
+#endif // #if (SM_6_0 || SM_6_2 || SM_6_6)
+  if(IN.tri == 111)
+  {
+    // first == false 
+    bool first = (intval == (int)IN.tri);
+    // second == true
+    bool second = (intval > (int)IN.tri);
+    bool result = true;
+    if (!(first)) 
+      result = !(second);
+    else 
+      result = true;
 
+    // result should be false
+    float4 Color = float4(0.0, 0.0, 0.0, 0.0);
+    if (result)
+      Color = float4(1.0, 1.0, 1.0, 1.0);
+
+    return Color;
+  }
+  if(IN.tri == 112)
+  {
+    // use this to ensure the compiler doesn't know we're using fixed locations
+    uint z = intval - IN.tri - 7;
+
+    return float4(asfloat(rootbytesrv.Load(z+0).x), asfloat(rootbytesrv.Load(z+4).x),
+                  asfloat(rootbytesrv.Load(z+8).x), float(rootbytesrv.Load(z+12).x));
+  }
   return float4(0.4f, 0.4f, 0.4f, 0.4f);
 }
-
 )EOSHADER";
 
-  std::string noResourcesPixel = R"EOSHADER(
+  std::string noResourcesPixel = shaderTypes + R"EOSHADER(
 
 float4 main(v2f IN) : SV_Target0
 {
@@ -1055,6 +1196,452 @@ float4 main(v2f IN) : SV_Target0
     s *= posone * float2(0.55f, 0.48f);
     return float4(ddx(s.x), ddy(s.y), s.x, s.y);
   }
+  if(IN.tri == 3)
+  {
+    float4 col = float4(0.0, 0.0, 0.0, 0.0);
+    col.x += IN.mat[0].x;
+    col.y += IN.mat[0].y;
+    col.z += IN.mat[0].z;
+    col.x += IN.mat[1].x;
+    col.y += IN.mat[1].y;
+    col.z += IN.mat[1].z;
+    return col;
+  }
+  if(IN.tri == 4)
+  {
+    float4 Color = float4(0,0,0,0);
+    float floatA = zero + 1.5f;
+    float floatB = zero + 1.75f;
+    float floatC = zero + 2.5f;
+    DOUBLE doubleA = (DOUBLE)floatA; 
+    DOUBLE doubleB = (DOUBLE)floatB;
+    DOUBLE doubleC = (DOUBLE)floatC;
+    HALF halfA = (HALF)floatA;
+    HALF halfB = (HALF)1.0;
+    HALF halfC = (HALF)floatC;
+
+    HALF halfFma = mad(halfA, halfB, halfC);
+    float floatFma = mad(floatA, floatB, floatC);
+    DOUBLE doubleFma = mad(doubleA, doubleB, doubleC);
+    Color.x = floatFma * 1000.0;
+    Color.y = (float)halfFma * 1000.0;
+    Color.z = (float)doubleFma * 1000.0;
+    return Color;
+  }
+  if(IN.tri == 5)
+  {
+    float4 Color = float4(0,0,0,0);
+    float floatA = IN.tri/100.0 + 1.5f;
+    float floatB = IN.tri/100.0 + 1.7f;
+    DOUBLE doubleA = (DOUBLE)floatA; 
+    DOUBLE doubleB = (DOUBLE)floatB;
+    HALF halfA = (HALF)floatA;
+    HALF halfB = (HALF)floatB;
+
+    HALF half_val = min(halfA, halfB);
+    float float_val = min(floatA, floatB);
+    DOUBLE double_val = min(doubleA, doubleB);
+    Color.x = float_val * 1000.0;
+    Color.y = (float)half_val * 1000.0;
+    Color.z = (float)double_val * 1000.0;
+    return Color;
+  }
+  if(IN.tri == 6)
+  {
+    float4 Color = float4(0,0,0,0);
+    float floatA = IN.tri/100.0 + 1.5f;
+    float floatB = IN.tri/100.0 + 1.7f;
+    DOUBLE doubleA = (DOUBLE)floatA; 
+    DOUBLE doubleB = (DOUBLE)floatB;
+    HALF halfA = (HALF)floatA;
+    HALF halfB = (HALF)floatB;
+
+    HALF half_val = max(halfA, halfB);
+    float float_val = max(floatA, floatB);
+    DOUBLE double_val = max(doubleA, doubleB);
+    Color.x = float_val * 1000.0;
+    Color.y = (float)half_val * 1000.0;
+    Color.z = (float)double_val * 1000.0;
+    return Color;
+  }
+  if(IN.tri == 7)
+  {
+    float4 Color = float4(0,0,0,0);
+    float floatA = IN.tri/100.0 + 1.5f;
+    DOUBLE doubleA = (DOUBLE)floatA; 
+    HALF halfA = (HALF)floatA;
+
+    HALF half_val = abs(halfA);
+    float float_val = abs(floatA);
+    DOUBLE double_val = abs(doubleA);
+    Color.x = float_val * 1000.0;
+    Color.y = (float)half_val * 1000.0;
+    Color.z = (float)double_val * 1000.0;
+    return Color;
+  }
+  if(IN.tri == 8)
+  {
+    float4 Color = float4(0,0,0,0);
+    float floatA = IN.tri/100.0 + 0.5f;
+    HALF halfA = (HALF)floatA;
+
+    HALF half_val = frac(halfA);
+    float float_val = frac(floatA);
+    Color.x = float_val * 1000.0;
+    Color.y = (float)half_val * 1000.0;
+    return Color;
+  }
+  if(IN.tri == 9)
+  {
+    float4 Color = float4(0,0,0,0);
+    float floatA = IN.tri/100.0 + 1.5f;
+    DOUBLE doubleA = (DOUBLE)floatA; 
+    HALF halfA = (HALF)floatA;
+
+    HALF half_val = saturate(halfA);
+    float float_val = saturate(floatA);
+    DOUBLE double_val = saturate(doubleA);
+    Color.x = float_val * 1000.0;
+    Color.y = (float)half_val * 1000.0;
+    Color.z = (float)double_val * 1000.0;
+    return Color;
+  }
+  if(IN.tri == 10)
+  {
+    float4 Color = float4(0,0,0,0);
+    float2 floatA = float2(IN.tri/100.0 + 1.5f, IN.tri/100.0 + 1.7f);
+    float2 floatB = float2(IN.tri/100.0 - 1.5f, IN.tri/100.0 - 1.7f);
+    vector<HALF, 2> halfA = {IN.tri + 1.5f, IN.tri + 1.7f};
+    vector<HALF, 2> halfB = {IN.tri - 1.5f, IN.tri - 1.7f};
+
+    HALF half_val = dot(halfA, halfB);
+    float float_val = dot(floatA, floatB);
+    Color.x = float_val * 1000.0;
+    Color.y = (float)half_val * 1000.0;
+    return Color;
+  }
+  if(IN.tri == 11)
+  {
+    float4 Color = float4(0,0,0,0);
+    float3 floatA = float3(zero + 1.5f, zero + 1.75f, zero + 2.75f);
+    float3 floatB = float3(zero - 1.5f, zero + 1.75f, zero - 2.75f);
+    vector<HALF, 3> halfA = {zero + 1.5f, zero + 1.75f, zero + 2.75f};
+    vector<HALF, 3> halfB = {zero - 1.5f, zero - 1.75f, zero - 2.75f};
+
+    HALF half_val = dot(halfA, halfB);
+    float float_val = dot(floatA, floatB);
+    Color.x = float_val * 1000.0;
+    Color.y = (float)half_val * 1000.0;
+    return Color;
+  }
+  if(IN.tri == 12)
+  {
+    float4 Color = float4(0,0,0,0);
+    float4 floatA = float4(zero + 1.5f, zero + 1.75f, zero + 2.75f, zero + 3.75f);
+    float4 floatB = float4(zero - 1.5f, zero - 1.75f, zero - 2.75f, zero - 3.75f);
+    vector<HALF, 4> halfA = {zero + 1.5f, zero + 1.75f, zero + 2.75f, zero + 3.75f};
+    vector<HALF, 4> halfB = {zero - 1.5f, zero - 1.75f, zero - 2.75f, zero - 3.75f};
+
+    HALF half_val = dot(halfA, halfB);
+    float float_val = dot(floatA, floatB);
+    Color.x = float_val * 1000.0;
+    Color.y = (float)half_val * 1000.0;
+    return Color;
+  }
+  if(IN.tri == 13)
+  {
+    float4 Color = float4(0,0,0,0);
+    INT32 int_A = IN.tri/100.0 + 1.5f;
+    INT32 int_B = IN.tri/100.0 + 1.7f;
+    INT64 slong_A = (INT64)int_A; 
+    INT64 slong_B = (INT64)int_B;
+    INT16 short_A = (INT16)int_A;
+    INT16 short_B = (INT16)int_B;
+
+    INT16 short_val = min(short_A, short_B);
+    int int_val = min(int_A, int_B);
+    INT64 slong_val = min(slong_A, slong_B);
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 14)
+  {
+    float4 Color = float4(0,0,0,0);
+    INT32 int_A = IN.tri/100.0 + 1.5f;
+    INT32 int_B = IN.tri/100.0 + 1.7f;
+    INT64 slong_A = (INT64)int_A; 
+    INT64 slong_B = (INT64)int_B;
+    INT16 short_A = (INT16)int_A;
+    INT16 short_B = (INT16)int_B;
+
+    INT16 short_val = max(short_A, short_B);
+    int int_val = max(int_A, int_B);
+    INT64 slong_val = max(slong_A, slong_B);
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 15)
+  {
+    float4 Color = float4(0,0,0,0);
+    INT32 int_A = IN.tri/100.0 + 1.5f;
+    INT32 int_B = IN.tri/100.0 + 1.7f;
+    INT64 slong_A = (INT64)int_A; 
+    INT64 slong_B = (INT64)int_B;
+    INT16 short_A = (INT16)int_A;
+    INT16 short_B = (INT16)int_B;
+
+    INT16 short_val = short_A * short_B;
+    int int_val = int_A * int_B;
+    INT64 slong_val = slong_A * slong_B;
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 16)
+  {
+    float4 Color = float4(0,0,0,0);
+    INT32 int_A = IN.tri/100.0 + 1.5f;
+    INT32 int_B = IN.tri/100.0 + 1.7f;
+    INT64 slong_A = (INT64)int_A; 
+    INT64 slong_B = (INT64)int_B;
+    INT16 short_A = (INT16)int_A;
+    INT16 short_B = (INT16)int_B;
+
+    INT16 short_val = short_A / short_B;
+    int int_val = int_A / int_B;
+    INT64 slong_val = slong_A / slong_B;
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 17)
+  {
+    float4 Color = float4(0,0,0,0);
+    INT32 int_A = IN.tri/100.0 + 1.5f;
+    INT32 int_B = IN.tri/100.0 + 1.7f;
+    INT32 int_C = IN.tri/100.0 + 2.7f;
+    INT64 slong_A = (INT64)int_A; 
+    INT64 slong_B = (INT64)int_B;
+    INT64 slong_C = (INT64)int_C;
+    INT16 short_A = (INT16)int_A;
+    INT16 short_B = (INT16)int_B;
+    INT16 short_C = (INT16)int_C;
+
+    INT16 short_val = mad(short_A, short_B, short_C);
+    int int_val = mad(int_A, int_B, int_C);
+    INT64 slong_val = mad(slong_A, slong_B, slong_C);
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 18)
+  {
+    float4 Color = float4(0,0,0,0);
+    vector<INT32,2> int_A = {IN.tri/100.0 + 1.5f, IN.tri - 1.5f};
+    vector<INT32,2> int_B = {IN.tri/100.0 + 1.7f, IN.tri - 1.7f};
+    vector<INT64,2> slong_A = {(INT64)int_A.x, (INT64)int_A.y}; 
+    vector<INT64,2> slong_B = {(INT64)int_B.x, (INT64)int_B.y};
+    vector<INT16,2> short_A = {(INT16)int_A.x, (INT16)int_A.y};
+    vector<INT16,2> short_B = {(INT16)int_B.x, (INT16)int_B.y};
+
+    INT16 short_val = dot(short_A, short_B);
+    int int_val = dot(int_A, int_B);
+    INT64 slong_val = dot(slong_A, slong_B);
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 19)
+  {
+    float4 Color = float4(0,0,0,0);
+    vector<INT32,3> int_A = {IN.tri/100.0 + 1.5f, IN.tri - 1.5f, IN.tri - 2.5f};
+    vector<INT32,3> int_B = {IN.tri/100.0 + 1.7f, IN.tri - 1.7f, IN.tri + 2.5f};
+    vector<INT64,3> slong_A = {(INT64)int_A.x, (INT64)int_A.y, (INT64)int_A.z};
+    vector<INT64,3> slong_B = {(INT64)int_B.x, (INT64)int_B.y, (INT64)int_B.z};
+    vector<INT16,3> short_A = {(INT16)int_A.x, (INT16)int_A.y, (INT16)int_A.z};
+    vector<INT16,3> short_B = {(INT16)int_B.x, (INT16)int_B.y, (INT16)int_B.z};
+
+    INT16 short_val = dot(short_A, short_B);
+    int int_val = dot(int_A, int_B);
+    INT64 slong_val = dot(slong_A, slong_B);
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 20)
+  {
+    float4 Color = float4(0,0,0,0);
+    vector<INT32,4> int_A = {IN.tri/100.0 + 1.5f, IN.tri - 1.5f, IN.tri - 2.5f, IN.tri + 3.7f};
+    vector<INT32,4> int_B = {IN.tri/100.0 + 1.7f, IN.tri - 1.7f, IN.tri + 2.5f, IN.tri -3.3f};
+    vector<INT64,4> slong_A = {(INT64)int_A.x, (INT64)int_A.y, (INT64)int_A.z, (INT64)int_A.w};
+    vector<INT64,4> slong_B = {(INT64)int_B.x, (INT64)int_B.y, (INT64)int_B.z, (INT64)int_B.w};
+    vector<INT16,4> short_A = {(INT16)int_A.x, (INT16)int_A.y, (INT16)int_A.z, (INT16)int_A.w};
+    vector<INT16,4> short_B = {(INT16)int_B.x, (INT16)int_B.y, (INT16)int_B.z, (INT16)int_B.w};
+
+    INT16 short_val = dot(short_A, short_B);
+    int int_val = dot(int_A, int_B);
+    INT64 slong_val = dot(slong_A, slong_B);
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 21)
+  {
+    float4 Color = float4(0,0,0,0);
+    UINT32 int_A = IN.tri/100.0 + 1.5f;
+    UINT32 int_B = IN.tri/100.0 + 1.7f;
+    UINT64 slong_A = (UINT64)int_A; 
+    UINT64 slong_B = (UINT64)int_B;
+    UINT16 short_A = (UINT16)int_A;
+    UINT16 short_B = (UINT16)int_B;
+
+    UINT16 short_val = min(short_A, short_B);
+    uint int_val = min(int_A, int_B);
+    UINT64 slong_val = min(slong_A, slong_B);
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 22)
+  {
+    float4 Color = float4(0,0,0,0);
+    UINT32 int_A = IN.tri/100.0 + 1.5f;
+    UINT32 int_B = IN.tri/100.0 + 1.7f;
+    UINT64 slong_A = (UINT64)int_A; 
+    UINT64 slong_B = (UINT64)int_B;
+    UINT16 short_A = (UINT16)int_A;
+    UINT16 short_B = (UINT16)int_B;
+
+    UINT16 short_val = max(short_A, short_B);
+    uint int_val = max(int_A, int_B);
+    UINT64 slong_val = max(slong_A, slong_B);
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 23)
+  {
+    float4 Color = float4(0,0,0,0);
+    UINT32 int_A = IN.tri/100.0 + 1.5f;
+    UINT32 int_B = IN.tri/100.0 + 1.7f;
+    UINT64 slong_A = (UINT64)int_A; 
+    UINT64 slong_B = (UINT64)int_B;
+    UINT16 short_A = (UINT16)int_A;
+    UINT16 short_B = (UINT16)int_B;
+
+    UINT16 short_val = short_A * short_B;
+    uint int_val = int_A * int_B;
+    UINT64 slong_val = slong_A * slong_B;
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 24)
+  {
+    float4 Color = float4(0,0,0,0);
+    UINT32 int_A = IN.tri/100.0 + 1.5f;
+    UINT32 int_B = IN.tri/100.0 + 1.7f;
+    UINT64 slong_A = (UINT64)int_A; 
+    UINT64 slong_B = (UINT64)int_B;
+    UINT16 short_A = (UINT16)int_A;
+    UINT16 short_B = (UINT16)int_B;
+
+    UINT16 short_val = short_A / short_B;
+    uint int_val = int_A / int_B;
+    UINT64 slong_val = slong_A / slong_B;
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 25)
+  {
+    float4 Color = float4(0,0,0,0);
+    UINT32 int_A = IN.tri/100.0 + 1.5f;
+    UINT32 int_B = IN.tri/100.0 + 1.7f;
+    UINT32 int_C = IN.tri/100.0 + 2.7f;
+    UINT64 slong_A = (UINT64)int_A; 
+    UINT64 slong_B = (UINT64)int_B;
+    UINT64 slong_C = (UINT64)int_C;
+    UINT16 short_A = (UINT16)int_A;
+    UINT16 short_B = (UINT16)int_B;
+    UINT16 short_C = (UINT16)int_C;
+
+    UINT16 short_val = mad(short_A, short_B, short_C);
+    uint int_val = mad(int_A, int_B, int_C);
+    UINT64 slong_val = mad(slong_A, slong_B, slong_C);
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 26)
+  {
+    float4 Color = float4(0,0,0,0);
+    vector<UINT32,2> int_A = {IN.tri/100.0 + 1.5f, IN.tri - 1.5f};
+    vector<UINT32,2> int_B = {IN.tri/100.0 + 1.7f, IN.tri - 1.7f};
+    vector<UINT64,2> slong_A = {(UINT64)int_A.x, (UINT64)int_A.y}; 
+    vector<UINT64,2> slong_B = {(UINT64)int_B.x, (UINT64)int_B.y};
+    vector<UINT16,2> short_A = {(UINT16)int_A.x, (UINT16)int_A.y};
+    vector<UINT16,2> short_B = {(UINT16)int_B.x, (UINT16)int_B.y};
+
+    UINT16 short_val = dot(short_A, short_B);
+    uint int_val = dot(int_A, int_B);
+    UINT64 slong_val = dot(slong_A, slong_B);
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 27)
+  {
+    float4 Color = float4(0,0,0,0);
+    vector<UINT32,3> int_A = {IN.tri/100.0 + 1.5f, IN.tri - 1.5f, IN.tri - 2.5f};
+    vector<UINT32,3> int_B = {IN.tri/100.0 + 1.7f, IN.tri - 1.7f, IN.tri + 2.5f};
+    vector<UINT64,3> slong_A = {(UINT64)int_A.x, (UINT64)int_A.y, (UINT64)int_A.z};
+    vector<UINT64,3> slong_B = {(UINT64)int_B.x, (UINT64)int_B.y, (UINT64)int_B.z};
+    vector<UINT16,3> short_A = {(UINT16)int_A.x, (UINT16)int_A.y, (UINT16)int_A.z};
+    vector<UINT16,3> short_B = {(UINT16)int_B.x, (UINT16)int_B.y, (UINT16)int_B.z};
+
+    UINT16 short_val = dot(short_A, short_B);
+    uint int_val = dot(int_A, int_B);
+    UINT64 slong_val = dot(slong_A, slong_B);
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
+  if(IN.tri == 28)
+  {
+    float4 Color = float4(0,0,0,0);
+    vector<UINT32,4> int_A = {IN.tri/100.0 + 1.5f, IN.tri - 1.5f, IN.tri - 2.5f, IN.tri + 3.7f};
+    vector<UINT32,4> int_B = {IN.tri/100.0 + 1.7f, IN.tri - 1.7f, IN.tri + 2.5f, IN.tri -3.3f};
+    vector<UINT64,4> slong_A = {(UINT64)int_A.x, (UINT64)int_A.y, (UINT64)int_A.z, (UINT64)int_A.w};
+    vector<UINT64,4> slong_B = {(UINT64)int_B.x, (UINT64)int_B.y, (UINT64)int_B.z, (UINT64)int_B.w};
+    vector<UINT16,4> short_A = {(UINT16)int_A.x, (UINT16)int_A.y, (UINT16)int_A.z, (UINT16)int_A.w};
+    vector<UINT16,4> short_B = {(UINT16)int_B.x, (UINT16)int_B.y, (UINT16)int_B.z, (UINT16)int_B.w};
+
+    UINT16 short_val = dot(short_A, short_B);
+    uint int_val = dot(int_A, int_B);
+    UINT64 slong_val = dot(slong_A, slong_B);
+    Color.x = (float)int_val;
+    Color.y = (float)short_val;
+    Color.z = (float)slong_val;
+    return Color;
+  }
 
   return float4(0.4f, 0.4f, 0.4f, 0.4f);
 };
@@ -1064,9 +1651,9 @@ float4 main(v2f IN) : SV_Target0
 
 struct v2f
 {
-	float4 pos : SV_POSITION;
-	float4 col : COLOR0;
-	float2 uv : TEXCOORD0;
+  float4 pos : SV_POSITION;
+  float4 col : COLOR0;
+  float2 uv : TEXCOORD0;
 };
 
 float4 main(v2f IN, uint samp : SV_SampleIndex) : SV_Target0 
@@ -1090,7 +1677,44 @@ float4 main(v2f IN, uint samp : SV_SampleIndex) : SV_Target0
 
 )EOSHADER";
 
-  std::string compute = R"EOSHADER(
+  std::string msaaPixel61 = R"EOSHADER(
+
+struct v2f
+{
+  float4 pos : SV_POSITION;
+  float4 col : COLOR0;
+  float2 uv : TEXCOORD0;
+};
+
+float4 main(v2f IN, uint samp : SV_SampleIndex
+#if SUPPORTS_BARY
+            , float3 bary : SV_Barycentrics
+#endif
+) : SV_Target0 
+{
+  float2 uvCentroid = EvaluateAttributeCentroid(IN.uv);
+  float2 uvSamp0 = EvaluateAttributeAtSample(IN.uv, 0) - IN.uv;
+  float2 uvSampThis = EvaluateAttributeAtSample(IN.uv, samp) - IN.uv;
+  float2 uvOffset = EvaluateAttributeSnapped(IN.uv, int2(1, 1));
+
+  float x = (uvCentroid.x + uvCentroid.y) * 0.5f;
+  float y = (uvSamp0.x + uvSamp0.y) * 0.5f;
+  float z = (uvSampThis.x + uvSampThis.y) * 0.5f;
+  float w = (uvOffset.x + uvOffset.y) * 0.5f;
+#if SUPPORTS_BARY
+  w += x * bary.x + y * bary.y + z * bary.z;
+#endif
+
+  // Test sampleinfo with a MSAA rasterizer
+  uint numSamples = GetRenderTargetSampleCount();
+  float2 pos = GetRenderTargetSamplePosition(samp);
+
+  return float4(x + pos.x, y + pos.y, z + (float)numSamples, w);
+}
+
+)EOSHADER";
+
+  std::string computeMain = shaderTypes + R"EOSHADER(
 
 // error X3556: integer divides may be much slower, try using uints if possible.
 // we want to do this on purpose
@@ -1101,7 +1725,18 @@ cbuffer consts : register(b0)
   bool boolX;
   uint intY;
   float floatZ;
-  double doubleX;
+  DOUBLE doubleX;
+};
+
+cbuffer packed_consts : register(b1)
+{
+  uint col1z : packoffset(c1.z);
+  uint col2w : packoffset(c2.w);
+};
+
+cbuffer oob_consts : register(b2)
+{
+  int4 oob_array[2];
 };
 
 RWStructuredBuffer<uint4> bufIn : register(u0);
@@ -1114,7 +1749,7 @@ struct TestStruct
 };
 
 groupshared int gsmInt;
-groupshared TestStruct gsmStruct[8];
+groupshared TestStruct gsmStruct[64];
 groupshared int gsmIntArray[128];
 groupshared int gsmInt2DArray[2][1024];
 
@@ -1130,6 +1765,9 @@ void main(int3 inTestIndex : SV_GroupID)
   int ONE = ZERO + 1;
 
   int4 testResult = 123;
+  testResult += oob_array[ZERO+2];
+  testResult -= oob_array[ONE+1];
+
   gsmInt = testIndex;
   gsmStruct[gsmInt].a = inTestIndex;
   if (testIndex == 0)
@@ -1152,6 +1790,12 @@ void main(int3 inTestIndex : SV_GroupID)
     testResult.z = gsmStruct[gsmInt * 4].a.y;
     testResult.w = gsmInt2DArray[ZERO][idx] + gsmInt2DArray[ONE][idx];
   }
+  else if (testIndex == 2)
+  {
+    testResult = bufOut[0];
+    testResult.x += bufIn[0].x * (uint)col1z;
+    testResult.y += bufIn[0].y * (uint)col2w;
+  }
   else
   {
     testResult.x = inTestIndex.x;
@@ -1162,6 +1806,142 @@ void main(int3 inTestIndex : SV_GroupID)
 
 )EOSHADER";
 
+  std::string computeShaderDerivs = shaderTypes + R"EOSHADER(
+
+// error X3556: integer divides may be much slower, try using uints if possible.
+// we want to do this on purpose
+#pragma warning( disable : 3556 )
+
+cbuffer rootconsts : register(b0)
+{
+  uint root_test;
+};
+
+RWStructuredBuffer<float4> outbuf : register(u0);
+Texture2D<float4> smiley : register(t5);
+SamplerState linearclamp : register(s0);
+SamplerComparisonState linearcompare : register(s1);
+
+static uint3 tid;
+static uint3 gid;
+static uint flatId;
+
+void SetOutput(float4 val)
+{
+  outbuf[root_test * 1024 + flatId] = val;
+}
+
+void Init(float4 val)
+{
+  flatId = gid.z * GROUP_SIZE_X * GROUP_SIZE_Y + gid.y * GROUP_SIZE_X + gid.x;
+  SetOutput(val);
+}
+
+#define IsTest(x) (root_test == x)
+
+#if WORKGROUP_SUPPORT
+groupshared uint3 gsmUint3[1024];
+#endif // #if WORKGROUP_SUPPORT
+
+[numthreads(GROUP_SIZE_X, GROUP_SIZE_Y, 1)]
+void main(uint3 inDTID : SV_DispatchThreadID, uint3 inGID : SV_GroupThreadID, uint3 inGroup : SV_GroupID)
+{
+  // Only want the workgroup (1,0,0) to output results
+  if ((inGroup.x != 1) || (inGroup.y != 0) || (inGroup.z != 0))
+    return;
+
+  float4 testResult = float4(0,0,0,0);
+  tid = inDTID;
+  gid = inGID;
+  Init(testResult);
+  uint id = flatId;
+  uint ZERO = id / 10000;
+  uint ONE = ZERO + 1;
+  float2 inpos;
+  inpos.xy = gid.xy / 8.0;
+
+#if WORKGROUP_SUPPORT
+  gsmUint3[flatId].xyz = tid;
+#endif // #if WORKGROUP_SUPPORT
+#if SUBGROUP_SUPPORT
+  uint subgroupId = WaveGetLaneIndex();
+  id += subgroupId;
+  testResult.w = id * ZERO;
+#endif // #if SUBGROUP_SUPPORT
+
+  if(IsTest(0))
+  {
+    float4 test0;
+    test0.x = ddx(0.5f);
+    test0.y = ddy(0.5f);
+    test0.z = ddx_fine(0.5f);
+    test0.w = ddy_fine(0.5f);
+    testResult = test0;
+  }
+  if(IsTest(1))
+  {
+    float3 test1 = ddx(gid*gid);
+    testResult.xyz = test1;
+  }
+  if(IsTest(2))
+  {
+    float3 test2 = ddy(gid*gid);
+    testResult.xyz = test2;
+  }
+  if(IsTest(3))
+  {
+    float3 test3 = ddx_fine(gid*gid);
+    testResult.xyz = test3;
+  }
+  if(IsTest(4))
+  {
+    float3 test4 = ddy_fine(gid*gid);
+    testResult.xyz = test4;
+  }
+  if(IsTest(5))
+  {
+    float3 test5 = ddx_coarse(gid*gid);
+    testResult.xyz = test5;
+  }
+  if(IsTest(6))
+  {
+    float3 test6 = ddy_coarse(gid*gid);
+    testResult.xyz = test6;
+  }
+  if(IsTest(7))
+  {
+    float2 test7;
+    test7.x = smiley.CalculateLevelOfDetail(linearclamp, inpos);
+    test7.y = smiley.CalculateLevelOfDetailUnclamped(linearclamp, inpos);
+    testResult.xy = test7;
+  }
+  if(IsTest(8))
+  {
+    float2 uv = ONE * float2(0.55f, 0.48f);
+    float4 test8 = smiley.Sample(linearclamp, uv);
+    testResult = test8;
+  }
+  if(IsTest(9))
+  {
+    float2 uv = ONE * float2(0.75f, 0.68f);
+    float4 test9 = smiley.SampleBias(linearclamp, uv, 4.0);
+    testResult = test9;
+  }
+  if(IsTest(10))
+  {
+    float2 uv = ONE * float2(0.25f, 0.38f);
+    float4 test10;
+    test10.x = smiley.SampleCmp(linearcompare, uv, 0.1);
+    test10.y = smiley.SampleCmp(linearcompare, uv, 0.3);
+    test10.z = smiley.SampleCmp(linearcompare, uv, 0.5);
+    test10.w = smiley.SampleCmp(linearcompare, uv, 0.7);
+    testResult = test10;
+  }
+
+  SetOutput(testResult);
+}
+
+)EOSHADER";
   int main()
   {
     // initialise, create window, create device, etc
@@ -1169,13 +1949,22 @@ void main(int3 inTestIndex : SV_GroupID)
       return 3;
 
     bool supportSM60 = (m_HighestShaderModel >= D3D_SHADER_MODEL_6_0) && m_DXILSupport;
+    bool supportSM61 = (m_HighestShaderModel >= D3D_SHADER_MODEL_6_1) && m_DXILSupport;
+    bool supportBary = (opts3.BarycentricsSupported) && m_DXILSupport;
     bool supportSM62 = (m_HighestShaderModel >= D3D_SHADER_MODEL_6_2) && m_DXILSupport;
     bool supportSM66 = (m_HighestShaderModel >= D3D_SHADER_MODEL_6_6) && m_DXILSupport;
     TEST_ASSERT(!supportSM62 || supportSM60, "SM 6.2 requires SM 6.0 support");
     TEST_ASSERT(!supportSM66 || supportSM62, "SM 6.6 requires SM 6.2 support");
 
-    std::string shaderDefines =
-        opts4.Native16BitShaderOpsSupported ? "#define HAS_16BIT_SHADER_OPS 1\n" : "";
+    std::string shaderDefines = "";
+    if(opts4.Native16BitShaderOpsSupported)
+      shaderDefines += "#define HAS_16BIT_SHADER_OPS 1\n";
+    else
+      shaderDefines += "#define HAS_16BIT_SHADER_OPS 0\n";
+    if(opts.DoublePrecisionFloatShaderOps)
+      shaderDefines += "#define HAS_DOUBLE_SHADER_OPS 1\n";
+    else
+      shaderDefines += "#define HAS_DOUBLE_SHADER_OPS 0\n";
 
     size_t lastTest = pixel.rfind("IN.tri == ");
     lastTest += sizeof("IN.tri == ") - 1;
@@ -1200,6 +1989,14 @@ void main(int3 inTestIndex : SV_GroupID)
     lastTest = noResourcesPixel.rfind("IN.tri == ");
     lastTest += sizeof("IN.tri == ") - 1;
     const uint32_t numNoResTests = atoi(noResourcesPixel.c_str() + lastTest) + 1;
+
+    lastTest = computeMain.rfind("testIndex == ");
+    lastTest += sizeof("testIndex == ") - 1;
+    const uint32_t numComputeTests = atoi(computeMain.c_str() + lastTest) + 1;
+
+    lastTest = computeShaderDerivs.rfind("IsTest(");
+    lastTest += sizeof("IsTest(") - 1;
+    const uint32_t numComputeDerivsTests = atoi(computeShaderDerivs.c_str() + lastTest) + 1;
 
     std::vector<D3D12_INPUT_ELEMENT_DESC> inputLayout;
     inputLayout.reserve(4);
@@ -1308,6 +2105,7 @@ void main(int3 inTestIndex : SV_GroupID)
             uavParam(D3D12_SHADER_VISIBILITY_PIXEL, 0, 21),
             srvParam(D3D12_SHADER_VISIBILITY_PIXEL, 0, 20),
             tableParam(D3D12_SHADER_VISIBILITY_PIXEL, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 9, 3, 100),
+            srvParam(D3D12_SHADER_VISIBILITY_PIXEL, 0, 21),
         },
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT, 1, &staticSamp);
 
@@ -1320,15 +2118,17 @@ void main(int3 inTestIndex : SV_GroupID)
                   .RootSig(sig)
                   .InputLayout(inputLayout)
                   .VS(vs5blob)
-                  .PS(Compile(common + pixel, "main", "ps_5_0", CompileOptionFlags::SkipOptimise))
+                  .PS(Compile(common + shaderDefines + pixel, "main", "ps_5_0",
+                              CompileOptionFlags::SkipOptimise))
                   .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
     psos[0]->SetName(L"ps_5_0");
-    psos[1] = MakePSO()
-                  .RootSig(sig)
-                  .InputLayout(inputLayout)
-                  .VS(vs5blob)
-                  .PS(Compile(common + pixel, "main", "ps_5_0", CompileOptionFlags::None))
-                  .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+    psos[1] =
+        MakePSO()
+            .RootSig(sig)
+            .InputLayout(inputLayout)
+            .VS(vs5blob)
+            .PS(Compile(common + shaderDefines + pixel, "main", "ps_5_0", CompileOptionFlags::None))
+            .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
     psos[1]->SetName(L"ps_5_0_opt");
 
     // Recompile the same PS with SM 5.1 to test shader debugging with the different bytecode
@@ -1336,16 +2136,16 @@ void main(int3 inTestIndex : SV_GroupID)
                   .RootSig(sig)
                   .InputLayout(inputLayout)
                   .VS(vs5blob)
-                  .PS(Compile(common + "\n#define SM_5_1 1\n" + pixel, "main", "ps_5_1",
-                              CompileOptionFlags::SkipOptimise))
+                  .PS(Compile(common + "\n#define SM_5_1 1\n" + shaderDefines + pixel, "main",
+                              "ps_5_1", CompileOptionFlags::SkipOptimise))
                   .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
     psos[2]->SetName(L"ps_5_1");
     psos[3] = MakePSO()
                   .RootSig(sig)
                   .InputLayout(inputLayout)
                   .VS(vs5blob)
-                  .PS(Compile(common + "\n#define SM_5_1 1\n" + pixel, "main", "ps_5_1",
-                              CompileOptionFlags::None))
+                  .PS(Compile(common + "\n#define SM_5_1 1\n" + shaderDefines + pixel, "main",
+                              "ps_5_1", CompileOptionFlags::None))
                   .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
     psos[3]->SetName(L"ps_5_1_opt");
 
@@ -1749,6 +2549,9 @@ void main(int3 inTestIndex : SV_GroupID)
         .NumElements(5)
         .StructureStride(11 * sizeof(float))
         .CreateGPU(35);
+    ID3D12ResourcePtr rootbytesrv = MakeBuffer().Data(structdata);
+    rootbytesrv->SetName(L"rootbytesrv");
+    MakeSRV(rootbytesrv).ByteAddressed().Format(DXGI_FORMAT_R32_TYPELESS).NumElements(16).CreateGPU(37);
     ID3D12ResourcePtr rootDummy = MakeBuffer().Data(structdata);
     rootDummy->SetName(L"rootDummy");
 
@@ -1780,6 +2583,35 @@ void main(int3 inTestIndex : SV_GroupID)
                                          .PS(psmsaablob)
                                          .SampleCount(4)
                                          .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+
+    ID3D12PipelineStatePtr msaaPSOs[3] = {psomsaa, NULL};
+    if(supportSM60)
+    {
+      msaaPSOs[1] = MakePSO()
+                        .RootSig(sigmsaa)
+                        .InputLayout()
+                        .VS(Compile(D3DDefaultVertex, "main", "vs_6_0"))
+                        .PS(Compile(msaaPixel, "main", "ps_6_0"))
+                        .SampleCount(4)
+                        .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+
+      if(supportSM61)
+      {
+        std::string defines = "#define SUPPORTS_BARY ";
+
+        defines += supportBary ? "1" : "0";
+        defines += "\n";
+
+        msaaPSOs[2] = MakePSO()
+                          .RootSig(sigmsaa)
+                          .InputLayout()
+                          .VS(Compile(D3DDefaultVertex, "main", "vs_6_1"))
+                          .PS(Compile(defines + msaaPixel61, "main", "ps_6_1"))
+                          .SampleCount(4)
+                          .RTVs({DXGI_FORMAT_R32G32B32A32_FLOAT});
+      }
+    }
+
     ID3D12ResourcePtr vbmsaa = MakeBuffer().Data(DefaultTri);
 
     ID3D12ResourcePtr msaaTex = MakeTexture(DXGI_FORMAT_R32G32B32A32_FLOAT, 8, 8)
@@ -1889,31 +2721,128 @@ void main(int3 inTestIndex : SV_GroupID)
     ID3D12RootSignaturePtr sigCompute = MakeSig({
         uavParam(D3D12_SHADER_VISIBILITY_ALL, 0, 0),
         uavParam(D3D12_SHADER_VISIBILITY_ALL, 0, 1),
-        constParam(D3D12_SHADER_VISIBILITY_ALL, 0, 0, 4),
+        constParam(D3D12_SHADER_VISIBILITY_ALL, 0, 0, 8),
+        constParam(D3D12_SHADER_VISIBILITY_ALL, 0, 1, 12),
+        constParam(D3D12_SHADER_VISIBILITY_ALL, 0, 2, 12),
         tableParam(D3D12_SHADER_VISIBILITY_ALL, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 2, 1, 3),
     });
 
     const uint32_t countComputeSMs = 3;
     ID3D12PipelineStatePtr computePSOs[countComputeSMs] = {NULL, NULL, NULL};
     std::string computeSMs[countComputeSMs] = {"cs_5_0", "cs_6_0", "cs_6_6"};
+    std::string compute = shaderDefines + computeMain;
     ID3DBlobPtr csblob = Compile(compute, "main", "cs_5_0");
     computePSOs[0] = MakePSO().RootSig(sigCompute).CS(csblob);
 
     if(supportSM60)
     {
-      csblob = Compile(compute, "main", "cs_6_0");
+      csblob = Compile("#define SM_6_0 1\n" + compute, "main", "cs_6_0");
       computePSOs[1] = MakePSO().RootSig(sigCompute).CS(csblob);
     }
 
     if(supportSM66)
     {
-      csblob = Compile(compute, "main", "cs_6_6");
+      csblob = Compile("#define SM_6_6 1\n" + compute, "main", "cs_6_6", compileOptions);
       computePSOs[2] = MakePSO().RootSig(sigCompute).CS(csblob);
     }
 
+    D3D12_STATIC_SAMPLER_DESC samplers[] = {staticSamp, staticSamp};
+    samplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    samplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    samplers[1].ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+    samplers[1].ShaderRegister = 1;
+
+    ID3D12RootSignaturePtr sigComputeDerivs = MakeSig(
+        {
+            constParam(D3D12_SHADER_VISIBILITY_ALL, 0, 0, 1),
+            uavParam(D3D12_SHADER_VISIBILITY_ALL, 0, 0),
+            tableParam(D3D12_SHADER_VISIBILITY_ALL, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 0, 8, 0),
+        },
+        D3D12_ROOT_SIGNATURE_FLAG_NONE, 2, samplers);
+
+    struct
+    {
+      int x, y;
+    } csDimens[] = {
+        {8, 4},
+        {32, 1},
+    };
+    ID3D12PipelineStatePtr computeDerivsPSOs[8] = {NULL, NULL};
+    std::string computeDerivsNames[8];
+    uint32_t countComputeDerivsPSOs = 0;
+    std::string localDefines;
+    if(supportSM66)
+    {
+      for(size_t i = 0; i < ARRAY_COUNT(csDimens); ++i)
+      {
+        std::map<std::string, std::string> macros;
+        macros["GROUP_SIZE_X"] = fmt::format("{}", csDimens[i].x);
+        macros["GROUP_SIZE_Y"] = fmt::format("{}", csDimens[i].y);
+        macros["GROUP_SIZE_Z"] = "1";
+        macros["WORKGROUP_SUPPORT"] = "0";
+        macros["SUBGROUP_SUPPORT"] = "0";
+
+        localDefines = "#define SM_6_6 1\n";
+        for(const auto &it : macros)
+          localDefines += fmt::format("#define {} {}\n", it.first, it.second);
+
+        compute = shaderDefines + localDefines + computeShaderDerivs;
+        csblob = Compile(compute, "main", "cs_6_6");
+        computeDerivsNames[countComputeDerivsPSOs] = fmt::format(
+            "{}x{}x{}", macros["GROUP_SIZE_X"], macros["GROUP_SIZE_Y"], macros["GROUP_SIZE_Z"]);
+        computeDerivsPSOs[countComputeDerivsPSOs] = MakePSO().RootSig(sigComputeDerivs).CS(csblob);
+        ++countComputeDerivsPSOs;
+
+        // with workgroup
+        macros["WORKGROUP_SUPPORT"] = "1";
+        localDefines = "#define SM_6_6 1\n";
+        for(const auto &it : macros)
+          localDefines += fmt::format("#define {} {}\n", it.first, it.second);
+
+        compute = shaderDefines + localDefines + computeShaderDerivs;
+        csblob = Compile(compute, "main", "cs_6_6");
+        computeDerivsNames[countComputeDerivsPSOs] =
+            fmt::format("{}x{}x{} : Workgroup", macros["GROUP_SIZE_X"], macros["GROUP_SIZE_Y"],
+                        macros["GROUP_SIZE_Z"]);
+        computeDerivsPSOs[countComputeDerivsPSOs] = MakePSO().RootSig(sigComputeDerivs).CS(csblob);
+        ++countComputeDerivsPSOs;
+
+        // with subgroup
+        macros["SUBGROUP_SUPPORT"] = "1";
+        macros["WORKGROUP_SUPPORT"] = "0";
+        localDefines = "#define SM_6_6 1\n";
+        for(const auto &it : macros)
+          localDefines += fmt::format("#define {} {}\n", it.first, it.second);
+
+        compute = shaderDefines + localDefines + computeShaderDerivs;
+        csblob = Compile(compute, "main", "cs_6_6");
+        computeDerivsNames[countComputeDerivsPSOs] =
+            fmt::format("{}x{}x{} : Subgroup", macros["GROUP_SIZE_X"], macros["GROUP_SIZE_Y"],
+                        macros["GROUP_SIZE_Z"]);
+        computeDerivsPSOs[countComputeDerivsPSOs] = MakePSO().RootSig(sigComputeDerivs).CS(csblob);
+        ++countComputeDerivsPSOs;
+
+        // with subgroup+workgroup
+        macros["SUBGROUP_SUPPORT"] = "1";
+        macros["WORKGROUP_SUPPORT"] = "1";
+        localDefines = "#define SM_6_6 1\n";
+        for(const auto &it : macros)
+          localDefines += fmt::format("#define {} {}\n", it.first, it.second);
+
+        compute = shaderDefines + localDefines + computeShaderDerivs;
+        csblob = Compile(compute, "main", "cs_6_6");
+        computeDerivsNames[countComputeDerivsPSOs] =
+            fmt::format("{}x{}x{} : Subgroup + Workgroup", macros["GROUP_SIZE_X"],
+                        macros["GROUP_SIZE_Y"], macros["GROUP_SIZE_Z"]);
+        computeDerivsPSOs[countComputeDerivsPSOs] = MakePSO().RootSig(sigComputeDerivs).CS(csblob);
+        ++countComputeDerivsPSOs;
+      }
+    }
+    const uint32_t numCompTests = std::max(numComputeTests, numComputeDerivsTests);
+
     const uint32_t uavSize = 1024;
     ID3D12ResourcePtr bufIn = MakeBuffer().Size(uavSize).UAV();
-    ID3D12ResourcePtr bufOut = MakeBuffer().Size(uavSize).UAV();
+    ID3D12ResourcePtr bufOut = MakeBuffer().Size(sizeof(Vec4f) * 1024 * numCompTests).UAV();
     bufIn->SetName(L"bufIn");
     bufOut->SetName(L"bufOut");
 
@@ -1996,6 +2925,8 @@ void main(int3 inTestIndex : SV_GroupID)
           cmd->SetGraphicsRootShaderResourceView(
               6, rootStruct->GetGPUVirtualAddress() + renderDataSize);
           cmd->SetGraphicsRootDescriptorTable(7, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+          cmd->SetGraphicsRootShaderResourceView(
+              8, rootbytesrv->GetGPUVirtualAddress() + renderDataSize);
 
           // Add a marker so we can easily locate this draw
           std::string markerName = markers[i];
@@ -2054,14 +2985,25 @@ void main(int3 inTestIndex : SV_GroupID)
       IASetVertexBuffer(cmd, vbmsaa, sizeof(DefaultA2V), 0);
       cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-      cmd->SetGraphicsRootSignature(sigmsaa);
-      cmd->SetPipelineState(psomsaa);
       RSSetViewport(cmd, {0.0f, 0.0f, 8.0f, 8.0f, 0.0f, 1.0f});
       RSSetScissorRect(cmd, {0, 0, 8, 8});
 
-      // Add a marker so we can easily locate this draw
-      setMarker(cmd, "MSAA");
-      cmd->DrawInstanced(3, 1, 0, 0);
+      size_t countMSAAPasses = supportSM60 ? (supportSM61 ? 3 : 2) : 1;
+      TEST_ASSERT(countMSAAPasses <= ARRAY_COUNT(msaaPSOs), "More MSAA passes than psos");
+      const char *msaa_markers[3] = {
+          "MSAA sm_5_0",
+          "MSAA sm_6_0",
+          "MSAA sm_6_1",
+      };
+      for(int i = 0; i < countMSAAPasses; ++i)
+      {
+        cmd->SetGraphicsRootSignature(sigmsaa);
+        cmd->SetPipelineState(msaaPSOs[i]);
+
+        // Add a marker so we can easily locate this draw
+        setMarker(cmd, msaa_markers[i]);
+        cmd->DrawInstanced(3, 1, 0, 0);
+      }
 
       OMSetRenderTargets(cmd, {fltRTV}, {});
       ClearRenderTargetView(cmd, fltRTV, {0.3f, 0.5f, 0.8f, 1.0f});
@@ -2123,11 +3065,48 @@ void main(int3 inTestIndex : SV_GroupID)
         cmd->SetComputeRoot32BitConstant(2, 6, 1);
         cmd->SetComputeRoot32BitConstant(2, 7, 2);
         cmd->SetComputeRoot32BitConstant(2, 8, 3);
-        cmd->SetComputeRootDescriptorTable(3, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+        cmd->SetComputeRoot32BitConstant(3, 10, 4 + 2);    // col1z
+        cmd->SetComputeRoot32BitConstant(3, 11, 8 + 3);    // col2w
+        cmd->SetComputeRoot32BitConstant(4, 12, 0 + 0);    // oob_array[0].x
+        cmd->SetComputeRoot32BitConstant(4, 13, 0 + 1);    // oob_array[0].y
+        cmd->SetComputeRoot32BitConstant(4, 14, 0 + 2);    // oob_array[0].z
+        cmd->SetComputeRoot32BitConstant(4, 15, 0 + 3);    // oob_array[0].w
+        cmd->SetComputeRoot32BitConstant(4, 16, 4 + 0);    // oob_array[1].x
+        cmd->SetComputeRoot32BitConstant(4, 17, 4 + 1);    // oob_array[1].y
+        cmd->SetComputeRoot32BitConstant(4, 18, 4 + 2);    // oob_array[1].z
+        cmd->SetComputeRoot32BitConstant(4, 19, 4 + 3);    // oob_array[1].w
+        cmd->SetComputeRoot32BitConstant(4, 20, 8 + 0);    // oob_array[2].x
+        cmd->SetComputeRoot32BitConstant(4, 21, 8 + 1);    // oob_array[2].y
+        cmd->SetComputeRoot32BitConstant(4, 22, 8 + 2);    // oob_array[2].z
+        cmd->SetComputeRoot32BitConstant(4, 23, 8 + 3);    // oob_array[2].w
+        cmd->SetComputeRootDescriptorTable(5, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
 
         cmd->SetPipelineState(computePSOs[i]);
         setMarker(cmd, computeSMs[i]);
-        cmd->Dispatch(3, 2, 1);
+        cmd->Dispatch(numComputeTests, 2, 1);
+      }
+      popMarker(cmd);
+
+      pushMarker(cmd, "Compute Derivative Tests");
+      for(size_t p = 0; p < countComputeDerivsPSOs; p++)
+      {
+        cmd->SetDescriptorHeaps(1, &m_CBVUAVSRV.GetInterfacePtr());
+
+        cmd->ClearUnorderedAccessViewUint(bufOutGPU, bufOutClearCPU, bufOut, bufOutInitData, 1,
+                                          &uavClearRect);
+
+        cmd->SetComputeRootSignature(sigComputeDerivs);
+        cmd->SetComputeRootUnorderedAccessView(1, bufOutVA);
+        cmd->SetComputeRootDescriptorTable(2, m_CBVUAVSRV->GetGPUDescriptorHandleForHeapStart());
+
+        cmd->SetPipelineState(computeDerivsPSOs[p]);
+        pushMarker(cmd, computeDerivsNames[p]);
+        for(uint32_t t = 0; t < numComputeDerivsTests; t++)
+        {
+          cmd->SetComputeRoot32BitConstant(0, t, 0);
+          cmd->Dispatch(2, 1, 1);
+        }
+        popMarker(cmd);
       }
       popMarker(cmd);
 

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2024-2025 Baldur Karlsson
+ * Copyright (c) 2024-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -677,7 +677,7 @@ template bool VulkanAccelerationStructureManager::Serialise(ReadSerialiser &ser,
 void VulkanAccelerationStructureManager::Apply(ResourceId id, VkInitialContents &initial)
 {
   const VkAccelerationStructureKHR wrappedAS =
-      m_pDriver->GetResourceManager()->GetCurrentHandle<VkAccelerationStructureKHR>(id);
+      m_pDriver->GetResourceManager()->GetHandle<VkAccelerationStructureKHR>(id);
   VkAccelerationStructureInfo *asInfo = initial.accelerationStructureInfo;
   RDCASSERT(asInfo);
 

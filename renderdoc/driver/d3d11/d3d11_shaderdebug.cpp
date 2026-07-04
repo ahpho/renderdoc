@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -40,8 +40,6 @@
 #include "d3d11_shader_cache.h"
 
 #include "data/hlsl/hlsl_cbuffers.h"
-
-RDOC_EXTERN_CONFIG(bool, D3D_Hack_EnableGroups);
 
 class D3D11DebugAPIWrapper : public DXBCDebug::DebugAPIWrapper
 {
@@ -2318,9 +2316,8 @@ ShaderDebugTrace *D3D11Replay::DebugThread(uint32_t eventId,
   uint32_t activeIndex = 0;
   if(dxbc->GetThreadScope() == DXBC::ThreadScope::Workgroup)
   {
-    if(D3D_Hack_EnableGroups())
-      activeIndex = threadid[0] + threadid[1] * refl.dispatchThreadsDimension[0] +
-                    threadid[2] * refl.dispatchThreadsDimension[0] * refl.dispatchThreadsDimension[1];
+    activeIndex = threadid[0] + threadid[1] * refl.dispatchThreadsDimension[0] +
+                  threadid[2] * refl.dispatchThreadsDimension[0] * refl.dispatchThreadsDimension[1];
   }
 
   DXBCDebug::InterpretDebugger *interpreter = new DXBCDebug::InterpretDebugger;

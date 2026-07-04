@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -493,35 +493,40 @@ HRESULT STDMETHODCALLTYPE WrappedDownlevelQueue::Present(ID3D12GraphicsCommandLi
   return m_pQueue.Present(pOpenCommandList, pSourceTex2D, hWindow, Flags);
 }
 
-WrappedID3D12CommandQueue::WrappedID3D12CommandQueue(ID3D12CommandQueue *real,
+WrappedID3D12CommandQueue::WrappedID3D12CommandQueue(ResourceId id, ID3D12CommandQueue *real,
                                                      WrappedID3D12Device *device, CaptureState &state)
     : RefCounter12(real),
       m_pDevice(device),
       m_State(state),
       m_WrappedDownlevel(*this),
-      m_WrappedCompat(*this)
+      m_WrappedCompat(*this),
+      m_SharingContract(*m_pDevice)
 {
   RenderDoc::Inst().RegisterMemoryRegion(this, sizeof(WrappedID3D12CommandQueue));
 
   m_WrappedDebug.m_pQueue = this;
   m_pDownlevel = NULL;
+  m_pReal1 = NULL;
   if(m_pReal)
   {
     m_pReal->QueryInterface(__uuidof(ID3D12DebugCommandQueue), (void **)&m_WrappedDebug.m_pReal);
     m_pReal->QueryInterface(__uuidof(ID3D12DebugCommandQueue1), (void **)&m_WrappedDebug.m_pReal1);
     m_pReal->QueryInterface(__uuidof(ID3D12CommandQueueDownlevel), (void **)&m_pDownlevel);
+    m_pReal->QueryInterface(__uuidof(ID3D12CommandQueue1), (void **)&m_pReal1);
     m_pReal->QueryInterface(__uuidof(ID3D12CompatibilityQueue), (void **)&m_WrappedCompat.m_pReal);
+    m_pReal->QueryInterface(__uuidof(ID3D12SharingContract), (void **)&m_SharingContract.m_pReal);
   }
 
   if(RenderDoc::Inst().IsReplayApp())
   {
-    m_ReplayList = new WrappedID3D12GraphicsCommandList(NULL, m_pDevice, state);
+    m_ReplayList = new WrappedID3D12GraphicsCommandList(ResourceId(), NULL, m_pDevice, state);
 
     m_ReplayList->SetCommandData(&m_Cmd);
   }
 
-  // create a temporary and grab its resource ID
-  m_ResourceID = ResourceIDGen::GetNewUniqueID();
+  if(id == ResourceId())
+    id = ResourceIDGen::GetNewUniqueID();
+  m_ResourceID = id;
 
   m_QueueRecord = NULL;
   m_CreationRecord = NULL;
@@ -546,7 +551,7 @@ WrappedID3D12CommandQueue::WrappedID3D12CommandQueue(ID3D12CommandQueue *real,
     m_CreationRecord->InternalResource = true;
   }
 
-  m_pDevice->GetResourceManager()->AddCurrentResource(GetResourceID(), this);
+  m_pDevice->GetResourceManager()->AddResource(GetResourceID(), this);
 
   m_pDevice->SoftRef();
 }
@@ -555,21 +560,28 @@ WrappedID3D12CommandQueue::~WrappedID3D12CommandQueue()
 {
   SAFE_DELETE(m_FrameReader);
 
-  SAFE_RELEASE(m_RayFence);
+  SAFE_RELEASE(m_CallbackFence);
+
+  for(SDObject *o : m_Cmd.m_EventAnnotations)
+    delete o;
+
+  delete m_Cmd.m_RootAnnotation;
 
   if(m_CreationRecord)
     m_CreationRecord->Delete(m_pDevice->GetResourceManager());
 
   if(m_QueueRecord)
     m_QueueRecord->Delete(m_pDevice->GetResourceManager());
-  m_pDevice->GetResourceManager()->ReleaseCurrentResource(GetResourceID());
+  m_pDevice->GetResourceManager()->ReleaseResource(GetResourceID());
   m_pDevice->RemoveQueue(this);
 
   SAFE_RELEASE(m_pDownlevel);
+  SAFE_RELEASE(m_pReal1);
 
   SAFE_RELEASE(m_WrappedCompat.m_pReal);
   SAFE_RELEASE(m_WrappedDebug.m_pReal);
   SAFE_RELEASE(m_WrappedDebug.m_pReal1);
+  SAFE_RELEASE(m_SharingContract.m_pReal);
   SAFE_RELEASE(m_pReal);
 }
 
@@ -626,6 +638,12 @@ HRESULT STDMETHODCALLTYPE WrappedID3D12CommandQueue::QueryInterface(REFIID riid,
       return E_NOINTERFACE;
     }
   }
+  else if(riid == __uuidof(ID3D12SharingContract))
+  {
+    *ppvObject = (ID3D12SharingContract *)&m_SharingContract;
+    AddRef();
+    return S_OK;
+  }
   else if(riid == __uuidof(ID3D12Pageable))
   {
     *ppvObject = (ID3D12Pageable *)this;
@@ -664,8 +682,8 @@ HRESULT STDMETHODCALLTYPE WrappedID3D12CommandQueue::QueryInterface(REFIID riid,
 void WrappedID3D12CommandQueue::CheckAndFreeRayDispatches()
 {
   UINT64 signalled = 0;
-  if(m_RayFence)
-    signalled = m_RayFence->GetCompletedValue();
+  if(m_CallbackFence)
+    signalled = m_CallbackFence->GetCompletedValue();
 
   for(PatchedRayDispatch::Resources &ray : m_RayDispatchesPending)
   {
@@ -993,6 +1011,15 @@ bool WrappedID3D12CommandQueue::ProcessChunk(ReadSerialiser &ser, D3D12Chunk chu
       ret = m_ReplayList->Serialise_SetPipelineState1(ser, NULL);
       break;
 
+    case D3D12Chunk::SetCommandAnnotation:
+      ret = m_ReplayList->Serialise_SetCommandAnnotation(ser, rdcstr(), eRENDERDOC_AnnotationMax, 0,
+                                                         RENDERDOC_AnnotationValue());
+      break;
+    case D3D12Chunk::SetQueueAnnotation:
+      ret = Serialise_SetQueueAnnotation(ser, rdcstr(), eRENDERDOC_AnnotationMax, 0,
+                                         RENDERDOC_AnnotationValue());
+      break;
+
     // in order to get a warning if we miss a case, we explicitly handle the device creation chunks
     // here. If we actually encounter one it's an error (we shouldn't see these inside the captured
     // frame itself)
@@ -1090,6 +1117,9 @@ bool WrappedID3D12CommandQueue::ProcessChunk(ReadSerialiser &ser, D3D12Chunk chu
     {
       // also ignore, this just pops the action stack
     }
+    else if(chunk == D3D12Chunk::SetCommandAnnotation || chunk == D3D12Chunk::SetQueueAnnotation)
+    {
+    }
     else
     {
       if(!m_Cmd.m_AddedAction)
@@ -1106,6 +1136,14 @@ RDResult WrappedID3D12CommandQueue::ReplayLog(CaptureState readType, uint32_t st
                                               uint32_t endEventID, bool partial)
 {
   m_State = readType;
+
+  if(!partial)
+  {
+    for(size_t i = 0; i < m_Cmd.m_RerecordCmdList.size(); i++)
+      SAFE_RELEASE(m_Cmd.m_RerecordCmdList[i]);
+
+    m_Cmd.m_RerecordCmdList.clear();
+  }
 
   if(!m_FrameReader)
   {
@@ -1297,7 +1335,8 @@ RDResult WrappedID3D12CommandQueue::ReplayLog(CaptureState readType, uint32_t st
     // boundaries, the event IDs would no longer match up).
     if(m_Cmd.m_LastCmdListID == ResourceId() || startEventID > 1)
     {
-      m_Cmd.m_RootEventID++;
+      if(context != D3D12Chunk::SetQueueAnnotation)
+        m_Cmd.m_RootEventID++;
 
       if(startEventID > 1)
         ser.GetReader()->SetOffset(GetEvent(m_Cmd.m_RootEventID).fileOffset);
@@ -1305,7 +1344,8 @@ RDResult WrappedID3D12CommandQueue::ReplayLog(CaptureState readType, uint32_t st
     else
     {
       // these events are completely omitted, so don't increment the curEventID
-      if(context != D3D12Chunk::List_Reset && context != D3D12Chunk::List_Close)
+      if(context != D3D12Chunk::List_Reset && context != D3D12Chunk::List_Close &&
+         context != D3D12Chunk::SetCommandAnnotation)
         m_Cmd.m_BakedCmdListInfo[m_Cmd.m_LastCmdListID].curEventID++;
     }
   }
@@ -1316,16 +1356,13 @@ RDResult WrappedID3D12CommandQueue::ReplayLog(CaptureState readType, uint32_t st
 
   m_StructuredFile = NULL;
 
-  for(size_t i = 0; i < m_Cmd.m_RerecordCmdList.size(); i++)
-    SAFE_RELEASE(m_Cmd.m_RerecordCmdList[i]);
-
   m_Cmd.m_RerecordCmds.clear();
-  m_Cmd.m_RerecordCmdList.clear();
 
   return ResultCode::Succeeded;
 }
 
-WrappedID3D12GraphicsCommandList::WrappedID3D12GraphicsCommandList(ID3D12GraphicsCommandList *real,
+WrappedID3D12GraphicsCommandList::WrappedID3D12GraphicsCommandList(ResourceId id,
+                                                                   ID3D12GraphicsCommandList *real,
                                                                    WrappedID3D12Device *device,
                                                                    CaptureState &state)
     : m_RefCounter(real, false), m_pList(real), m_pDevice(device), m_State(state)
@@ -1358,8 +1395,9 @@ WrappedID3D12GraphicsCommandList::WrappedID3D12GraphicsCommandList(ID3D12Graphic
     m_pList->QueryInterface(__uuidof(ID3D12GraphicsCommandList10), (void **)&m_pList10);
   }
 
-  // create a temporary and grab its resource ID
-  m_ResourceID = ResourceIDGen::GetNewUniqueID();
+  m_ResourceID = id;
+  if(id == ResourceId())
+    m_ResourceID = ResourceIDGen::GetNewUniqueID();
 
   RDCEraseEl(m_Init);
 
@@ -1406,7 +1444,7 @@ WrappedID3D12GraphicsCommandList::WrappedID3D12GraphicsCommandList(ID3D12Graphic
       RDCERR("Error adding wrapper for ID3D12GraphicsCommandList");
   }
 
-  m_pDevice->GetResourceManager()->AddCurrentResource(GetResourceID(), this);
+  m_pDevice->GetResourceManager()->AddResource(GetResourceID(), this);
 
   m_pDevice->SoftRef();
 }
@@ -1420,7 +1458,7 @@ WrappedID3D12GraphicsCommandList::~WrappedID3D12GraphicsCommandList()
   m_UnusedCleanupCallbacks.clear();
 
   if(m_pList)
-    m_pDevice->GetResourceManager()->RemoveWrapper(m_pList);
+    m_pDevice->GetResourceManager()->RemoveWrapper(this, m_pList);
 
   if(m_CreationRecord)
     m_CreationRecord->Delete(m_pDevice->GetResourceManager());
@@ -1431,7 +1469,7 @@ WrappedID3D12GraphicsCommandList::~WrappedID3D12GraphicsCommandList()
   if(m_ListRecord)
     m_ListRecord->Delete(m_pDevice->GetResourceManager());
 
-  m_pDevice->GetResourceManager()->ReleaseCurrentResource(GetResourceID());
+  m_pDevice->GetResourceManager()->ReleaseResource(GetResourceID());
 
   SAFE_RELEASE(m_WrappedDebug.m_pReal);
   SAFE_RELEASE(m_WrappedDebug.m_pReal1);
@@ -1999,6 +2037,12 @@ void D3D12CommandData::AddEvent()
   }
   else
   {
+    if(m_RootAnnotation)
+    {
+      apievent.annotations = m_RootAnnotation->Duplicate();
+      m_EventAnnotations.push_back(apievent.annotations);
+    }
+
     m_RootEvents.push_back(apievent);
     m_Events.resize_for_index(apievent.eventId);
     m_Events[apievent.eventId] = apievent;
@@ -2040,7 +2084,7 @@ void D3D12CommandData::AddUsageForBindInRootSig(const D3D12RenderState &state,
 
   D3D12ResourceManager *rm = m_pDevice->GetResourceManager();
 
-  WrappedID3D12RootSignature *sig = rm->GetCurrentAs<WrappedID3D12RootSignature>(rootsig->rootsig);
+  WrappedID3D12RootSignature *sig = rm->GetResAs<WrappedID3D12RootSignature>(rootsig->rootsig);
 
   for(size_t rootEl = 0; rootEl < sig->sig.Parameters.size(); rootEl++)
   {
@@ -2112,7 +2156,7 @@ void D3D12CommandData::AddUsageForBindInRootSig(const D3D12RenderState &state,
     else if(p.ParameterType == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE && el.type == eRootTable)
     {
       WrappedID3D12DescriptorHeap *heap =
-          m_pDevice->GetResourceManager()->GetCurrentAs<WrappedID3D12DescriptorHeap>(el.id);
+          m_pDevice->GetResourceManager()->GetResAs<WrappedID3D12DescriptorHeap>(el.id);
 
       if(heap == NULL)
         continue;
@@ -2224,7 +2268,7 @@ void D3D12CommandData::AddUsage(const D3D12RenderState &state, D3D12ActionTreeNo
   WrappedID3D12PipelineState *pipe = NULL;
 
   if(state.pipe != ResourceId())
-    pipe = rm->GetCurrentAs<WrappedID3D12PipelineState>(state.pipe);
+    pipe = rm->GetResAs<WrappedID3D12PipelineState>(state.pipe);
 
   const ShaderReflection *refls[NumShaderStages] = {};
 
@@ -2361,13 +2405,12 @@ void D3D12CommandData::AddAction(const ActionDescription &a)
     for(size_t i = 0; i < ARRAY_COUNT(action.outputs); i++)
     {
       if(i < rts.size())
-        action.outputs[i] = m_pDevice->GetResourceManager()->GetOriginalID(rts[i]);
+        action.outputs[i] = rts[i];
       else
         action.outputs[i] = ResourceId();
     }
 
-    action.depthOut = m_pDevice->GetResourceManager()->GetOriginalID(
-        m_BakedCmdListInfo[m_LastCmdListID].state.GetDSVID());
+    action.depthOut = m_BakedCmdListInfo[m_LastCmdListID].state.GetDSVID();
   }
 
   // markers don't increment action ID
@@ -2403,9 +2446,16 @@ void D3D12CommandData::AddAction(const ActionDescription &a)
     RDCERR("Somehow lost action stack!");
 }
 
-void D3D12CommandData::InsertActionsAndRefreshIDs(ResourceId cmd,
-                                                  rdcarray<D3D12ActionTreeNode> &cmdBufNodes)
+void D3D12CommandData::InsertActionsAndRefreshIDs(ResourceId cmd, const BakedCmdListInfo &cmdListInfo)
 {
+  const rdcarray<D3D12ActionTreeNode> &cmdBufNodes = cmdListInfo.action->children;
+
+  SDObject *localAnnotations = NULL;
+  if(m_RootAnnotation)
+    localAnnotations = m_RootAnnotation->Duplicate();
+
+  size_t curAnnot = 0;
+
   // assign new action IDs
   for(size_t i = 0; i < cmdBufNodes.size(); i++)
   {
@@ -2415,6 +2465,29 @@ void D3D12CommandData::InsertActionsAndRefreshIDs(ResourceId cmd,
 
     for(APIEvent &ev : n.action.events)
     {
+      if(localAnnotations)
+      {
+        for(; curAnnot < cmdListInfo.annotations.size(); curAnnot++)
+        {
+          const PendingAnnotation &annot = cmdListInfo.annotations[curAnnot];
+          if(annot.eventId == ev.eventId)
+          {
+            if(annot.valueType == eRENDERDOC_Empty)
+              localAnnotations->EraseChildByKeyPath(annot.key);
+            else
+              WriteAnnotation(localAnnotations->CreateChildByKeyPath(annot.key), annot.valueType,
+                              annot.valueVectorWidth, annot.value);
+          }
+          else if(annot.eventId > ev.eventId)
+          {
+            break;
+          }
+        }
+
+        ev.annotations = localAnnotations->Duplicate();
+        m_EventAnnotations.push_back(ev.annotations);
+      }
+
       ev.eventId += m_RootEventID;
       m_Events.resize(ev.eventId + 1);
       m_Events[ev.eventId] = ev;

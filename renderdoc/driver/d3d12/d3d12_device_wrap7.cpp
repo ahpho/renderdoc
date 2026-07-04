@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2025 Baldur Karlsson
+ * Copyright (c) 2020-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -130,7 +130,7 @@ bool WrappedID3D12Device::Serialise_AddToStateObject(SerialiserType &ser,
     }
 
     WrappedID3D12StateObject *wrapped = new WrappedID3D12StateObject(
-        GetResourceManager()->CreateDeferredHandle<ID3D12StateObject>(), true, this);
+        pNewStateObject, GetResourceManager()->CreateDeferredHandle<ID3D12StateObject>(), true, this);
 
     // TODO: Apply m_GlobalEXTUAV, m_GlobalEXTUAVSpace for processing extensions in the DXBC files?
 
@@ -200,7 +200,6 @@ bool WrappedID3D12Device::Serialise_AddToStateObject(SerialiserType &ser,
           .initialisationChunks.push_back((uint32_t)m_StructuredFile->chunks.size() - 2);
       m_GlobalEXTUAV = ~0U;
     }
-    GetResourceManager()->AddLiveResource(pNewStateObject, wrapped);
   }
 
   return true;
@@ -230,7 +229,7 @@ HRESULT STDMETHODCALLTYPE WrappedID3D12Device::AddToStateObject(
 
   if(SUCCEEDED(ret))
   {
-    WrappedID3D12StateObject *wrapped = new WrappedID3D12StateObject(real, false, this);
+    WrappedID3D12StateObject *wrapped = new WrappedID3D12StateObject(ResourceId(), real, false, this);
 
     if(IsCaptureMode(m_State))
     {
@@ -287,10 +286,6 @@ HRESULT STDMETHODCALLTYPE WrappedID3D12Device::AddToStateObject(
         record->AddChunk(vendorChunk);
       record->AddChunk(scope.Get());
     }
-    else
-    {
-      GetResourceManager()->AddLiveResource(wrapped->GetResourceID(), wrapped);
-    }
 
     *ppNewStateObject = (ID3D12StateObject *)wrapped;
   }
@@ -321,7 +316,7 @@ HRESULT WrappedID3D12Device::CreateProtectedResourceSession1(
   if(SUCCEEDED(ret))
   {
     WrappedID3D12ProtectedResourceSession *wrapped =
-        new WrappedID3D12ProtectedResourceSession(real, this);
+        new WrappedID3D12ProtectedResourceSession(ResourceId(), real, this);
 
     if(riid == __uuidof(ID3D12ProtectedResourceSession))
       *ppSession = (ID3D12ProtectedResourceSession *)wrapped;

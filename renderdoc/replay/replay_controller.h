@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -179,6 +179,7 @@ public:
   void RemoveReplacement(ResourceId id);
   void FreeTargetResource(ResourceId id);
   void ClearReplayCache();
+  void ReloadShaderDebugInformation();
 
   FrameDescription GetFrameInfo();
   const SDFile &GetStructuredFile();

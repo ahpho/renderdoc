@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -70,6 +70,20 @@ struct DLLFileVersion
 {
   uint16_t major, minor, build, revision;
 };
+
+struct Capabilities
+{
+  D3D12_FEATURE_DATA_D3D12_OPTIONS opts = {};
+  D3D12_FEATURE_DATA_D3D12_OPTIONS1 opts1 = {};
+  D3D12_FEATURE_DATA_D3D12_OPTIONS2 opts2 = {};
+  D3D12_FEATURE_DATA_D3D12_OPTIONS3 opts3 = {};
+  D3D12_FEATURE_DATA_D3D12_OPTIONS4 opts4 = {};
+  D3D12_FEATURE_DATA_D3D12_OPTIONS5 opts5 = {};
+  D3D12_FEATURE_DATA_D3D12_OPTIONS6 opts6 = {};
+  D3D12_FEATURE_DATA_D3D12_OPTIONS7 opts7 = {};
+  D3D12_FEATURE_DATA_D3D12_OPTIONS19 opts19 = {};
+  D3D_SHADER_MODEL sm = D3D_SHADER_MODEL_5_1;
+} caps;
 
 DLLFileVersion GetDLLFileVersion(HMODULE mod)
 {
@@ -272,6 +286,32 @@ void D3D12GraphicsTest::Prepare(int argc, char **argv)
 {
   GraphicsTest::Prepare(argc, argv);
 
+  for(int i = 0; i < argc; i++)
+  {
+    if(!strcmp(argv[i], "--gpuva") || !strcmp(argv[i], "--debug-gpu"))
+    {
+      gpuva = true;
+    }
+    if(i + 1 < argc &&
+       (!strcmp(argv[i], "--d3d12") || !strcmp(argv[i], "--sdk") || !strcmp(argv[i], "--d3d12core")))
+    {
+      d3d12path = argv[i + 1];
+    }
+  }
+
+  if(d3d12path.empty())
+  {
+    d3d12path = GetExecutableName();
+    d3d12path.erase(d3d12path.find_last_of("/\\"));
+    d3d12path += "/D3D12/d3d12core.dll";
+
+    FILE *f = fopen(d3d12path.c_str(), "r");
+    if(!f)
+      d3d12path.clear();
+    else
+      fclose(f);
+  }
+
   static bool prepared = false;
 
   if(!prepared)
@@ -354,6 +394,42 @@ void D3D12GraphicsTest::Prepare(int argc, char **argv)
       dyn_serializeRootSigOld =
           (PFN_D3D12_SERIALIZE_ROOT_SIGNATURE)GetProcAddress(d3d12, "D3D12SerializeRootSignature");
     }
+
+    if(d3d12 && dxgi && factory && dyn_D3D12CreateDevice)
+    {
+      devFactory = PrepareCreateDeviceFromDLL(d3d12path, debugDevice, gpuva).factory;
+
+      ID3D12DevicePtr tmpdev = CreateDevice(adapters, minFeatureLevel);
+
+      devFactory = NULL;
+
+      if(tmpdev)
+      {
+        tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &caps.opts, sizeof(caps.opts));
+        tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS1, &caps.opts1, sizeof(caps.opts1));
+        tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS2, &caps.opts2, sizeof(caps.opts2));
+        tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS3, &caps.opts3, sizeof(caps.opts3));
+        tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS4, &caps.opts4, sizeof(caps.opts4));
+        tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &caps.opts5, sizeof(caps.opts5));
+        tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS6, &caps.opts6, sizeof(caps.opts6));
+        tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &caps.opts7, sizeof(caps.opts7));
+        tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS19, &caps.opts19, sizeof(caps.opts19));
+        D3D12_FEATURE_DATA_SHADER_MODEL oShaderModel = {};
+        oShaderModel.HighestShaderModel = D3D_SHADER_MODEL_6_7;
+        while(oShaderModel.HighestShaderModel >= D3D_SHADER_MODEL_6_0)
+        {
+          HRESULT hr = tmpdev->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &oShaderModel,
+                                                   sizeof(oShaderModel));
+          if(SUCCEEDED(hr))
+          {
+            caps.sm = oShaderModel.HighestShaderModel;
+            break;
+          }
+
+          oShaderModel.HighestShaderModel = D3D_SHADER_MODEL(oShaderModel.HighestShaderModel - 1);
+        }
+      }
+    }
   }
 
   if(!d3d12)
@@ -373,69 +449,18 @@ void D3D12GraphicsTest::Prepare(int argc, char **argv)
   m_12On7 = d3d12on7;
 
   m_DXILSupport = (dxcompiler != NULL);
-
-  for(int i = 0; i < argc; i++)
-  {
-    if(!strcmp(argv[i], "--gpuva") || !strcmp(argv[i], "--debug-gpu"))
-    {
-      gpuva = true;
-    }
-    if(i + 1 < argc &&
-       (!strcmp(argv[i], "--d3d12") || !strcmp(argv[i], "--sdk") || !strcmp(argv[i], "--d3d12core")))
-    {
-      d3d12path = argv[i + 1];
-    }
-  }
-
-  if(d3d12path.empty())
-  {
-    d3d12path = GetExecutableName();
-    d3d12path.erase(d3d12path.find_last_of("/\\"));
-    d3d12path += "/D3D12/d3d12core.dll";
-
-    FILE *f = fopen(d3d12path.c_str(), "r");
-    if(!f)
-      d3d12path.clear();
-    else
-      fclose(f);
-  }
+  m_HighestShaderModel = caps.sm;
+  opts = caps.opts;
+  opts1 = caps.opts1;
+  opts2 = caps.opts2;
+  opts3 = caps.opts3;
+  opts4 = caps.opts4;
+  opts5 = caps.opts5;
+  opts6 = caps.opts6;
+  opts7 = caps.opts7;
+  opts19 = caps.opts19;
 
   m_Factory = factory;
-
-  if(Avail.empty())
-  {
-    devFactory = PrepareCreateDeviceFromDLL(d3d12path, debugDevice, gpuva).factory;
-
-    ID3D12DevicePtr tmpdev = CreateDevice(adapters, minFeatureLevel);
-
-    devFactory = NULL;
-
-    if(tmpdev)
-    {
-      tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &opts, sizeof(opts));
-      tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS1, &opts1, sizeof(opts1));
-      tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS2, &opts2, sizeof(opts2));
-      tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS3, &opts3, sizeof(opts3));
-      tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS4, &opts4, sizeof(opts4));
-      tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &opts5, sizeof(opts5));
-      tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS6, &opts6, sizeof(opts6));
-      tmpdev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &opts7, sizeof(opts7));
-      D3D12_FEATURE_DATA_SHADER_MODEL oShaderModel = {};
-      oShaderModel.HighestShaderModel = D3D_SHADER_MODEL_6_7;
-      while(oShaderModel.HighestShaderModel >= D3D_SHADER_MODEL_6_0)
-      {
-        HRESULT hr = tmpdev->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &oShaderModel,
-                                                 sizeof(oShaderModel));
-        if(SUCCEEDED(hr))
-        {
-          m_HighestShaderModel = oShaderModel.HighestShaderModel;
-          break;
-        }
-
-        oShaderModel.HighestShaderModel = D3D_SHADER_MODEL(oShaderModel.HighestShaderModel - 1);
-      }
-    }
-  }
 }
 
 bool D3D12GraphicsTest::Init()
@@ -572,7 +597,7 @@ void D3D12GraphicsTest::PostDeviceCreate()
 
     m_RTV->SetName(L"RTV heap");
 
-    desc.NumDescriptors = 16;
+    desc.NumDescriptors = 128;
     desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 
     CHECK_HR(dev->CreateDescriptorHeap(&desc, __uuidof(ID3D12DescriptorHeap), (void **)&m_DSV));
@@ -588,7 +613,7 @@ void D3D12GraphicsTest::PostDeviceCreate()
 
     m_Sampler->SetName(L"Sampler heap");
 
-    desc.NumDescriptors = 1030;
+    desc.NumDescriptors = 8192;
     desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 
     CHECK_HR(dev->CreateDescriptorHeap(&desc, __uuidof(ID3D12DescriptorHeap), (void **)&m_CBVUAVSRV));

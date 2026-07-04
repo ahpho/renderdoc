@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -61,7 +61,6 @@ rdcstr DoStringise(const ReplayProxyPacket &el)
 
     STRINGISE_ENUM_NAMED(eReplayProxy_SavePipelineState, "SavePipelineState");
     STRINGISE_ENUM_NAMED(eReplayProxy_GetUsage, "GetUsage");
-    STRINGISE_ENUM_NAMED(eReplayProxy_GetLiveID, "GetLiveID");
     STRINGISE_ENUM_NAMED(eReplayProxy_GetFrameRecord, "GetFrameRecord");
     STRINGISE_ENUM_NAMED(eReplayProxy_IsRenderOutput, "IsRenderOutput");
     STRINGISE_ENUM_NAMED(eReplayProxy_NeedRemapForFetch, "NeedRemapForFetch");
@@ -743,51 +742,6 @@ FrameRecord ReplayProxy::GetFrameRecord()
 }
 
 template <typename ParamSerialiser, typename ReturnSerialiser>
-ResourceId ReplayProxy::Proxied_GetLiveID(ParamSerialiser &paramser, ReturnSerialiser &retser,
-                                          ResourceId id)
-{
-  if(paramser.IsWriting())
-  {
-    if(m_LiveIDs.find(id) != m_LiveIDs.end())
-      return m_LiveIDs[id];
-
-    if(m_LocalTextures.find(id) != m_LocalTextures.end())
-      return id;
-  }
-
-  if(paramser.IsErrored() || retser.IsErrored() || m_IsErrored)
-    return ResourceId();
-
-  const ReplayProxyPacket expectedPacket = eReplayProxy_GetLiveID;
-  ReplayProxyPacket packet = eReplayProxy_GetLiveID;
-  ResourceId ret;
-
-  {
-    BEGIN_PARAMS();
-    SERIALISE_ELEMENT(id);
-    END_PARAMS();
-  }
-
-  {
-    REMOTE_EXECUTION();
-    if(paramser.IsReading() && !paramser.IsErrored() && !m_IsErrored)
-      ret = m_Remote->GetLiveID(id);
-  }
-
-  SERIALISE_RETURN(ret);
-
-  if(paramser.IsWriting())
-    m_LiveIDs[id] = ret;
-
-  return ret;
-}
-
-ResourceId ReplayProxy::GetLiveID(ResourceId id)
-{
-  PROXY_FUNCTION(GetLiveID, id);
-}
-
-template <typename ParamSerialiser, typename ReturnSerialiser>
 rdcarray<CounterResult> ReplayProxy::Proxied_FetchCounters(ParamSerialiser &paramser,
                                                            ReturnSerialiser &retser,
                                                            const rdcarray<GPUCounter> &counters)
@@ -1317,8 +1271,7 @@ rdcstr ReplayProxy::Proxied_DisassembleShader(ParamSerialiser &paramser, ReturnS
 
   if(paramser.IsReading() && !paramser.IsErrored() && !m_IsErrored)
   {
-    refl =
-        m_Remote->GetShader(m_Remote->GetLiveID(pipeline), m_Remote->GetLiveID(Shader), EntryPoint);
+    refl = m_Remote->GetShader(pipeline, Shader, EntryPoint);
     ret = m_Remote->DisassembleShader(pipeline, refl, target);
   }
 
@@ -1414,6 +1367,37 @@ void ReplayProxy::Proxied_ClearReplayCache(ParamSerialiser &paramser, ReturnSeri
 void ReplayProxy::ClearReplayCache()
 {
   PROXY_FUNCTION(ClearReplayCache);
+}
+
+template <typename ParamSerialiser, typename ReturnSerialiser>
+void ReplayProxy::Proxied_ReloadShaderDebugInformation(ParamSerialiser &paramser,
+                                                       ReturnSerialiser &retser)
+{
+  const ReplayProxyPacket expectedPacket = eReplayProxy_ReloadShaderDebugInformation;
+  ReplayProxyPacket packet = eReplayProxy_ReloadShaderDebugInformation;
+
+  // Clear the shader refleciton cache
+  for(auto it = m_ShaderReflectionCache.begin(); it != m_ShaderReflectionCache.end(); ++it)
+    delete it->second;
+  m_ShaderReflectionCache.clear();
+
+  {
+    BEGIN_PARAMS();
+    END_PARAMS();
+  }
+
+  {
+    REMOTE_EXECUTION();
+    if(paramser.IsReading() && !paramser.IsErrored() && !m_IsErrored)
+      m_Remote->ReloadShaderDebugInformation();
+  }
+
+  SERIALISE_RETURN_VOID();
+}
+
+void ReplayProxy::ReloadShaderDebugInformation()
+{
+  PROXY_FUNCTION(ReloadShaderDebugInformation);
 }
 
 template <typename ParamSerialiser, typename ReturnSerialiser>
@@ -1516,9 +1500,6 @@ void ReplayProxy::Proxied_ReplaceResource(ParamSerialiser &paramser, ReturnSeria
       m_Remote->ReplaceResource(from, to);
   }
 
-  if(paramser.IsWriting())
-    m_LiveIDs.clear();
-
   SERIALISE_RETURN_VOID();
 }
 
@@ -1545,9 +1526,6 @@ void ReplayProxy::Proxied_RemoveReplacement(ParamSerialiser &paramser, ReturnSer
     if(paramser.IsReading() && !paramser.IsErrored() && !m_IsErrored)
       m_Remote->RemoveReplacement(id);
   }
-
-  if(paramser.IsWriting())
-    m_LiveIDs.clear();
 
   SERIALISE_RETURN_VOID();
 }
@@ -1865,12 +1843,11 @@ void ReplayProxy::Proxied_SavePipelineState(ParamSerialiser &paramser, ReturnSer
         for(size_t i = 0; i < ARRAY_COUNT(stages); i++)
           if(stages[i]->resourceId != ResourceId())
             stages[i]->reflection =
-                GetShader(ResourceId(), GetLiveID(stages[i]->resourceId), ShaderEntryPoint());
+                GetShader(ResourceId(), stages[i]->resourceId, ShaderEntryPoint());
 
         if(m_D3D11PipelineState->inputAssembly.resourceId != ResourceId())
-          m_D3D11PipelineState->inputAssembly.bytecode =
-              GetShader(ResourceId(), GetLiveID(m_D3D11PipelineState->inputAssembly.resourceId),
-                        ShaderEntryPoint());
+          m_D3D11PipelineState->inputAssembly.bytecode = GetShader(
+              ResourceId(), m_D3D11PipelineState->inputAssembly.resourceId, ShaderEntryPoint());
       }
       else if(m_APIProps.pipelineType == GraphicsAPI::D3D12 && m_D3D12PipelineState)
       {
@@ -1881,12 +1858,11 @@ void ReplayProxy::Proxied_SavePipelineState(ParamSerialiser &paramser, ReturnSer
             &m_D3D12PipelineState->ampShader,    &m_D3D12PipelineState->meshShader,
         };
 
-        ResourceId pipe = GetLiveID(m_D3D12PipelineState->pipelineResourceId);
+        ResourceId pipe = m_D3D12PipelineState->pipelineResourceId;
 
         for(size_t i = 0; i < ARRAY_COUNT(stages); i++)
           if(stages[i]->resourceId != ResourceId())
-            stages[i]->reflection =
-                GetShader(pipe, GetLiveID(stages[i]->resourceId), ShaderEntryPoint());
+            stages[i]->reflection = GetShader(pipe, stages[i]->resourceId, ShaderEntryPoint());
       }
       else if(m_APIProps.pipelineType == GraphicsAPI::OpenGL && m_GLPipelineState)
       {
@@ -1899,7 +1875,7 @@ void ReplayProxy::Proxied_SavePipelineState(ParamSerialiser &paramser, ReturnSer
         for(size_t i = 0; i < ARRAY_COUNT(stages); i++)
           if(stages[i]->shaderResourceId != ResourceId())
             stages[i]->reflection =
-                GetShader(ResourceId(), GetLiveID(stages[i]->shaderResourceId), ShaderEntryPoint());
+                GetShader(ResourceId(), stages[i]->shaderResourceId, ShaderEntryPoint());
       }
       else if(m_APIProps.pipelineType == GraphicsAPI::Vulkan && m_VulkanPipelineState)
       {
@@ -1910,16 +1886,16 @@ void ReplayProxy::Proxied_SavePipelineState(ParamSerialiser &paramser, ReturnSer
             &m_VulkanPipelineState->taskShader,     &m_VulkanPipelineState->meshShader,
         };
 
-        ResourceId pipe = GetLiveID(m_VulkanPipelineState->graphics.pipelineResourceId);
+        ResourceId pipe = m_VulkanPipelineState->graphics.pipelineResourceId;
 
         for(size_t i = 0; i < ARRAY_COUNT(stages); i++)
         {
           if(i == 5)
-            pipe = GetLiveID(m_VulkanPipelineState->compute.pipelineResourceId);
+            pipe = m_VulkanPipelineState->compute.pipelineResourceId;
 
           if(stages[i]->resourceId != ResourceId())
             stages[i]->reflection =
-                GetShader(pipe, GetLiveID(stages[i]->resourceId),
+                GetShader(pipe, stages[i]->resourceId,
                           ShaderEntryPoint(stages[i]->entryPoint, stages[i]->stage));
         }
       }
@@ -2874,10 +2850,6 @@ void ReplayProxy::RefreshPreviewWindow()
       if(cfg.resourceId == ResourceId())
         cfg.resourceId = curDraw->copyDestination;
 
-      // if we did get a texture, get the live ID for it
-      if(cfg.resourceId != ResourceId())
-        cfg.resourceId = m_Replay->GetLiveID(cfg.resourceId);
-
       if(cfg.resourceId != ResourceId())
       {
         TextureDescription texInfo = m_Replay->GetTexture(cfg.resourceId);
@@ -3155,7 +3127,6 @@ bool ReplayProxy::Tick(int type)
     case eReplayProxy_GetDescriptorLocations: GetDescriptorLocations(ResourceId(), {}); break;
     case eReplayProxy_GetDescriptorStores: GetDescriptorStores(); break;
     case eReplayProxy_GetUsage: GetUsage(ResourceId()); break;
-    case eReplayProxy_GetLiveID: GetLiveID(ResourceId()); break;
     case eReplayProxy_GetFrameRecord: GetFrameRecord(); break;
     case eReplayProxy_IsRenderOutput: IsRenderOutput(ResourceId()); break;
     case eReplayProxy_NeedRemapForFetch: NeedRemapForFetch(ResourceFormat()); break;
@@ -3195,6 +3166,7 @@ bool ReplayProxy::Tick(int type)
     case eReplayProxy_ReplaceResource: ReplaceResource(ResourceId(), ResourceId()); break;
     case eReplayProxy_RemoveReplacement: RemoveReplacement(ResourceId()); break;
     case eReplayProxy_ClearReplayCache: ClearReplayCache(); break;
+    case eReplayProxy_ReloadShaderDebugInformation: ReloadShaderDebugInformation(); break;
     case eReplayProxy_DebugVertex: DebugVertex(0, 0, 0, 0, 0); break;
     case eReplayProxy_DebugPixel: DebugPixel(0, 0, 0, DebugPixelInputs()); break;
     case eReplayProxy_DebugThread:

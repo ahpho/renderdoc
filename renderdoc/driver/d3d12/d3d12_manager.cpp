@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -187,13 +187,14 @@ void D3D12Descriptor::Create(D3D12_DESCRIPTOR_HEAP_TYPE heapType, WrappedID3D12D
   ID3D12Resource *countRes = NULL;
 
   if(type != D3D12DescriptorType::Sampler && type != D3D12DescriptorType::CBV)
-    res = dev->GetResourceManager()->GetCurrentAs<ID3D12Resource>(data.nonsamp.resource);
+    res = dev->GetResourceManager()->GetResAs<ID3D12Resource>(data.nonsamp.resource, true);
 
   // don't create a UAV with a counter resource but no main resource. This is fine because
   // if the main resource wasn't present in the capture, this UAV isn't present - the counter
   // must have been included for some other reference.
   if(type == D3D12DescriptorType::UAV && res)
-    countRes = dev->GetResourceManager()->GetCurrentAs<ID3D12Resource>(data.nonsamp.counterResource);
+    countRes =
+        dev->GetResourceManager()->GetResAs<ID3D12Resource>(data.nonsamp.counterResource, true);
 
   switch(type)
   {
@@ -665,7 +666,7 @@ D3D12_CPU_DESCRIPTOR_HANDLE CPUHandleFromPortableHandle(D3D12ResourceManager *ma
   if(handle.heap == ResourceId())
     return D3D12_CPU_DESCRIPTOR_HANDLE();
 
-  WrappedID3D12DescriptorHeap *heap = manager->GetLiveAs<WrappedID3D12DescriptorHeap>(handle.heap);
+  WrappedID3D12DescriptorHeap *heap = manager->GetResAs<WrappedID3D12DescriptorHeap>(handle.heap);
 
   if(heap)
     return heap->GetCPU(handle.index);
@@ -679,7 +680,7 @@ D3D12_GPU_DESCRIPTOR_HANDLE GPUHandleFromPortableHandle(D3D12ResourceManager *ma
   if(handle.heap == ResourceId())
     return D3D12_GPU_DESCRIPTOR_HANDLE();
 
-  WrappedID3D12DescriptorHeap *heap = manager->GetLiveAs<WrappedID3D12DescriptorHeap>(handle.heap);
+  WrappedID3D12DescriptorHeap *heap = manager->GetResAs<WrappedID3D12DescriptorHeap>(handle.heap);
 
   if(heap)
     return heap->GetGPU(handle.index);
@@ -693,7 +694,7 @@ D3D12Descriptor *DescriptorFromPortableHandle(D3D12ResourceManager *manager, Por
     return NULL;
 
   WrappedID3D12DescriptorHeap *heap =
-      manager->GetLiveAs<WrappedID3D12DescriptorHeap>(handle.heap, true);
+      manager->GetResAs<WrappedID3D12DescriptorHeap>(handle.heap, true);
 
   if(heap)
     return heap->GetDescriptors() + handle.index;
@@ -801,9 +802,9 @@ void D3D12RTManager::Verify(PatchedRayDispatch &r)
   {
     WrappedID3D12DescriptorHeap *heap =
         (WrappedID3D12DescriptorHeap *)m_wrappedDevice->GetResourceManager()
-            ->GetCurrentAs<ID3D12DescriptorHeap>(heapId);
+            ->GetResAs<ID3D12DescriptorHeap>(heapId);
 
-    if(heap->GetDescriptors()->GetType() == D3D12DescriptorType::Sampler)
+    if(heap->GetDesc().Type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER)
       sampHeap = heap;
     else
       resHeap = heap;
@@ -1068,7 +1069,7 @@ void D3D12RTManager::VerifyRecord(const uint64_t recordSize, byte *wrappedRecord
   ShaderIdentifier *ident = (ShaderIdentifier *)wrappedRecord;
 
   WrappedID3D12StateObject *obj =
-      m_wrappedDevice->GetResourceManager()->GetLiveAs<WrappedID3D12StateObject>(ident->id);
+      m_wrappedDevice->GetResourceManager()->GetResAs<WrappedID3D12StateObject>(ident->id);
 
   uint16_t localIdx = 0xffff;
 
@@ -1118,7 +1119,7 @@ void D3D12RTManager::VerifyRecord(const uint64_t recordSize, byte *wrappedRecord
         }
         else
         {
-          ID3D12Resource *res = m_wrappedDevice->GetResourceManager()->GetLiveAs<ID3D12Resource>(id);
+          ID3D12Resource *res = m_wrappedDevice->GetResourceManager()->GetResAs<ID3D12Resource>(id);
 
           unwrappedVA = res->GetGPUVirtualAddress() + resoffs;
         }
@@ -1229,20 +1230,20 @@ void D3D12RTManager::AddBuildTimer(uint32_t q, uint64_t size)
   }
 }
 
-void D3D12RTManager::AddPendingASBuilds(ID3D12Fence *fence, UINT64 waitValue,
-                                        const rdcarray<std::function<bool()>> &callbacks)
+void D3D12RTManager::AddPendingCallbacks(ID3D12Fence *fence, UINT64 waitValue,
+                                         const rdcarray<std::function<bool()>> &callbacks)
 {
-  SCOPED_LOCK(m_PendingASBuildsLock);
+  SCOPED_LOCK(m_PendingCallbacksLock);
   for(const std::function<bool()> &cb : callbacks)
   {
     fence->AddRef();
-    m_PendingASBuilds.push_back({fence, waitValue, cb});
+    m_PendingCallbacks.push_back({fence, waitValue, cb});
   }
 }
 
 void D3D12RTManager::TickASManagement()
 {
-  CheckPendingASBuilds();
+  CheckPendingCallbacks();
   CheckASCaching();
 }
 
@@ -1532,17 +1533,17 @@ void D3D12RTManager::CheckASCaching()
   m_InMemASBuildDatas.erase(first, last - first + 1);
 }
 
-void D3D12RTManager::CheckPendingASBuilds()
+void D3D12RTManager::CheckPendingCallbacks()
 {
   std::map<ID3D12Fence *, UINT64> fenceValues;
-  SCOPED_LOCK(m_PendingASBuildsLock);
+  SCOPED_LOCK(m_PendingCallbacksLock);
 
-  if(m_PendingASBuilds.empty())
+  if(m_PendingCallbacks.empty())
     return;
 
-  for(size_t i = 0; i < m_PendingASBuilds.size(); i++)
+  for(size_t i = 0; i < m_PendingCallbacks.size(); i++)
   {
-    PendingASBuild &build = m_PendingASBuilds[i];
+    PendingCallbacks &build = m_PendingCallbacks[i];
 
     // first time we see each fence, get the completed value
     if(fenceValues[build.fence] == 0)
@@ -1555,9 +1556,9 @@ void D3D12RTManager::CheckPendingASBuilds()
       build.callback();
 
       // swap with last if this isn't already last - we don't need to keep order
-      if(i < m_PendingASBuilds.size() - 1)
-        std::swap(build, m_PendingASBuilds.back());
-      m_PendingASBuilds.pop_back();
+      if(i < m_PendingCallbacks.size() - 1)
+        std::swap(build, m_PendingCallbacks.back());
+      m_PendingCallbacks.pop_back();
     }
   }
 }
@@ -1687,9 +1688,9 @@ PatchedRayDispatch D3D12RTManager::PatchRayDispatch(ID3D12GraphicsCommandList4 *
   {
     WrappedID3D12DescriptorHeap *heap =
         (WrappedID3D12DescriptorHeap *)m_wrappedDevice->GetResourceManager()
-            ->GetCurrentAs<ID3D12DescriptorHeap>(heapId);
+            ->GetResAs<ID3D12DescriptorHeap>(heapId);
 
-    if(heap->GetDescriptors()->GetType() == D3D12DescriptorType::Sampler)
+    if(heap->GetDesc().Type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER)
     {
       cbufferData.wrapped_sampHeapBase = heap->GetOriginalGPUBase();
       cbufferData.unwrapped_sampHeapBase = heap->GetGPU(0).ptr;
@@ -1956,9 +1957,9 @@ PatchedRayDispatch D3D12RTManager::PatchIndirectRayDispatch(
   {
     WrappedID3D12DescriptorHeap *heap =
         (WrappedID3D12DescriptorHeap *)m_wrappedDevice->GetResourceManager()
-            ->GetCurrentAs<ID3D12DescriptorHeap>(heapId);
+            ->GetResAs<ID3D12DescriptorHeap>(heapId);
 
-    if(heap->GetDescriptors()->GetType() == D3D12DescriptorType::Sampler)
+    if(heap->GetDesc().Type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER)
     {
       cbufferData.wrapped_sampHeapBase = heap->GetOriginalGPUBase();
       cbufferData.unwrapped_sampHeapBase = heap->GetGPU(0).ptr;
@@ -2271,10 +2272,10 @@ void D3D12RTManager::PrepareRayDispatchBuffer(GPUAddressRangeTracker *origAddres
     {
       GPUAddressRange addressRange = addresses[i];
       ResourceId resId = addressRange.id;
-      if(m_wrappedDevice->GetResourceManager()->HasLiveResource(resId))
+      if(m_wrappedDevice->GetResourceManager()->HasResource(resId))
       {
         WrappedID3D12Resource *wrappedRes =
-            (WrappedID3D12Resource *)m_wrappedDevice->GetResourceManager()->GetLiveResource(resId);
+            (WrappedID3D12Resource *)m_wrappedDevice->GetResourceManager()->GetResource(resId);
 
         BlasAddressPair addressPair;
         addressPair.oldAddress.start = addressRange.start;
@@ -2342,8 +2343,8 @@ ASBuildData *D3D12RTManager::CopyBuildInputs(
         D3D12BufferOffset sourceOffset;
 
         WrappedID3D12Resource::GetResIDFromAddr(inputs.InstanceDescs, sourceBufferId, sourceOffset);
-        ID3D12Resource *sourceBuffer = Unwrap(
-            m_wrappedDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(sourceBufferId));
+        ID3D12Resource *sourceBuffer =
+            Unwrap(m_wrappedDevice->GetResourceManager()->GetResAs<ID3D12Resource>(sourceBufferId));
 
         unwrappedCmd->CopyBufferRegion(ret->buffer->Resource(), ret->buffer->Offset(), sourceBuffer,
                                        sourceOffset, byteSize);
@@ -2445,7 +2446,7 @@ ASBuildData *D3D12RTManager::CopyBuildInputs(
           uint64_t srcOffs = 0;
           WrappedID3D12Resource::GetResIDFromAddr(desc.Triangles.VertexBuffer.RVA, vbId, srcOffs);
           ID3D12Resource *sourceBuffer =
-              m_wrappedDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(vbId);
+              m_wrappedDevice->GetResourceManager()->GetResAs<ID3D12Resource>(vbId);
 
           uint64_t vbSize = sourceBuffer->GetDesc().Width - srcOffs;
 
@@ -2574,7 +2575,7 @@ ASBuildData *D3D12RTManager::CopyBuildInputs(
           uint64_t srcOffs = 0;
           WrappedID3D12Resource::GetResIDFromAddr(desc.Triangles.VertexBuffer.RVA, vbId, srcOffs);
           ID3D12Resource *sourceBuffer =
-              m_wrappedDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(vbId);
+              m_wrappedDevice->GetResourceManager()->GetResAs<ID3D12Resource>(vbId);
 
           uint64_t vbSize = sourceBuffer->GetDesc().Width - srcOffs;
 
@@ -2706,7 +2707,7 @@ void D3D12RTManager::CopyFromVA(ID3D12GraphicsCommandList4 *unwrappedCmd, ID3D12
   ResourceId srcId;
   uint64_t srcOffs = 0;
   WrappedID3D12Resource::GetResIDFromAddr(sourceVA, srcId, srcOffs);
-  ID3D12Resource *srcBuf = m_wrappedDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(srcId);
+  ID3D12Resource *srcBuf = m_wrappedDevice->GetResourceManager()->GetResAs<ID3D12Resource>(srcId);
 
   unwrappedCmd->CopyBufferRegion(dstRes, dstOffset, Unwrap(srcBuf), srcOffs, byteSize);
 }
@@ -3764,7 +3765,8 @@ void D3D12ResourceManager::ApplyBarriers(BarrierSet &barriers,
 void AddStateResetBarrier(D3D12ResourceLayout srcState, D3D12ResourceLayout dstState,
                           ID3D12Resource *res, UINT subresource, BarrierSet &barriers)
 {
-  if(srcState.IsStates() && dstState.IsStates())
+  if((srcState.IsStates() || srcState.ToLayout() == D3D12_BARRIER_LAYOUT_UNDEFINED) &&
+     (dstState.IsStates() || dstState.ToLayout() == D3D12_BARRIER_LAYOUT_UNDEFINED))
   {
     D3D12_RESOURCE_BARRIER b;
     b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -3774,7 +3776,15 @@ void AddStateResetBarrier(D3D12ResourceLayout srcState, D3D12ResourceLayout dstS
     b.Transition.StateBefore = srcState.ToStates();
     b.Transition.StateAfter = dstState.ToStates();
 
-    barriers.barriers.push_back(b);
+    if(srcState.ToLayout() == D3D12_BARRIER_LAYOUT_UNDEFINED)
+      b.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+
+    if(dstState.ToLayout() == D3D12_BARRIER_LAYOUT_UNDEFINED)
+      b.Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
+
+    // could now be identical after silently promoting the before/after state.
+    if(b.Transition.StateBefore != b.Transition.StateAfter)
+      barriers.barriers.push_back(b);
   }
   else if(srcState.IsLayout() && dstState.IsLayout())
   {
@@ -3882,17 +3892,13 @@ void D3D12ResourceManager::SerialiseResourceStates(
     SERIALISE_ELEMENT_LOCAL(Resource, srcit->first).TypedAs("ID3D12Resource *"_lit);
     SERIALISE_ELEMENT_LOCAL(States, srcit->second);
 
-    ResourceId liveid;
-    if(IsReplayingAndReading() && HasLiveResource(Resource))
-      liveid = GetLiveID(Resource);
-
-    if(IsReplayingAndReading() && liveid != ResourceId())
+    if(IsReplayingAndReading() && HasResource(Resource))
     {
-      processed.insert(liveid);
+      processed.insert(Resource);
 
       for(size_t m = 0; m < States.size(); m++)
       {
-        D3D12ResourceLayout srcState = states[liveid][m];
+        D3D12ResourceLayout srcState = states[Resource][m];
         D3D12ResourceLayout dstState = States[m];
 
         // because of some extreme ugliness on the D3D12 side, resources can be created in new
@@ -3912,8 +3918,8 @@ void D3D12ResourceManager::SerialiseResourceStates(
 
         if(srcState != dstState)
         {
-          AddStateResetBarrier(srcState, dstState, (ID3D12Resource *)GetCurrentResource(liveid),
-                               (UINT)m, barriers);
+          AddStateResetBarrier(srcState, dstState, (ID3D12Resource *)GetResource(Resource), (UINT)m,
+                               barriers);
         }
       }
     }
@@ -3929,7 +3935,7 @@ void D3D12ResourceManager::SerialiseResourceStates(
     for(auto it = initialStates.begin(); it != initialStates.end(); ++it)
     {
       // ignore internal resources, we only care about restoring states for captured resources
-      if(GetOriginalID(it->first) == it->first)
+      if(ResourceIDGen::IsReplayOnlyID(it->first))
         continue;
 
       if(processed.find(it->first) == processed.end())
@@ -3939,8 +3945,8 @@ void D3D12ResourceManager::SerialiseResourceStates(
           const D3D12ResourceLayout srcState = states[it->first][m];
           const D3D12ResourceLayout dstState = it->second[m];
           if(srcState != dstState)
-            AddStateResetBarrier(srcState, dstState,
-                                 (ID3D12Resource *)GetCurrentResource(it->first), (UINT)m, barriers);
+            AddStateResetBarrier(srcState, dstState, (ID3D12Resource *)GetResource(it->first),
+                                 (UINT)m, barriers);
         }
       }
     }

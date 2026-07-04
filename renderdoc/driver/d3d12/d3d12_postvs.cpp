@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -2120,7 +2120,7 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
   D3D12ResourceManager *rm = m_pDevice->GetResourceManager();
 
   WrappedID3D12PipelineState *pipe =
-      (WrappedID3D12PipelineState *)rm->GetCurrentAs<ID3D12PipelineState>(rs.pipe);
+      (WrappedID3D12PipelineState *)rm->GetResAs<ID3D12PipelineState>(rs.pipe);
   D3D12RootSignature modsig;
 
   // for indirect dispatches, fetch up to date dispatch sizes in case they're non-deterministic
@@ -2138,10 +2138,10 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
       uint32_t cmdIdx = chunk->FindChild("CommandIndex")->AsUInt32();
       uint32_t argIdx = chunk->FindChild("ArgumentIndex")->AsUInt32();
 
-      WrappedID3D12CommandSignature *comSig = rm->GetLiveAs<WrappedID3D12CommandSignature>(
+      WrappedID3D12CommandSignature *comSig = rm->GetResAs<WrappedID3D12CommandSignature>(
           parentChunk->FindChild("pCommandSignature")->AsResourceId());
       ID3D12Resource *argBuf =
-          rm->GetLiveAs<ID3D12Resource>(parentChunk->FindChild("pArgumentBuffer")->AsResourceId());
+          rm->GetResAs<ID3D12Resource>(parentChunk->FindChild("pArgumentBuffer")->AsResourceId());
       uint64_t argOffs = parentChunk->FindChild("ArgumentBufferOffset")->AsUInt64();
 
       argOffs += cmdIdx * comSig->sig.ByteStride;
@@ -2163,6 +2163,12 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
         dispatchSize[2] = meshArgs->ThreadGroupCountZ;
       }
     }
+  }
+
+  if(dispatchSize[0] > 65535 || dispatchSize[1] > 65535 || dispatchSize[2] > 65535)
+  {
+    ret.ampout.status = ret.meshout.status = "Invalid dispatch size";
+    return;
   }
 
   uint32_t totalNumMeshlets = dispatchSize[0] * dispatchSize[1] * dispatchSize[2];
@@ -2192,7 +2198,7 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
   D3D12_EXPANDED_PIPELINE_STATE_STREAM_DESC pipeDesc;
   pipe->Fill(pipeDesc);
 
-  ID3D12RootSignature *rootsig = rm->GetCurrentAs<ID3D12RootSignature>(rs.graphics.rootsig);
+  ID3D12RootSignature *rootsig = rm->GetResAs<ID3D12RootSignature>(rs.graphics.rootsig);
 
   if(!rootsig)
   {
@@ -2245,7 +2251,7 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
     }
   }
 
-  pipeDesc.pRootSignature = annotatedSig;
+  pipeDesc.SetRootSig(annotatedSig);
 
   HRESULT hr = S_OK;
 
@@ -2472,6 +2478,15 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
       desc.SampleDesc.Count = 1;
       desc.SampleDesc.Quality = 0;
       desc.Width = layout.meshletByteSize * totalNumMeshlets;
+
+      if(desc.Width > INT32_MAX)
+      {
+        SAFE_RELEASE(annotatedSig);
+        SAFE_RELEASE(ampBuffer);
+        ret.meshout.status = "Mesh output buffer is too large, try reducing dispatch dimensions";
+        RDCERR("%s", ret.meshout.status.c_str());
+        return;
+      }
 
       D3D12_HEAP_PROPERTIES heapProps;
       heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -2858,7 +2873,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
   }
 
   WrappedID3D12PipelineState *origPSO =
-      m_pDevice->GetResourceManager()->GetCurrentAs<WrappedID3D12PipelineState>(rs.pipe);
+      m_pDevice->GetResourceManager()->GetResAs<WrappedID3D12PipelineState>(rs.pipe);
 
   if(!origPSO || !origPSO->IsGraphics())
   {
@@ -2950,7 +2965,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
 
   {
     WrappedID3D12RootSignature *sig =
-        m_pDevice->GetResourceManager()->GetCurrentAs<WrappedID3D12RootSignature>(rs.graphics.rootsig);
+        m_pDevice->GetResourceManager()->GetResAs<WrappedID3D12RootSignature>(rs.graphics.rootsig);
 
     D3D12RootSignature rootsig = sig->sig;
 
@@ -3041,7 +3056,7 @@ void D3D12Replay::InitPostVSBuffers(uint32_t eventId)
     psoDesc.DepthStencilState.StencilEnable = FALSE;
 
     if(soSig)
-      psoDesc.pRootSignature = soSig;
+      psoDesc.SetRootSig(soSig);
 
     // render as points
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT;

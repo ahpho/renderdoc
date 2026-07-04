@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -1264,6 +1264,10 @@ bool GLInitParams::IsSupportedVersion(uint64_t ver)
 
   // 0x22 -> 0x23 - Add missing serialisation of maxAniso in texture initial contents.
   if(ver == 0x22)
+    return true;
+
+  // 0x23 -> 0x24 - added serialised annotations
+  if(ver == 0x23)
     return true;
 
   return false;

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -102,7 +102,7 @@ IReplayDriver *D3D11Replay::MakeDummyDriver()
   return dummy;
 }
 
-void D3D11Replay::CreateResources(IDXGIFactory *factory)
+void D3D11Replay::InitReplayOnDevice(IDXGIFactory *factory)
 {
   bool wrapped =
       RefCountDXGIObject::HandleWrap("D3D11Replay", __uuidof(IDXGIFactory), (void **)&factory);
@@ -110,8 +110,6 @@ void D3D11Replay::CreateResources(IDXGIFactory *factory)
   m_pFactory = factory;
 
   HRESULT hr = S_OK;
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.0f);
 
   IDXGIDevice *pDXGIDevice;
   hr = m_pDevice->QueryInterface(__uuidof(IDXGIDevice), (void **)&pDXGIDevice);
@@ -159,50 +157,6 @@ void D3D11Replay::CreateResources(IDXGIFactory *factory)
       }
     }
   }
-
-  m_pDevice->GetShaderCache()->SetCaching(true);
-
-  InitStreamOut();
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.1f);
-
-  m_General.Init(m_pDevice);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.2f);
-
-  m_TexRender.Init(m_pDevice);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.3f);
-
-  m_Overlay.Init(m_pDevice);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.4f);
-
-  m_MeshRender.Init(m_pDevice);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.5f);
-
-  m_VertexPick.Init(m_pDevice);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.6f);
-
-  m_PixelPick.Init(m_pDevice);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.65f);
-
-  m_ShaderDebug.Init(m_pDevice);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.7f);
-
-  m_Histogram.Init(m_pDevice);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.8f);
-
-  m_PixelHistory.Init(m_pDevice);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.9f);
-
-  m_pDevice->GetShaderCache()->SetCaching(false);
 
   if(!m_Proxy && D3D11_HardwareCounters())
   {
@@ -273,6 +227,55 @@ void D3D11Replay::CreateResources(IDXGIFactory *factory)
       m_pIntelCounters = NULL;
     }
   }
+}
+
+void D3D11Replay::CreateResources()
+{
+  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.0f);
+
+  m_pDevice->GetShaderCache()->SetCaching(true);
+
+  InitStreamOut();
+
+  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.1f);
+
+  m_General.Init(m_pDevice);
+
+  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.2f);
+
+  m_TexRender.Init(m_pDevice);
+
+  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.3f);
+
+  m_Overlay.Init(m_pDevice);
+
+  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.4f);
+
+  m_MeshRender.Init(m_pDevice);
+
+  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.5f);
+
+  m_VertexPick.Init(m_pDevice);
+
+  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.6f);
+
+  m_PixelPick.Init(m_pDevice);
+
+  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.65f);
+
+  m_ShaderDebug.Init(m_pDevice);
+
+  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.7f);
+
+  m_Histogram.Init(m_pDevice);
+
+  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.8f);
+
+  m_PixelHistory.Init(m_pDevice);
+
+  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.9f);
+
+  m_pDevice->GetShaderCache()->SetCaching(false);
 
   RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 1.0f);
 }
@@ -335,8 +338,7 @@ rdcarray<rdcstr> D3D11Replay::GetDisassemblyTargets(bool withPipeline)
 rdcstr D3D11Replay::DisassembleShader(ResourceId pipeline, const ShaderReflection *refl,
                                       const rdcstr &target)
 {
-  auto it =
-      WrappedShader::m_ShaderList.find(m_pDevice->GetResourceManager()->GetLiveID(refl->resourceId));
+  auto it = WrappedShader::m_ShaderList.find(refl->resourceId);
 
   if(it == WrappedShader::m_ShaderList.end())
     return "; Invalid Shader Specified";
@@ -351,9 +353,9 @@ rdcstr D3D11Replay::DisassembleShader(ResourceId pipeline, const ShaderReflectio
 
 void D3D11Replay::FreeTargetResource(ResourceId id)
 {
-  if(m_pDevice->GetResourceManager()->HasLiveResource(id))
+  if(m_pDevice->GetResourceManager()->HasResource(id))
   {
-    ID3D11DeviceChild *resource = m_pDevice->GetResourceManager()->GetLiveResource(id);
+    ID3D11DeviceChild *resource = m_pDevice->GetResourceManager()->GetResource(id);
 
     SAFE_RELEASE(resource);
   }
@@ -361,9 +363,9 @@ void D3D11Replay::FreeTargetResource(ResourceId id)
 
 void D3D11Replay::FreeCustomShader(ResourceId id)
 {
-  if(m_pDevice->GetResourceManager()->HasLiveResource(id))
+  if(m_pDevice->GetResourceManager()->HasResource(id))
   {
-    ID3D11DeviceChild *resource = m_pDevice->GetResourceManager()->GetLiveResource(id);
+    ID3D11DeviceChild *resource = m_pDevice->GetResourceManager()->GetResource(id);
 
     SAFE_RELEASE(resource);
   }
@@ -478,7 +480,7 @@ BufferDescription D3D11Replay::GetBuffer(ResourceId id)
 
   rdcstr str = GetDebugName(d3dbuf);
 
-  ret.resourceId = m_pDevice->GetResourceManager()->GetOriginalID(it->first);
+  ret.resourceId = it->first;
 
   D3D11_BUFFER_DESC desc;
   it->second.m_Buffer->GetDesc(&desc);
@@ -513,7 +515,7 @@ TextureDescription D3D11Replay::GetTexture(ResourceId id)
     D3D11_TEXTURE1D_DESC desc;
     d3dtex->GetDesc(&desc);
 
-    tex.resourceId = m_pDevice->GetResourceManager()->GetOriginalID(it1D->first);
+    tex.resourceId = it1D->first;
     tex.dimension = 1;
     tex.width = desc.Width;
     tex.height = 1;
@@ -563,7 +565,7 @@ TextureDescription D3D11Replay::GetTexture(ResourceId id)
     if(d3dtex->m_RealDescriptor)
       desc.Format = d3dtex->m_RealDescriptor->Format;
 
-    tex.resourceId = m_pDevice->GetResourceManager()->GetOriginalID(it2D->first);
+    tex.resourceId = it2D->first;
     tex.dimension = 2;
     tex.width = desc.Width;
     tex.height = desc.Height;
@@ -620,7 +622,7 @@ TextureDescription D3D11Replay::GetTexture(ResourceId id)
     D3D11_TEXTURE3D_DESC desc;
     d3dtex->GetDesc(&desc);
 
-    tex.resourceId = m_pDevice->GetResourceManager()->GetOriginalID(it3D->first);
+    tex.resourceId = it3D->first;
     tex.dimension = 3;
     tex.width = desc.Width;
     tex.height = desc.Height;
@@ -684,7 +686,7 @@ rdcarray<BufferDescription> D3D11Replay::GetBuffers()
       it != WrappedID3D11Buffer::m_BufferList.end(); ++it)
   {
     // skip buffers that aren't from the log
-    if(m_pDevice->GetResourceManager()->GetOriginalID(it->first) == it->first)
+    if(ResourceIDGen::IsReplayOnlyID(it->first))
       continue;
 
     ret.push_back(GetBuffer(it->first));
@@ -707,7 +709,7 @@ rdcarray<TextureDescription> D3D11Replay::GetTextures()
       it != WrappedID3D11Texture1D::m_TextureList.end(); ++it)
   {
     // skip textures that aren't from the log
-    if(m_pDevice->GetResourceManager()->GetOriginalID(it->first) == it->first)
+    if(ResourceIDGen::IsReplayOnlyID(it->first))
       continue;
 
     ret.push_back(GetTexture(it->first));
@@ -717,7 +719,7 @@ rdcarray<TextureDescription> D3D11Replay::GetTextures()
       it != WrappedID3D11Texture2D1::m_TextureList.end(); ++it)
   {
     // skip textures that aren't from the log
-    if(m_pDevice->GetResourceManager()->GetOriginalID(it->first) == it->first)
+    if(ResourceIDGen::IsReplayOnlyID(it->first))
       continue;
 
     ret.push_back(GetTexture(it->first));
@@ -727,7 +729,7 @@ rdcarray<TextureDescription> D3D11Replay::GetTextures()
       it != WrappedID3D11Texture3D1::m_TextureList.end(); ++it)
   {
     // skip textures that aren't from the log
-    if(m_pDevice->GetResourceManager()->GetOriginalID(it->first) == it->first)
+    if(ResourceIDGen::IsReplayOnlyID(it->first))
       continue;
 
     ret.push_back(GetTexture(it->first));
@@ -768,7 +770,7 @@ void D3D11Replay::SavePipelineState(uint32_t eventId)
 
     ResourceId layoutId = GetIDForDeviceChild(rs->IA.Layout);
 
-    ret.inputAssembly.resourceId = rm->GetOriginalID(layoutId);
+    ret.inputAssembly.resourceId = layoutId;
     ret.inputAssembly.bytecode = GetShader(ResourceId(), layoutId, ShaderEntryPoint());
 
     ret.inputAssembly.layouts.resize(vec.size());
@@ -791,13 +793,12 @@ void D3D11Replay::SavePipelineState(uint32_t eventId)
   {
     D3D11Pipe::VertexBuffer &vb = ret.inputAssembly.vertexBuffers[i];
 
-    vb.resourceId = rm->GetOriginalID(GetIDForDeviceChild(rs->IA.VBs[i]));
+    vb.resourceId = GetIDForDeviceChild(rs->IA.VBs[i]);
     vb.byteOffset = rs->IA.Offsets[i];
     vb.byteStride = rs->IA.Strides[i];
   }
 
-  ret.inputAssembly.indexBuffer.resourceId =
-      rm->GetOriginalID(GetIDForDeviceChild(rs->IA.IndexBuffer));
+  ret.inputAssembly.indexBuffer.resourceId = GetIDForDeviceChild(rs->IA.IndexBuffer);
   ret.inputAssembly.indexBuffer.byteOffset = rs->IA.IndexOffset;
   switch(rs->IA.IndexFormat)
   {
@@ -835,7 +836,7 @@ void D3D11Replay::SavePipelineState(uint32_t eventId)
       if(shad != NULL)
         refl = &shad->GetDetails();
 
-      dst.resourceId = rm->GetUnreplacedOriginalID(id);
+      dst.resourceId = rm->GetUnreplacedID(id);
       dst.reflection = refl;
 
       dst.classInstances.reserve(src.NumInstances);
@@ -865,7 +866,7 @@ void D3D11Replay::SavePipelineState(uint32_t eventId)
     ret.streamOut.outputs.resize(D3D11_SO_BUFFER_SLOT_COUNT);
     for(size_t s = 0; s < D3D11_SO_BUFFER_SLOT_COUNT; s++)
     {
-      ret.streamOut.outputs[s].resourceId = rm->GetOriginalID(GetIDForDeviceChild(rs->SO.Buffers[s]));
+      ret.streamOut.outputs[s].resourceId = GetIDForDeviceChild(rs->SO.Buffers[s]);
       ret.streamOut.outputs[s].byteOffset = rs->SO.Offsets[s];
     }
 
@@ -930,7 +931,7 @@ void D3D11Replay::SavePipelineState(uint32_t eventId)
                 : ConservativeRaster::Disabled;
       }
 
-      ret.rasterizer.state.resourceId = rm->GetOriginalID(GetIDForDeviceChild(rs->RS.State));
+      ret.rasterizer.state.resourceId = GetIDForDeviceChild(rs->RS.State);
     }
     else
     {
@@ -980,7 +981,7 @@ void D3D11Replay::SavePipelineState(uint32_t eventId)
     {
       Descriptor &descriptor = ret.outputMerger.renderTargets[i];
 
-      descriptor.view = rm->GetOriginalID(GetIDForDeviceChild(rs->OM.RenderTargets[i]));
+      descriptor.view = GetIDForDeviceChild(rs->OM.RenderTargets[i]);
 
       if(descriptor.view != ResourceId())
       {
@@ -994,7 +995,7 @@ void D3D11Replay::SavePipelineState(uint32_t eventId)
         descriptor.elementByteSize =
             desc.Format == DXGI_FORMAT_UNKNOWN ? 1 : GetByteSize(1, 1, 1, desc.Format, 0);
 
-        descriptor.resource = rm->GetOriginalID(GetIDForDeviceChild(res));
+        descriptor.resource = GetIDForDeviceChild(res);
 
         descriptor.type = DescriptorType::ReadWriteImage;
         descriptor.format = MakeResourceFormat(desc.Format);
@@ -1068,7 +1069,7 @@ void D3D11Replay::SavePipelineState(uint32_t eventId)
     {
       Descriptor &descriptor = ret.outputMerger.depthTarget;
 
-      descriptor.view = rm->GetOriginalID(GetIDForDeviceChild(rs->OM.DepthView));
+      descriptor.view = GetIDForDeviceChild(rs->OM.DepthView);
 
       if(descriptor.view != ResourceId())
       {
@@ -1090,7 +1091,7 @@ void D3D11Replay::SavePipelineState(uint32_t eventId)
         if(desc.Flags & D3D11_DSV_READ_ONLY_STENCIL)
           ret.outputMerger.stencilReadOnly = true;
 
-        descriptor.resource = rm->GetOriginalID(GetIDForDeviceChild(res));
+        descriptor.resource = GetIDForDeviceChild(res);
 
         descriptor.type = DescriptorType::ReadWriteImage;
         descriptor.format = MakeResourceFormat(desc.Format);
@@ -1156,8 +1157,7 @@ void D3D11Replay::SavePipelineState(uint32_t eventId)
       D3D11_BLEND_DESC desc;
       rs->OM.BlendState->GetDesc(&desc);
 
-      ret.outputMerger.blendState.resourceId =
-          rm->GetOriginalID(GetIDForDeviceChild(rs->OM.BlendState));
+      ret.outputMerger.blendState.resourceId = GetIDForDeviceChild(rs->OM.BlendState);
 
       ret.outputMerger.blendState.alphaToCoverage = desc.AlphaToCoverageEnable == TRUE;
       ret.outputMerger.blendState.independentBlend = desc.IndependentBlendEnable == TRUE;
@@ -1234,8 +1234,7 @@ void D3D11Replay::SavePipelineState(uint32_t eventId)
       ret.outputMerger.depthStencilState.depthWrites =
           desc.DepthWriteMask == D3D11_DEPTH_WRITE_MASK_ALL;
       ret.outputMerger.depthStencilState.stencilEnable = desc.StencilEnable == TRUE;
-      ret.outputMerger.depthStencilState.resourceId =
-          rm->GetOriginalID(GetIDForDeviceChild(rs->OM.DepthStencilState));
+      ret.outputMerger.depthStencilState.resourceId = GetIDForDeviceChild(rs->OM.DepthStencilState);
 
       ret.outputMerger.depthStencilState.frontFace.function =
           MakeCompareFunc(desc.FrontFace.StencilFunc);
@@ -1297,7 +1296,7 @@ void D3D11Replay::SavePipelineState(uint32_t eventId)
   // Predication
   /////////////////////////////////////////////////
 
-  ret.predication.resourceId = rm->GetOriginalID(GetIDForDeviceChild(rs->Predicate));
+  ret.predication.resourceId = GetIDForDeviceChild(rs->Predicate);
   ret.predication.value = rs->PredicateValue == TRUE ? true : false;
   ret.predication.isPassing = rs->PredicationWouldPass();
 }
@@ -1315,7 +1314,6 @@ rdcarray<Descriptor> D3D11Replay::GetDescriptors(ResourceId descriptorStore,
   }
 
   D3D11RenderState *rs = m_pDevice->GetImmediateContext()->GetCurrentPipelineState();
-  D3D11ResourceManager *rm = m_pDevice->GetResourceManager();
 
   size_t count = 0;
   for(const DescriptorRange &r : ranges)
@@ -1338,7 +1336,7 @@ rdcarray<Descriptor> D3D11Replay::GetDescriptors(ResourceId descriptorStore,
       {
         ret[dst].type = DescriptorType::ConstantBuffer;
 
-        ret[dst].resource = rm->GetOriginalID(GetIDForDeviceChild(src.ConstantBuffers[idx.idx]));
+        ret[dst].resource = GetIDForDeviceChild(src.ConstantBuffers[idx.idx]);
         ret[dst].byteOffset = src.CBOffsets[idx.idx] * sizeof(Vec4f);
         ret[dst].byteSize = src.CBCounts[idx.idx] * sizeof(Vec4f);
       }
@@ -1346,7 +1344,7 @@ rdcarray<Descriptor> D3D11Replay::GetDescriptors(ResourceId descriptorStore,
       {
         ID3D11ShaderResourceView *view = src.SRVs[idx.idx];
 
-        ret[dst].view = rm->GetOriginalID(GetIDForDeviceChild(view));
+        ret[dst].view = GetIDForDeviceChild(view);
 
         ret[dst].type = DescriptorType::Image;
         if(ret[dst].view != ResourceId())
@@ -1362,7 +1360,7 @@ rdcarray<Descriptor> D3D11Replay::GetDescriptors(ResourceId descriptorStore,
           ret[dst].elementByteSize =
               desc.Format == DXGI_FORMAT_UNKNOWN ? 1 : GetByteSize(1, 1, 1, desc.Format, 0);
 
-          ret[dst].resource = rm->GetOriginalID(GetIDForDeviceChild(res));
+          ret[dst].resource = GetIDForDeviceChild(res);
 
           ret[dst].textureType = MakeTextureDim(desc.ViewDimension);
 
@@ -1463,7 +1461,7 @@ rdcarray<Descriptor> D3D11Replay::GetDescriptors(ResourceId descriptorStore,
         else if(idx.idx >= rs->OM.UAVStartSlot)
           view = rs->OM.UAVs[idx.idx - rs->OM.UAVStartSlot];
 
-        ret[dst].view = rm->GetOriginalID(GetIDForDeviceChild(view));
+        ret[dst].view = GetIDForDeviceChild(view);
 
         ret[dst].type = DescriptorType::ReadWriteImage;
         if(ret[dst].view != ResourceId())
@@ -1491,7 +1489,7 @@ rdcarray<Descriptor> D3D11Replay::GetDescriptors(ResourceId descriptorStore,
             ret[dst].secondary = GetDebugManager()->GetCounterBufferID(view);
           }
 
-          ret[dst].resource = rm->GetOriginalID(GetIDForDeviceChild(res));
+          ret[dst].resource = GetIDForDeviceChild(res);
 
           ret[dst].format = MakeResourceFormat(desc.Format);
 
@@ -1562,7 +1560,6 @@ rdcarray<SamplerDescriptor> D3D11Replay::GetSamplerDescriptors(ResourceId descri
   }
 
   D3D11RenderState *rs = m_pDevice->GetImmediateContext()->GetCurrentPipelineState();
-  D3D11ResourceManager *rm = m_pDevice->GetResourceManager();
 
   size_t count = 0;
   for(const DescriptorRange &r : ranges)
@@ -1586,7 +1583,7 @@ rdcarray<SamplerDescriptor> D3D11Replay::GetSamplerDescriptors(ResourceId descri
       ID3D11SamplerState *samp = srcArr[(uint32_t)idx.stage]->Samplers[idx.idx];
 
       ret[dst].type = DescriptorType::Sampler;
-      ret[dst].object = rm->GetOriginalID(GetIDForDeviceChild(samp));
+      ret[dst].object = GetIDForDeviceChild(samp);
 
       if(ret[dst].object != ResourceId())
       {
@@ -1746,16 +1743,6 @@ rdcarray<uint32_t> D3D11Replay::GetPassEvents(uint32_t eventId)
   }
 
   return passEvents;
-}
-
-ResourceId D3D11Replay::GetLiveID(ResourceId id)
-{
-  ID3D11UnorderedAccessView *counterUAV = GetDebugManager()->GetCounterBufferUAV(id);
-  if(counterUAV)
-    return id;
-  if(!m_pDevice->GetResourceManager()->HasLiveResource(id))
-    return ResourceId();
-  return m_pDevice->GetResourceManager()->GetLiveID(id);
 }
 
 void D3D11Replay::PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subresource &sub,
@@ -2714,6 +2701,13 @@ void D3D11Replay::ClearReplayCache()
   ClearPostVSCache();
 }
 
+void D3D11Replay::ReloadShaderDebugInformation()
+{
+  DXBC::ResetSearchDirsCache();
+  WrappedID3D11Shader<ID3D11ComputeShader>::ReloadShaderDebugInformation();
+  ClearReplayCache();
+}
+
 D3D11DebugManager *D3D11Replay::GetDebugManager()
 {
   return m_pDevice->GetDebugManager();
@@ -3066,7 +3060,10 @@ uint32_t D3D11Replay::PickVertex(uint32_t eventId, int32_t width, int32_t height
   cbuf.PickFlipY = cfg.position.flipY;
   cbuf.PickOrtho = cfg.ortho;
 
-  Matrix4f projMat = Matrix4f::Perspective(90.0f, 0.1f, 100000.0f, float(width) / float(height));
+  float nearPlane = cfg.cam ? ((Camera *)cfg.cam)->GetNear() : 0.1f;
+  float farPlane = cfg.cam ? ((Camera *)cfg.cam)->GetFar() : 100000.0f;
+
+  Matrix4f projMat = Matrix4f::Perspective(90.0f, nearPlane, farPlane, float(width) / float(height));
 
   Matrix4f camMat = cfg.cam ? ((Camera *)cfg.cam)->GetMatrix() : Matrix4f::Identity();
 
@@ -4306,16 +4303,10 @@ RDResult D3D11_CreateReplayDevice(RDCFile *rdc, const ReplayOptions &opts, IRepl
   // we control the debug flag ourselves
   flags &= ~D3D11_CREATE_DEVICE_DEBUG;
 
-#if ENABLED(RDOC_DEVEL)
-  // in development builds, always enable debug layer during replay
-  flags |= D3D11_CREATE_DEVICE_DEBUG;
-#else
-  // in release builds, only enable it if forced by replay options
   if(opts.apiValidation)
     flags |= D3D11_CREATE_DEVICE_DEBUG;
   else
     flags &= ~D3D11_CREATE_DEVICE_DEBUG;
-#endif
 
   // we should now be set up to try creating feature level 11 devices either with a selected
   // adapter, a NULL (any) adapter, or WARP.
@@ -4447,7 +4438,9 @@ RDResult D3D11_CreateReplayDevice(RDCFile *rdc, const ReplayOptions &opts, IRepl
     D3D11Replay *replay = wrappedDev->GetReplay();
 
     replay->SetProxy(isProxy, warpFallback);
-    replay->CreateResources(factory);
+    replay->InitReplayOnDevice(factory);
+    if(isProxy)
+      replay->CreateResources();
     if(warpFallback)
     {
       wrappedDev->AddDebugMessage(

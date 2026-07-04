@@ -12,6 +12,10 @@ I want to ensure that anyone can contribute to RenderDoc with only the next bug 
 
 If you have any queries or concerns in this regard you can get in touch with me [directly over email](mailto:baldurk@baldurk.org).
 
+## Use of LLMs / "AI"
+
+Strictly no use whatsoever of LLMs or any similar technology is allowed for any code contributed to RenderDoc. There are no exceptions to this rule.
+
 ## Acceptable use of RenderDoc
 
 RenderDoc is a tool intended for debugging your own projects and programs, those to which you have true ownership of. Use and abuse of RenderDoc for illegal or unethical uses including but not limited to capturing copyrighted programs that you do not own the rights to will not be tolerated. Any questions or issues related to any such use will not be answered and no support will be provided.
@@ -45,3 +49,4 @@ Code should be formatted using **clang-format 15.0**. The reason we fix a specif
 
 For more information, check the section about [code formatting](CONTRIBUTING/Preparing-Commits.md#code-formatting).
 
+**DO NOT** create "draft" pull requests ever. These are a pointless anti-feature from github and provide zero value and have zero purpose. If your code is not ready to merge, do not create a pull request at all.

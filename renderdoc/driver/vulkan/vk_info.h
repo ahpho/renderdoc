@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -229,12 +229,15 @@ struct VulkanCreationInfo
     ShaderReflection *refl;
     SPIRVPatchData patchData;
     std::map<size_t, uint32_t> instructionLines;
+    rdcarray<SpecConstant> specConstantData;
 
-    void Init(VulkanResourceManager *resourceMan, ResourceId id, const rdcspv::Reflector &spv,
-              const rdcstr &entry, VkShaderStageFlagBits stage,
+    void Init(VulkanResourceManager *resourceMan, const VulkanCreationInfo &info, ResourceId id,
+              const rdcspv::Reflector &spv, const rdcstr &entry, VkShaderStageFlagBits stage,
               const rdcarray<SpecConstant> &specInfo);
 
     void PopulateDisassembly(const rdcspv::Reflector &spirv);
+    void Reload(VulkanResourceManager *resourceMan, const VulkanCreationInfo &info, ResourceId id,
+                const rdcspv::Reflector &spv);
   };
 
   struct ShaderEntry
@@ -309,6 +312,16 @@ struct VulkanCreationInfo
     VkFormat depthFormat;
     VkFormat stencilFormat;
 
+    // VkCustomResolveCreateInfoEXT
+    bool hasCustomResCreateInfo = false;
+    struct CustomResInfo
+    {
+      bool customResolve;
+      rdcarray<VkFormat> colorFormats;
+      VkFormat depthFormat;
+      VkFormat stencilFormat;
+    } customResCreateInfo;
+
     // VkRenderingAttachmentLocationInfo and VkRenderingInputAttachmentIndexInfo
     DynamicRenderingLocalRead dynamicRenderingLocalRead;
 
@@ -364,6 +377,7 @@ struct VulkanCreationInfo
 
     // VkPipelineViewportStateCreateInfo
     uint32_t viewportCount;
+    uint32_t scissorCount;
     rdcarray<VkViewport> viewports;
     rdcarray<VkRect2D> scissors;
 
@@ -487,6 +501,11 @@ struct VulkanCreationInfo
     // 64-bit aligned and with an offset equal to their ID. In other words this is big enough for the max ID
     uint32_t virtualSpecialisationByteSize = 0;
 
+    // VkCustomResolveCreateInfoEXT
+    bool hasCustomResCreateInfo = false;
+    // For Shader Objects only "customResolve" is used
+    bool customResolve;
+
     rdcarray<DescriptorAccess> staticDescriptorAccess;
   };
   std::unordered_map<ResourceId, ShaderObject> m_ShaderObject;
@@ -554,6 +573,7 @@ struct VulkanCreationInfo
 
       bool feedbackLoop;
       bool tileOnlyMSAAEnable;
+      bool customResolve;
     };
     rdcarray<Subpass> subpasses;
 
@@ -759,7 +779,8 @@ struct VulkanCreationInfo
     void Init(VulkanResourceManager *resourceMan, VulkanCreationInfo &info,
               const VkShaderModuleCreateInfo *pCreateInfo);
 
-    void Reinit();
+    bool Reinit();
+    void Reload(VulkanResourceManager *resourceMan, const VulkanCreationInfo &info, ResourceId id);
 
     ShaderModuleReflection &GetReflection(ShaderStage stage, const rdcstr &entry, ResourceId pipe)
     {
@@ -777,8 +798,11 @@ struct VulkanCreationInfo
     }
 
     rdcspv::Reflector spirv;
+    // Only set when separate debug spirv is found
+    rdcarray<uint32_t> initialSpirv;
 
     rdcstr unstrippedPath;
+    rdcstr debugInfoLoadingLog;
 
     std::map<ShaderModuleReflectionKey, ShaderModuleReflection> m_Reflections;
     // in graphics pipeline library the linked pipeline may reference a different pipeline where the
@@ -865,4 +889,11 @@ struct VulkanCreationInfo
     m_DescUpdateTemplate.erase(id);
     m_Queue.erase(id);
   }
+  const PipelineLayout &GetPipelineLayoutInfo(ResourceId rp) const;
+  const DescSetLayout &GetDescSetLayout(ResourceId dsl) const;
+  const Buffer &GetBufferInfo(ResourceId buf) const;
+  const BufferView &GetBufferViewInfo(ResourceId bufView) const;
+  const Image &GetImageInfo(ResourceId img) const;
+  const ImageView &GetImageViewInfo(ResourceId imgView) const;
+  const Sampler &GetSamplerInfo(ResourceId samp) const;
 };

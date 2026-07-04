@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -141,7 +141,7 @@ VkResult WrappedVulkan::vkRegisterDeviceEventEXT(VkDevice device,
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pFence);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pFence);
 
     if(IsCaptureMode(m_State))
     {
@@ -165,10 +165,6 @@ VkResult WrappedVulkan::vkRegisterDeviceEventEXT(VkDevice device,
       VkResourceRecord *record = GetResourceManager()->AddResourceRecord(*pFence);
       record->AddChunk(chunk);
     }
-    else
-    {
-      GetResourceManager()->AddLiveResource(id, *pFence);
-    }
   }
 
   return ret;
@@ -186,7 +182,7 @@ VkResult WrappedVulkan::vkRegisterDisplayEventEXT(VkDevice device, VkDisplayKHR 
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pFence);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pFence);
 
     if(IsCaptureMode(m_State))
     {
@@ -210,10 +206,6 @@ VkResult WrappedVulkan::vkRegisterDisplayEventEXT(VkDevice device, VkDisplayKHR 
       VkResourceRecord *record = GetResourceManager()->AddResourceRecord(*pFence);
       record->AddChunk(chunk);
     }
-    else
-    {
-      GetResourceManager()->AddLiveResource(id, *pFence);
-    }
   }
 
   return ret;
@@ -233,13 +225,24 @@ bool WrappedVulkan::Serialise_vkGetSwapchainImagesKHR(SerialiserType &ser, VkDev
 
   if(IsReplayingAndReading())
   {
-    // use original ID because we don't create a live version of the swapchain
     SwapchainInfo &swapInfo = m_CreationInfo.m_SwapChain[Swapchain];
+
+    GetResourceManager()->WrapResource(SwapchainImage, Unwrap(device),
+                                       swapInfo.images[SwapchainImageIndex].userSwapImage);
+
+    m_CreationInfo.m_Names[GetResID(swapInfo.images[SwapchainImageIndex].userSwapImage)] =
+        StringFormat::Fmt("Presentable Image %u", SwapchainImageIndex);
+
+    {
+      LockedImageStateRef state =
+          InsertImageState(swapInfo.images[SwapchainImageIndex].userSwapImage,
+                           GetResID(swapInfo.images[SwapchainImageIndex].userSwapImage),
+                           ImageInfo(swapInfo.imageInfo), eFrameRef_Unknown);
+      state->isMemoryBound = true;
+    }
 
     RDCASSERT(SwapchainImageIndex < swapInfo.images.size(), SwapchainImageIndex,
               swapInfo.images.size());
-    GetResourceManager()->AddLiveResource(SwapchainImage,
-                                          swapInfo.images[SwapchainImageIndex].userSwapImage);
 
     AddResource(SwapchainImage, ResourceType::SwapchainImage, "Swapchain Image");
     DerivedResource(device, SwapchainImage);
@@ -306,7 +309,7 @@ VkResult WrappedVulkan::vkGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR 
           RDCASSERT(imageToWrap != VK_NULL_HANDLE);
         }
 
-        ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), imageToWrap);
+        ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), imageToWrap);
 
         Chunk *chunk = NULL;
 
@@ -425,7 +428,6 @@ bool WrappedVulkan::Serialise_vkCreateSwapchainKHR(SerialiserType &ser, VkDevice
 
   if(IsReplayingAndReading())
   {
-    // use original ID because we don't create a live version of the swapchain
     SwapchainInfo &swapinfo = m_CreationInfo.m_SwapChain[SwapChain];
 
     AddResource(SwapChain, ResourceType::SwapchainImage, "Swapchain");
@@ -495,10 +497,8 @@ bool WrappedVulkan::Serialise_vkCreateSwapchainKHR(SerialiserType &ser, VkDevice
         return false;
       }
 
-      ResourceId liveId = GetResourceManager()->WrapResource(Unwrap(device), ims[i]);
-
       VkMemoryRequirements mrq = {0};
-      ObjDisp(device)->GetImageMemoryRequirements(Unwrap(device), Unwrap(ims[i]), &mrq);
+      ObjDisp(device)->GetImageMemoryRequirements(Unwrap(device), ims[i], &mrq);
 
       memSize = AlignUp(memSize, mrq.alignment);
 
@@ -556,17 +556,14 @@ bool WrappedVulkan::Serialise_vkCreateSwapchainKHR(SerialiserType &ser, VkDevice
           return false;
         }
 
-        memid = GetResourceManager()->WrapResource(Unwrap(device), mem);
-        // register as a live-only resource, so it is cleaned up properly
-        GetResourceManager()->AddLiveResource(memid, mem);
+        memid = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), mem);
       }
 
-      vkr = ObjDisp(device)->BindImageMemory(Unwrap(device), Unwrap(ims[i]), Unwrap(mem),
-                                             imageMemOffsets[i]);
+      vkr = ObjDisp(device)->BindImageMemory(Unwrap(device), ims[i], Unwrap(mem), imageMemOffsets[i]);
       CHECK_VKR(this, vkr);
 
-      // image live ID will be assigned separately in Serialise_vkGetSwapChainInfoWSI
-      // memory doesn't have a live ID
+      // image will be wrapped and be added as a live resource separately in
+      // Serialise_vkGetSwapChainImagesKHR memory doesn't have a live ID
 
       swapinfo.images[i].userSwapImage = ims[i];
 
@@ -587,14 +584,6 @@ bool WrappedVulkan::Serialise_vkCreateSwapchainKHR(SerialiserType &ser, VkDevice
           TextureCategory::ShaderRead | TextureCategory::ColorTarget | TextureCategory::SwapBuffer;
       iminfo.cube = false;
       iminfo.samples = VK_SAMPLE_COUNT_1_BIT;
-
-      m_CreationInfo.m_Names[GetResID(ims[i])] = StringFormat::Fmt("Presentable Image %u", i);
-
-      {
-        LockedImageStateRef state = InsertImageState(
-            ims[i], GetResID(ims[i]), ImageInfo(swapinfo.imageInfo), eFrameRef_Unknown);
-        state->isMemoryBound = true;
-      }
     }
   }
 
@@ -605,7 +594,7 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
                                                    const VkSwapchainCreateInfoKHR *pCreateInfo,
                                                    VkSwapchainKHR *pSwapChain)
 {
-  ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pSwapChain);
+  ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pSwapChain);
 
   if(IsCaptureMode(m_State))
   {
@@ -719,7 +708,7 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
         return;
       }
 
-      GetResourceManager()->WrapResource(Unwrap(device), swapInfo.imageMemory);
+      GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), swapInfo.imageMemory);
       GetResourceManager()->SetInternalResource(GetResID(swapInfo.imageMemory));
 
       for(uint32_t i = 0; i < numSwapImages; i++)
@@ -782,7 +771,7 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
       vkr = vt->CreateRenderPass(Unwrap(device), &rpinfo, NULL, &swapInfo.rp);
       CHECK_VKR(this, vkr);
 
-      GetResourceManager()->WrapResource(Unwrap(device), swapInfo.rp);
+      GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), swapInfo.rp);
       GetResourceManager()->SetInternalResource(GetResID(swapInfo.rp));
     }
 
@@ -828,7 +817,7 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
           vkr = ObjDisp(device)->CreateFence(Unwrap(device), &fenceInfo, NULL, &swapImInfo.fence);
           CHECK_VKR(this, vkr);
 
-          GetResourceManager()->WrapResource(Unwrap(device), swapImInfo.fence);
+          GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), swapImInfo.fence);
           GetResourceManager()->SetInternalResource(GetResID(swapImInfo.fence));
         }
 
@@ -839,7 +828,7 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
                                                  &swapImInfo.overlaydone);
           CHECK_VKR(this, vkr);
 
-          GetResourceManager()->WrapResource(Unwrap(device), swapImInfo.overlaydone);
+          GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), swapImInfo.overlaydone);
           GetResourceManager()->SetInternalResource(GetResID(swapImInfo.overlaydone));
         }
 
@@ -863,7 +852,7 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
           vkr = vt->CreateImageView(Unwrap(device), &info, NULL, &swapImInfo.view);
           CHECK_VKR(this, vkr);
 
-          GetResourceManager()->WrapResource(Unwrap(device), swapImInfo.view);
+          GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), swapImInfo.view);
           GetResourceManager()->SetInternalResource(GetResID(swapImInfo.view));
 
           VkFramebufferCreateInfo fbinfo = {
@@ -881,15 +870,11 @@ void WrappedVulkan::WrapAndProcessCreatedSwapchain(VkDevice device,
           vkr = vt->CreateFramebuffer(Unwrap(device), &fbinfo, NULL, &swapImInfo.fb);
           CHECK_VKR(this, vkr);
 
-          GetResourceManager()->WrapResource(Unwrap(device), swapImInfo.fb);
+          GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), swapImInfo.fb);
           GetResourceManager()->SetInternalResource(GetResID(swapImInfo.fb));
         }
       }
     }
-  }
-  else
-  {
-    GetResourceManager()->AddLiveResource(id, *pSwapChain);
   }
 }
 
@@ -1601,7 +1586,7 @@ VkResult WrappedVulkan::vkCreateDisplayPlaneSurfaceKHR(VkInstance instance,
   {
     // we must wrap surfaces to be consistent with the rest of the code and surface handling,
     // but there's nothing actually to do here - no meaningful data we care about here.
-    GetResourceManager()->WrapResource(Unwrap(instance), *pSurface);
+    GetResourceManager()->WrapResource(ResourceId(), Unwrap(instance), *pSurface);
 
     WrappedVkSurfaceKHR *wrapped = GetWrapped(*pSurface);
 
@@ -1779,7 +1764,7 @@ VkResult WrappedVulkan::vkCreateHeadlessSurfaceEXT(VkInstance instance,
   {
     // we must wrap surfaces to be consistent with the rest of the code and surface handling,
     // but there's nothing actually to do here - no meaningful data we care about here.
-    GetResourceManager()->WrapResource(Unwrap(instance), *pSurface);
+    GetResourceManager()->WrapResource(ResourceId(), Unwrap(instance), *pSurface);
 
     WrappedVkSurfaceKHR *wrapped = GetWrapped(*pSurface);
 
@@ -1836,7 +1821,7 @@ VkResult WrappedVulkan::vkCreateWin32SurfaceKHR(VkInstance instance,
 
   if(ret == VK_SUCCESS)
   {
-    GetResourceManager()->WrapResource(Unwrap(instance), *pSurface);
+    GetResourceManager()->WrapResource(ResourceId(), Unwrap(instance), *pSurface);
 
     WrappedVkSurfaceKHR *wrapped = GetWrapped(*pSurface);
 

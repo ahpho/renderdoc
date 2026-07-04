@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -30,16 +30,10 @@ RDOC_CONFIG(bool, Vulkan_Debug_MemoryAllocationLogging, false,
 
 GPUAddressRange WrappedVulkan::CreateAddressRange(VkDevice device, VkBuffer buffer)
 {
-  bool isBDA = false;
-  {
-    SCOPED_LOCK(m_DeviceAddressResourcesLock);
-    isBDA = m_DeviceAddressResources.IDs.contains(GetResID(buffer));
-  }
-
-  if(!isBDA)
+  VkResourceRecord *record = GetRecord(buffer);
+  if(!record->hasBDA)
     return {};
 
-  VkResourceRecord *record = GetRecord(buffer);
   VkResourceRecord *memrecord = GetResourceManager()->GetResourceRecord(record->baseResourceMem);
 
   const bool isSparse = record->resInfo && record->resInfo->IsSparse();
@@ -494,7 +488,7 @@ MemoryAllocation WrappedVulkan::AllocateMemoryForResource(bool buffer, VkMemoryR
       return ret;
     }
 
-    GetResourceManager()->WrapResource(Unwrap(d), chunk.mem);
+    GetResourceManager()->WrapResource(ResourceId(), Unwrap(d), chunk.mem);
 
     // push the new chunk
     blockList.push_back(chunk);
@@ -564,12 +558,19 @@ void WrappedVulkan::FreeAllMemory(MemoryScope scope)
   rdcarray<MemoryAllocation> allocs;
   allocs.swap(allocList);
 
-  m_MemoryFreeThread = Threading::CreateThread([this, d, allocs]() {
-    for(const MemoryAllocation &alloc : allocs)
-    {
-      ObjDisp(d)->FreeMemory(Unwrap(d), Unwrap(alloc.mem), NULL);
-      GetResourceManager()->ReleaseWrappedResource(alloc.mem);
-    }
+  rdcarray<VkDeviceMemory> mems;
+  mems.reserve(allocs.size());
+
+  // clean up resource manager book-keeping as this is not thread safe and is fast anyway
+  for(const MemoryAllocation &alloc : allocs)
+  {
+    mems.push_back(Unwrap(alloc.mem));
+    GetResourceManager()->ReleaseWrappedResource(alloc.mem);
+  }
+
+  m_MemoryFreeThread = Threading::CreateThread([d, mems]() {
+    for(VkDeviceMemory mem : mems)
+      ObjDisp(d)->FreeMemory(Unwrap(d), mem, NULL);
   });
 }
 

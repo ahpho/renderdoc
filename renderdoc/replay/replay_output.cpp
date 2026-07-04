@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -276,7 +276,7 @@ void ReplayOutput::RefreshOverlay()
 
   if(m_Type == ReplayOutputType::Texture && m_RenderData.texDisplay.overlay != DebugOverlay::NoOverlay)
   {
-    ResourceId id = m_pDevice->GetLiveID(m_RenderData.texDisplay.resourceId);
+    ResourceId id = m_RenderData.texDisplay.resourceId;
 
     if(id != ResourceId() && action && m_pDevice->IsRenderOutput(id))
     {
@@ -306,7 +306,6 @@ ResourceId ReplayOutput::GetCustomShaderTexID()
   {
     TextureDisplay texDisplay = m_RenderData.texDisplay;
     texDisplay.rawOutput = false;
-    texDisplay.resourceId = m_pDevice->GetLiveID(texDisplay.resourceId);
 
     m_CustomShaderResourceId = m_pDevice->ApplyCustomShader(texDisplay);
     m_pController->FatalErrorCheck();
@@ -454,7 +453,7 @@ bytebuf ReplayOutput::DrawThumbnail(int32_t width, int32_t height, ResourceId te
     disp.subresource = sub;
     disp.subresource.sample = 0;
     disp.customShaderId = ResourceId();
-    disp.resourceId = m_pDevice->GetLiveID(textureId);
+    disp.resourceId = textureId;
     disp.typeCast = typeCast;
     disp.scale = -1.0f;
     disp.rangeMin = 0.0f;
@@ -558,10 +557,10 @@ rdcpair<uint32_t, uint32_t> ReplayOutput::PickVertex(uint32_t x, uint32_t y)
   if(cfg.position.vertexResourceId == ResourceId() || cfg.position.numIndices == 0)
     return errorReturn;
 
-  cfg.position.vertexResourceId = m_pDevice->GetLiveID(cfg.position.vertexResourceId);
-  cfg.position.indexResourceId = m_pDevice->GetLiveID(cfg.position.indexResourceId);
-  cfg.second.vertexResourceId = m_pDevice->GetLiveID(cfg.second.vertexResourceId);
-  cfg.second.indexResourceId = m_pDevice->GetLiveID(cfg.second.indexResourceId);
+  cfg.position.vertexResourceId = cfg.position.vertexResourceId;
+  cfg.position.indexResourceId = cfg.position.indexResourceId;
+  cfg.second.vertexResourceId = cfg.second.vertexResourceId;
+  cfg.second.indexResourceId = cfg.second.indexResourceId;
 
   // input data either doesn't vary with instance, or is trivial (all verts the same for that
   // element), so only care about fetching the right instance for post-VS stages
@@ -760,8 +759,6 @@ void ReplayOutput::DisplayContext()
   disp.xOffset += w / 2.0f;
   disp.yOffset += h / 2.0f;
 
-  disp.resourceId = m_pDevice->GetLiveID(disp.resourceId);
-
   m_pDevice->RenderTexture(disp);
   m_pController->FatalErrorCheck();
 
@@ -871,7 +868,7 @@ void ReplayOutput::Display()
     disp.subresource = m_Thumbnails[i].sub;
     disp.subresource.sample = 0;
     disp.customShaderId = ResourceId();
-    disp.resourceId = m_pDevice->GetLiveID(m_Thumbnails[i].texture);
+    disp.resourceId = m_Thumbnails[i].texture;
     disp.typeCast = m_Thumbnails[i].typeCast;
     disp.scale = -1.0f;
     disp.rangeMin = 0.0f;
@@ -917,7 +914,6 @@ void ReplayOutput::DisplayTex()
 
   TextureDisplay texDisplay = m_RenderData.texDisplay;
   texDisplay.rawOutput = false;
-  texDisplay.resourceId = m_pDevice->GetLiveID(texDisplay.resourceId);
 
   if(m_RenderData.texDisplay.overlay != DebugOverlay::NoOverlay && action)
   {
@@ -942,7 +938,7 @@ void ReplayOutput::DisplayTex()
     m_CustomShaderResourceId = m_pDevice->ApplyCustomShader(texDisplay);
     m_pController->FatalErrorCheck();
 
-    texDisplay.resourceId = m_pDevice->GetLiveID(m_CustomShaderResourceId);
+    texDisplay.resourceId = m_CustomShaderResourceId;
     texDisplay.typeCast = CompType::Typeless;
     texDisplay.customShaderId = ResourceId();
     texDisplay.subresource.slice = 0;
@@ -968,13 +964,13 @@ void ReplayOutput::DisplayTex()
   m_pDevice->RenderTexture(texDisplay);
   m_pController->FatalErrorCheck();
 
-  ResourceId id = m_pDevice->GetLiveID(m_RenderData.texDisplay.resourceId);
+  ResourceId id = m_RenderData.texDisplay.resourceId;
 
   if(m_RenderData.texDisplay.overlay != DebugOverlay::NoOverlay && action &&
      m_pDevice->IsRenderOutput(id) && m_RenderData.texDisplay.overlay != DebugOverlay::NaN &&
      m_RenderData.texDisplay.overlay != DebugOverlay::Clipping && m_OverlayResourceId != ResourceId())
   {
-    texDisplay.resourceId = m_pDevice->GetLiveID(m_OverlayResourceId);
+    texDisplay.resourceId = m_OverlayResourceId;
     texDisplay.red = texDisplay.green = texDisplay.blue = texDisplay.alpha = true;
     texDisplay.rawOutput = false;
     texDisplay.overlay = m_RenderData.texDisplay.overlay;
@@ -1035,10 +1031,6 @@ void ReplayOutput::DisplayMesh()
   m_pController->FatalErrorCheck();
 
   MeshDisplay mesh = m_RenderData.meshDisplay;
-  mesh.position.vertexResourceId = m_pDevice->GetLiveID(mesh.position.vertexResourceId);
-  mesh.position.indexResourceId = m_pDevice->GetLiveID(mesh.position.indexResourceId);
-  mesh.second.vertexResourceId = m_pDevice->GetLiveID(mesh.second.vertexResourceId);
-  mesh.second.indexResourceId = m_pDevice->GetLiveID(mesh.second.indexResourceId);
 
   rdcarray<MeshFormat> secondaryDraws;
 

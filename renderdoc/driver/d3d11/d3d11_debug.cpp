@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -1004,6 +1004,15 @@ void D3D11Replay::GeneralMisc::Init(WrappedID3D11Device *device)
   if(FAILED(hr))
     RDCERR("Failed to create default rasterizer state HRESULT: %s", ToStr(hr).c_str());
 
+  rastDesc.DepthClipEnable = TRUE;
+
+  hr = device->CreateRasterizerState(&rastDesc, &RasterClipState);
+
+  if(FAILED(hr))
+    RDCERR("Failed to create depthclip rasterizer state HRESULT: %s", ToStr(hr).c_str());
+
+  rastDesc.DepthClipEnable = FALSE;
+
   rastDesc.ScissorEnable = TRUE;
 
   hr = device->CreateRasterizerState(&rastDesc, &RasterScissorState);
@@ -1024,6 +1033,7 @@ void D3D11Replay::GeneralMisc::Init(WrappedID3D11Device *device)
 void D3D11Replay::GeneralMisc::Release()
 {
   SAFE_RELEASE(RasterState);
+  SAFE_RELEASE(RasterClipState);
   SAFE_RELEASE(RasterScissorState);
 
   SAFE_RELEASE(FullscreenVS);

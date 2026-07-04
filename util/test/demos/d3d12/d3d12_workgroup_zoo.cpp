@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2025-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -60,7 +60,7 @@ void SetOutput(float4 val)
 
 void Init(float4 val)
 {
-  flatId = WaveGetLaneIndex();
+  flatId = tid.z * GROUP_SIZE_X * GROUP_SIZE_Y + tid.y * GROUP_SIZE_X + tid.x;
   gsmUint4[flatId].xyz = tid;
   gsmUint4[flatId].z = tid.x;
   SetOutput(val);
@@ -138,8 +138,8 @@ float4 ComplexPartialReconvergence(uint id)
   return result;
 }
 
-[numthreads(GROUP_SIZE_X, GROUP_SIZE_Y, 1)]
-void main(uint3 inTid : SV_DispatchThreadID)
+[numthreads(GROUP_SIZE_X, GROUP_SIZE_Y, GROUP_SIZE_Z)]
+void main(uint3 inTid : SV_GroupThreadID)
 {
   tid = inTid;
   float4 testResult = 0.0f.xxxx;
@@ -425,6 +425,7 @@ void main(uint3 inTid : SV_DispatchThreadID)
         for(int i = 0; i < numCompTests; i++)
         {
           cmd->SetComputeRoot32BitConstant(0, i, 0);
+          cmd->SetComputeRoot32BitConstant(0, i + 1, 1);
           cmd->Dispatch(2, 1, 1);
         }
 

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2022-2025 Baldur Karlsson
+ * Copyright (c) 2022-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -50,8 +50,7 @@ bool WrappedMTLLibrary::Serialise_newFunctionWithName(SerialiserType &ser,
   {
     MTL::Function *realMTLFunction = Unwrap(Library)->newFunction(FunctionName);
     WrappedMTLFunction *wrappedMTLFunction;
-    GetResourceManager()->WrapResource(realMTLFunction, wrappedMTLFunction);
-    GetResourceManager()->AddLiveResource(Function, wrappedMTLFunction);
+    GetResourceManager()->WrapResource(ResourceId(), realMTLFunction, wrappedMTLFunction);
     m_Device->AddResource(Function, ResourceType::Shader, "Function");
     m_Device->DerivedResource(Library, Function);
   }
@@ -64,7 +63,8 @@ WrappedMTLFunction *WrappedMTLLibrary::newFunctionWithName(NS::String *functionN
   SERIALISE_TIME_CALL(realMTLFunction = Unwrap(this)->newFunction(functionName));
 
   WrappedMTLFunction *wrappedMTLFunction;
-  ResourceId id = GetResourceManager()->WrapResource(realMTLFunction, wrappedMTLFunction);
+  ResourceId id =
+      GetResourceManager()->WrapResource(ResourceId(), realMTLFunction, wrappedMTLFunction);
 
   if(IsCaptureMode(m_State))
   {

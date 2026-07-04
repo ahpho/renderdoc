@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2017-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -304,9 +304,9 @@ public:
             if(mod.unboundPS)
             {
               if(!m_IsDepth)
-                return tr("No Pixel\nShader\nBound\n\n");
+                return tr("No Pixel\nShader\nOutput\n\n");
               else
-                return tr("No Pixel Shader Bound\n\n") + modString(mod.shaderOut);
+                return tr("No Pixel Shader Output\n\n") + modString(mod.shaderOut);
             }
             if(mod.directShaderWrite)
               return tr("Tex Before\n\n") + modString(mod.preMod);
@@ -666,12 +666,13 @@ PixelHistoryView::PixelHistoryView(ICaptureContext &ctx, ResourceId id, QPoint p
     channelStr = lit("Alpha");
 
   QString text;
-  text = tr("Preview colours displayed in visible range %1 - %2 with %3 visible.\n\n")
-             .arg(Formatter::Format(display.rangeMin))
-             .arg(Formatter::Format(display.rangeMax))
-             .arg(channelStr);
+
+  text += tr("Preview colours displayed in visible range %1 - %2 with %3 visible.<br><br>")
+              .arg(Formatter::Format(display.rangeMin))
+              .arg(Formatter::Format(display.rangeMax))
+              .arg(channelStr);
   text +=
-      tr("Double click to jump to an event.\n"
+      tr("Double click to jump to an event.<br>"
          "Right click to debug an event, or hide failed events.");
 
   ui->label->setText(text);
@@ -715,6 +716,16 @@ PixelHistoryView::~PixelHistoryView()
   ui->events->setModel(NULL);
   m_Ctx.RemoveCaptureViewer(this);
   delete ui;
+}
+
+void PixelHistoryView::SetFailedDebug()
+{
+  QString text = ui->label->text();
+  text = tr("<b>Pixel shader debug failed</b> - most likely this is caused by no write to the "
+            "pixel at the current event.<br>"
+            "Displaying pixel history to find the event which did write.<br><br>") +
+         text;
+  ui->label->setText(text);
 }
 
 void PixelHistoryView::enableTimelineHighlight()

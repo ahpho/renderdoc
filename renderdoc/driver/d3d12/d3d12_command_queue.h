@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -148,7 +148,7 @@ struct WrappedDownlevelQueue : public ID3D12CommandQueueDownlevel
 
 class WrappedID3D12GraphicsCommandList;
 
-class WrappedID3D12CommandQueue : public ID3D12CommandQueue,
+class WrappedID3D12CommandQueue : public ID3D12CommandQueue1,
                                   public RefCounter12<ID3D12CommandQueue>,
                                   public ID3DDevice,
                                   public IDXGISwapper
@@ -156,6 +156,7 @@ class WrappedID3D12CommandQueue : public ID3D12CommandQueue,
   friend class WrappedID3D12GraphicsCommandList;
 
   ID3D12CommandQueueDownlevel *m_pDownlevel;
+  ID3D12CommandQueue1 *m_pReal1;
 
   WrappedDownlevelQueue m_WrappedDownlevel;
 
@@ -172,16 +173,17 @@ class WrappedID3D12CommandQueue : public ID3D12CommandQueue,
   CaptureState &m_State;
 
   // tracking ray dispatches that are pending during capture, to free them once the execution is finished
-  ID3D12Fence *m_RayFence = NULL;
+  ID3D12Fence *m_CallbackFence = NULL;
   UINT64 m_RayFenceValue = 1;
   rdcarray<PatchedRayDispatch::Resources> m_RayDispatchesPending;
 
-  ID3D12Fence *GetRayFence();
+  ID3D12Fence *GetCallbackFence();
 
   bool m_MarkedActive = false;
 
   WrappedID3D12DebugCommandQueue m_WrappedDebug;
   WrappedID3D12CompatibilityQueue m_WrappedCompat;
+  WrappedID3D12SharingContract m_SharingContract;
 
   rdcarray<D3D12ResourceRecord *> m_CmdListRecords;
   rdcarray<D3D12ResourceRecord *> m_CmdListAllocators;
@@ -213,7 +215,7 @@ class WrappedID3D12CommandQueue : public ID3D12CommandQueue,
 public:
   ALLOCATE_WITH_WRAPPED_POOL(WrappedID3D12CommandQueue);
 
-  WrappedID3D12CommandQueue(ID3D12CommandQueue *real, WrappedID3D12Device *device,
+  WrappedID3D12CommandQueue(ResourceId id, ID3D12CommandQueue *real, WrappedID3D12Device *device,
                             CaptureState &state);
   virtual ~WrappedID3D12CommandQueue();
 
@@ -235,6 +237,11 @@ public:
 
   void CheckAndFreeRayDispatches();
 
+  template <typename SerialiserType>
+  bool Serialise_SetQueueAnnotation(SerialiserType &ser, rdcstr key,
+                                    RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                    RENDERDOC_AnnotationValue value);
+
   RDResult ReplayLog(CaptureState readType, uint32_t startEventID, uint32_t endEventID, bool partial);
   void SetFrameReader(StreamReader *reader) { m_FrameReader = reader; }
   D3D12CommandData *GetCommandData() { return &m_Cmd; }
@@ -244,16 +251,19 @@ public:
   virtual IID GetBackbufferUUID() { return __uuidof(ID3D12Resource); }
   virtual bool IsDeviceUUID(REFIID iid)
   {
-    return iid == __uuidof(ID3D12CommandQueue) ? true : false;
+    if(iid == __uuidof(ID3D12CommandQueue) || iid == __uuidof(ID3D12CommandQueue1))
+      return true;
+
+    return m_pDevice->IsDeviceUUID(iid);
   }
   virtual IUnknown *GetDeviceInterface(REFIID iid)
   {
     if(iid == __uuidof(ID3D12CommandQueue))
       return (ID3D12CommandQueue *)this;
+    if(iid == __uuidof(ID3D12CommandQueue1))
+      return (ID3D12CommandQueue1 *)this;
 
-    RDCERR("Requested unknown device interface %s", ToStr(iid).c_str());
-
-    return NULL;
+    return m_pDevice->GetDeviceInterface(iid);
   }
   // the rest forward to the device
   virtual void *GetFrameCapturerDevice() { return m_pDevice->GetFrameCapturerDevice(); }
@@ -408,6 +418,35 @@ public:
   virtual HRESULT STDMETHODCALLTYPE Present(ID3D12GraphicsCommandList *pOpenCommandList,
                                             ID3D12Resource *pSourceTex2D, HWND hWindow,
                                             D3D12_DOWNLEVEL_PRESENT_FLAGS Flags);
+
+  // implement ID3D12CommandQueue1
+  virtual HRESULT STDMETHODCALLTYPE SetProcessPriority(D3D12_COMMAND_QUEUE_PROCESS_PRIORITY Priority)
+  {
+    if(!m_pReal1)
+      return E_NOINTERFACE;
+    return m_pReal1->SetProcessPriority(Priority);
+  }
+
+  virtual HRESULT STDMETHODCALLTYPE GetProcessPriority(D3D12_COMMAND_QUEUE_PROCESS_PRIORITY *pOutValue)
+  {
+    if(!m_pReal1)
+      return E_NOINTERFACE;
+    return m_pReal1->GetProcessPriority(pOutValue);
+  }
+
+  virtual HRESULT STDMETHODCALLTYPE SetGlobalPriority(D3D12_COMMAND_QUEUE_GLOBAL_PRIORITY Priority)
+  {
+    if(!m_pReal1)
+      return E_NOINTERFACE;
+    return m_pReal1->SetGlobalPriority(Priority);
+  }
+
+  virtual HRESULT STDMETHODCALLTYPE GetGlobalPriority(D3D12_COMMAND_QUEUE_GLOBAL_PRIORITY *pOutValue)
+  {
+    if(!m_pReal1)
+      return E_NOINTERFACE;
+    return m_pReal1->GetGlobalPriority(pOutValue);
+  }
 };
 
 template <>

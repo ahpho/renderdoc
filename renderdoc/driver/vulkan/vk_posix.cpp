@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -278,6 +278,17 @@ static rdcstr GenerateJSON(const rdcstr &sopath)
            json.substr(idx + sizeof(enableVarString) - 1);
 
     idx = json.find(enableVarString);
+  }
+
+  const char layerNameString[] = "@VULKAN_LAYER_NAME@";
+
+  idx = json.find(layerNameString);
+  while(idx >= 0)
+  {
+    json = json.substr(0, idx) + "VK_LAYER_" + strupper(VulkanLayerJSONBasename) + "_Capture" +
+           json.substr(idx + sizeof(layerNameString) - 1);
+
+    idx = json.find(layerNameString);
   }
 
   return json;

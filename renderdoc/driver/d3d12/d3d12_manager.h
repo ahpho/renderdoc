@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -398,9 +398,6 @@ public:
   D3D12_GPU_DESCRIPTOR_HANDLE GetGPU() const;
   PortableHandle GetPortableHandle() const;
 
-  // these IDs are the live IDs during replay, not the original IDs. Treat them as if you called
-  // GetResID(resource).
-  //
   // descriptor heap itself
   ResourceId GetHeapResourceId() const;
   //
@@ -717,7 +714,9 @@ struct D3D12InitialContents
     // for created initial states we always have an identical resource
     ForceCopy,
     // for handling acceleration structures
-    AccelerationStructure
+    AccelerationStructure,
+    // for sparse buffers with no contents
+    SparseOnly,
   };
   D3D12InitialContents(D3D12Descriptor *d, uint32_t n) : D3D12InitialContents()
   {
@@ -1272,8 +1271,8 @@ public:
                                               UINT64 ArgumentBufferOffset,
                                               ID3D12Resource *pCountBuffer, UINT64 CountBufferOffset);
 
-  void AddPendingASBuilds(ID3D12Fence *fence, UINT64 waitValue,
-                          const rdcarray<std::function<bool()>> &callbacks);
+  void AddPendingCallbacks(ID3D12Fence *fence, UINT64 waitValue,
+                           const rdcarray<std::function<bool()>> &callbacks);
   void TickASManagement();
 
   // this disk cache is primarily single threaded - either the disk cache thread owns
@@ -1355,7 +1354,7 @@ private:
   void InitReplayBlasPatchingResources();
 
   void CheckASCaching();
-  void CheckPendingASBuilds();
+  void CheckPendingCallbacks();
 
   void CopyFromVA(ID3D12GraphicsCommandList4 *unwrappedCmd, ID3D12Resource *dstRes,
                   uint64_t dstOffset, D3D12_GPU_VIRTUAL_ADDRESS sourceVA, uint64_t byteSize);
@@ -1427,14 +1426,14 @@ private:
 
   uint32_t GetFreeQuery();
 
-  struct PendingASBuild
+  struct PendingCallbacks
   {
     ID3D12Fence *fence;
     UINT64 fenceValue;
     std::function<bool()> callback;
   };
-  Threading::CriticalSection m_PendingASBuildsLock;
-  rdcarray<PendingASBuild> m_PendingASBuilds;
+  Threading::CriticalSection m_PendingCallbacksLock;
+  rdcarray<PendingCallbacks> m_PendingCallbacks;
 };
 
 struct D3D12ResourceManagerConfiguration
@@ -1457,15 +1456,9 @@ public:
   ~D3D12ResourceManager() { SAFE_DELETE(m_RTManager); }
 
   template <class T>
-  T *GetLiveAs(ResourceId id, bool optional = false)
+  T *GetResAs(ResourceId id, bool optional = false)
   {
-    return (T *)GetLiveResource(id, optional);
-  }
-
-  template <class T>
-  T *GetCurrentAs(ResourceId id)
-  {
-    return (T *)GetCurrentResource(id);
+    return (T *)GetResource(id, optional);
   }
 
   template <typename D3D12Type>
@@ -1485,6 +1478,44 @@ public:
   D3D12RTManager *GetRTManager() const { return m_RTManager; }
 
   D3D12GpuBufferAllocator &GetGPUBufferAllocator() { return m_GPUBufferAllocator; }
+
+  void AddPlacedResource(ResourceId resId, ResourceId heapId)
+  {
+    SCOPED_LOCK(m_PlacedLock);
+    m_PlacedHeapForResource[resId] = heapId;
+  }
+
+  void RemovePlacedResource(ResourceId resId)
+  {
+    SCOPED_LOCK(m_PlacedLock);
+    m_PlacedHeapForResource.erase(resId);
+  }
+
+  ResourceId GetPlacedHeapForResource(ResourceId resId)
+  {
+    SCOPED_LOCK(m_PlacedLock);
+    auto it = m_PlacedHeapForResource.find(resId);
+    if(it == m_PlacedHeapForResource.end())
+      return ResourceId();
+    return it->second;
+  }
+
+  template <typename Compose>
+  void MarkResourceFrameReferenced(ResourceId id, FrameRefType refType, Compose comp)
+  {
+    ResourceManager::MarkResourceFrameReferenced(id, refType, comp);
+    ResourceId id2 = GetPlacedHeapForResource(id);
+    if(id2 != ResourceId())
+      ResourceManager::MarkResourceFrameReferenced(id2, refType, comp);
+  }
+
+  inline void MarkResourceFrameReferenced(ResourceId id, FrameRefType refType)
+  {
+    ResourceManager::MarkResourceFrameReferenced(id, refType);
+    ResourceId id2 = GetPlacedHeapForResource(id);
+    if(id2 != ResourceId())
+      ResourceManager::MarkResourceFrameReferenced(id2, refType);
+  }
 
   template <typename SerialiserType>
   void SerialiseResourceStates(SerialiserType &ser, BarrierSet &barriers,
@@ -1516,6 +1547,9 @@ private:
   WrappedID3D12Device *m_Device;
   D3D12RTManager *m_RTManager;
   D3D12GpuBufferAllocator m_GPUBufferAllocator;
+
+  Threading::CriticalSection m_PlacedLock;
+  std::unordered_map<ResourceId, ResourceId> m_PlacedHeapForResource;
 
   // dummy handle to use - starting from near highest valid pointer to minimise risk of overlap with real handles
   static const uint64_t FirstDummyHandle = UINTPTR_MAX - 1024;

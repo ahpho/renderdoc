@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32,9 +32,6 @@
 #include "replay/replay_driver.h"
 #include "dxbc_bytecode.h"
 #include "dxbc_container.h"
-
-RDOC_DEBUG_CONFIG(bool, D3D_Hack_EnableGroups, false,
-                  "Work in progress allow shaders to be debugged with workgroup requirements.");
 
 using namespace DXBCBytecode;
 using namespace DXDebug;
@@ -1748,6 +1745,11 @@ void FlattenSingleVariable(const rdcstr &cbufferName, uint32_t byteOffset, const
     // source mapping.
     // We should not overlap into the next register as that's not allowed.
     memcpy(&outvars[outIdx].value.u32v[outComp], &v.value.u32v[0], sizeof(uint32_t) * v.columns);
+    uint32_t oldColumns = outvars[outIdx].columns;
+    uint32_t newColumns = (uint32_t)(outComp + v.columns);
+    uint32_t numColumns = RDCMAX(oldColumns, newColumns);
+    numColumns = RDCMIN(4U, numColumns);
+    outvars[outIdx].columns = (uint8_t)numColumns;
 
     SourceVariableMapping mapping;
     mapping.name = basename;
@@ -1773,14 +1775,14 @@ void FlattenSingleVariable(const rdcstr &cbufferName, uint32_t byteOffset, const
     {
       outvars[outIdx + reg].rows = 1;
       outvars[outIdx + reg].type = VarType::Unknown;
-      outvars[outIdx + reg].columns = v.columns;
+      outvars[outIdx + reg].columns = v.columns + (uint8_t)outComp;
       outvars[outIdx + reg].flags = v.flags;
     }
 
     if(v.RowMajor())
     {
       for(size_t ri = 0; ri < v.rows; ri++)
-        memcpy(&outvars[outIdx + ri].value.u32v[0], &v.value.u32v[ri * v.columns],
+        memcpy(&outvars[outIdx + ri].value.u32v[outComp], &v.value.u32v[ri * v.columns],
                sizeof(uint32_t) * v.columns);
     }
     else
@@ -3061,9 +3063,6 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
                DDY(op.operation == OPCODE_DERIV_RTY_FINE, prevWorkgroup, op.operands[1], op));
       break;
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////
-    // Buffer/Texture load and store
-
     // handle atomic operations all together
     case OPCODE_ATOMIC_IADD:
     case OPCODE_ATOMIC_IMAX:
@@ -3252,6 +3251,9 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
 
       break;
     }
+
+    /////////////////////////////////////////////////////////////////////////////////////////////////////
+    // Buffer/Texture load and store
 
     // store and load paths are mostly identical
     case OPCODE_STORE_UAV_TYPED:
@@ -4179,7 +4181,8 @@ void ThreadState::StepNext(ShaderDebugState *state, DebugAPIWrapper *apiWrapper,
                                            op.str.c_str(), lookupResult))
       {
         // should be a better way of doing this
-        if(destOperand.comps[1] == 0xff)
+        // LOD result is already in result.x
+        if((destOperand.comps[1] == 0xff) && (op.operation != OPCODE_LOD))
           lookupResult.value.s32v[0] = lookupResult.value.s32v[destOperand.comps[0]];
 
         SetDst(state, destOperand, op, lookupResult);
@@ -4879,8 +4882,7 @@ ShaderDebugTrace *InterpretDebugger::BeginDebug(const DXBC::DXBCContainer *dxbcC
   if(dxbc->m_Type == DXBC::ShaderType::Compute &&
      dxbcContainer->GetThreadScope() == DXBC::ThreadScope::Workgroup)
   {
-    if(D3D_Hack_EnableGroups())
-      workgroupSize = numthreads[0] * numthreads[1] * numthreads[2];
+    workgroupSize = numthreads[0] * numthreads[1] * numthreads[2];
   }
 
   for(int i = 0; i < workgroupSize; i++)

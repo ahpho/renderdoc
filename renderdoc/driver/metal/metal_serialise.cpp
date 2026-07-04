@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2022-2025 Baldur Karlsson
+ * Copyright (c) 2022-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -47,7 +47,7 @@ void DoSerialiseViaResourceId(SerialiserType &ser, type &el)
   if(ser.IsWriting() && rm)
     id = GetResID(el);
   if(ser.IsStructurising() && rm)
-    id = rm->GetOriginalID(GetResID(el));
+    id = GetResID(el);
 
   DoSerialise(ser, id);
 
@@ -59,10 +59,10 @@ void DoSerialiseViaResourceId(SerialiserType &ser, type &el)
     {
       if(id != ResourceId() && rm)
       {
-        if(rm->HasLiveResource(id))
+        if(rm->HasResource(id))
         {
           // we leave this wrapped.
-          el = (type)rm->GetLiveResource(id);
+          el = (type)rm->GetResource(id);
         }
       }
     }

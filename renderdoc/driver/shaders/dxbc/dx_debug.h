@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2024-2025 Baldur Karlsson
+ * Copyright (c) 2024-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,14 +29,14 @@
 
 namespace DXBC
 {
-enum ResourceRetType;
+enum ResourceRetType : uint8_t;
 enum class InterpolationMode : uint8_t;
 class DXBCContainer;
 };
 
 namespace DXBCBytecode
 {
-enum ResourceDimension;
+enum ResourceDimension : uint8_t;
 enum SamplerMode;
 };
 
@@ -87,7 +87,7 @@ struct CSLaneData
   uint32_t pad2[2];
 
   uint32_t threadid[3];
-  uint32_t pad;
+  uint32_t activeSubgroup;
 };
 
 struct DebugHit
@@ -178,10 +178,13 @@ struct InputFetcherConfig
   uint32_t vert = 0, inst = 0;
 
   rdcfixedarray<uint32_t, 3> threadid = {0, 0, 0};
+  rdcfixedarray<uint32_t, 3> groupid = {0, 0, 0};
 
   uint32_t uavslot = 0;
   uint32_t uavspace = 0;
   uint32_t maxWaveSize = 64;
+  uint32_t groupSize = 0;
+  uint32_t fetchWorkgroup = 0;
   bool waveOps = false;
   uint32_t outputSampleCount = 1;
 };

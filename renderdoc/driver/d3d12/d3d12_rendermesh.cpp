@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -204,6 +204,7 @@ MeshDisplayPipelines D3D12DebugManager::CacheMeshDisplayPipelines(const MeshForm
   RDCASSERTEQUAL(hr, S_OK);
 
   pipeDesc.DepthStencilState.DepthEnable = TRUE;
+  pipeDesc.RasterizerState.DepthClipEnable = TRUE;
   pipeDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
   pipeDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
 
@@ -245,7 +246,9 @@ MeshDisplayPipelines D3D12DebugManager::CacheMeshDisplayPipelines(const MeshForm
 void D3D12Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secondaryDraws,
                              const MeshDisplay &cfg)
 {
-  if(cfg.position.vertexResourceId == ResourceId() || cfg.position.numIndices == 0)
+  if(cfg.position.vertexResourceId == ResourceId() ||
+     !m_pDevice->GetResourceManager()->HasResource(cfg.position.vertexResourceId) ||
+     cfg.position.numIndices == 0)
     return;
 
   auto it = m_OutputWindows.find(m_CurrentOutputWindow);
@@ -274,7 +277,11 @@ void D3D12Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secon
 
   MeshVertexCBuffer vertexData;
 
-  Matrix4f projMat = Matrix4f::Perspective(90.0f, 0.1f, 100000.0f, viewport.Width / viewport.Height);
+  float nearPlane = cfg.cam ? ((Camera *)cfg.cam)->GetNear() : 0.1f;
+  float farPlane = cfg.cam ? ((Camera *)cfg.cam)->GetFar() : 100000.0f;
+
+  Matrix4f projMat =
+      Matrix4f::Perspective(90.0f, nearPlane, farPlane, viewport.Width / viewport.Height);
   Matrix4f InvProj = projMat.Inverse();
 
   Matrix4f camMat = cfg.cam ? ((Camera *)cfg.cam)->GetMatrix() : Matrix4f::Identity();
@@ -343,7 +350,8 @@ void D3D12Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secon
     {
       const MeshFormat &fmt = secondaryDraws[i];
 
-      if(fmt.vertexResourceId != ResourceId())
+      if(fmt.vertexResourceId != ResourceId() &&
+         m_pDevice->GetResourceManager()->HasResource(fmt.vertexResourceId))
       {
         MeshDisplayPipelines secondaryCache =
             GetDebugManager()->CacheMeshDisplayPipelines(secondaryDraws[i], secondaryDraws[i]);
@@ -365,7 +373,7 @@ void D3D12Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secon
         list->SetPipelineState(secondaryCache.pipes[MeshDisplayPipelines::ePipe_WireDepth]);
 
         ID3D12Resource *vb =
-            m_pDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(fmt.vertexResourceId);
+            m_pDevice->GetResourceManager()->GetResAs<ID3D12Resource>(fmt.vertexResourceId);
 
         UINT64 offs = fmt.vertexByteOffset;
         D3D12_VERTEX_BUFFER_VIEW view;
@@ -385,7 +393,7 @@ void D3D12Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secon
         if(fmt.indexByteStride)
         {
           ID3D12Resource *ib =
-              m_pDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(fmt.indexResourceId);
+              m_pDevice->GetResourceManager()->GetResAs<ID3D12Resource>(fmt.indexResourceId);
 
           if(ib)
           {
@@ -417,7 +425,7 @@ void D3D12Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secon
     D3D12MarkerRegion::Set(list, "Primary");
 
     ID3D12Resource *vb =
-        m_pDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(cfg.position.vertexResourceId);
+        m_pDevice->GetResourceManager()->GetResAs<ID3D12Resource>(cfg.position.vertexResourceId);
 
     UINT64 offs = cfg.position.vertexByteOffset;
 
@@ -452,7 +460,7 @@ void D3D12Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secon
     D3D12MarkerRegion::Set(list, "Secondary");
 
     ID3D12Resource *vb =
-        m_pDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(cfg.position.vertexResourceId);
+        m_pDevice->GetResourceManager()->GetResAs<ID3D12Resource>(cfg.position.vertexResourceId);
 
     UINT64 offs = cfg.second.vertexByteOffset;
 
@@ -536,7 +544,7 @@ void D3D12Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secon
     if(cfg.position.indexByteStride)
     {
       ID3D12Resource *ib =
-          m_pDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(cfg.position.indexResourceId);
+          m_pDevice->GetResourceManager()->GetResAs<ID3D12Resource>(cfg.position.indexResourceId);
 
       if(ib)
       {
@@ -586,7 +594,7 @@ void D3D12Replay::RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secon
     if(cfg.position.indexByteStride)
     {
       ID3D12Resource *ib =
-          m_pDevice->GetResourceManager()->GetCurrentAs<ID3D12Resource>(cfg.position.indexResourceId);
+          m_pDevice->GetResourceManager()->GetResAs<ID3D12Resource>(cfg.position.indexResourceId);
 
       if(ib)
       {

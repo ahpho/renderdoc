@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -580,7 +580,7 @@ struct OutputMerger
   bool stencilReadOnly = false;
 };
 
-DOCUMENT("Describes the current state of predicated rendering.");
+DOCUMENT("Describes the current state of D3D11 predicated rendering.");
 struct Predication
 {
   DOCUMENT("");

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2017-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -440,6 +440,32 @@ the most significant parameters are shown.
 )");
   virtual void SetEmptyRegionsVisible(bool show) = 0;
 
+  DOCUMENT(R"(Sets the current annotation key path. This will not display the annotation column if
+it is not already visible.
+
+:param str annotationPath: The new annotation path.
+)");
+  virtual void SetHighlightedAnnotation(const rdcstr &annotationPath) = 0;
+
+  DOCUMENT(R"(Returns the current annotation key path as being highlighted in the annotation column.
+
+:return: The current annotation path.
+:rtype: str
+)");
+  virtual rdcstr GetHighlightedAnnotation() = 0;
+
+  DOCUMENT(R"(Sets whether or not the duration column is visible.
+
+:param bool show: If the duration column should be shown.
+)");
+  virtual void SetDurationColumnVisible(bool show) = 0;
+
+  DOCUMENT(R"(Sets whether or not the annotation column is visible.
+
+:param bool show: If the duration column should be shown.
+)");
+  virtual void SetAnnotationColumnVisible(bool show) = 0;
+
 protected:
   IEventBrowser() = default;
   ~IEventBrowser() = default;
@@ -477,6 +503,36 @@ protected:
 };
 
 DECLARE_REFLECTION_STRUCT(IAPIInspector);
+
+DOCUMENT(R"(The annotation viewer window.
+
+This window is retrieved by calling :meth:`CaptureContext.GetAnnotationViewer`.
+)");
+struct IAnnotationViewer
+{
+  DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`AnnotationViewer` if PySide2 is available, or otherwise
+returns a unique opaque pointer that can be passed back to any RenderDoc functions expecting a
+QWidget.
+
+:return: Return the widget handle, either a PySide2 handle or an opaque handle.
+:rtype: QWidget
+)");
+  virtual QWidget *Widget() = 0;
+
+  DOCUMENT(R"(Expand the annotation view to reveal a given path and select it.
+
+If the path does not exist, this will do nothing.
+
+:param str keyPath: The key path to the annotation.
+)");
+  virtual void RevealAnnotation(const rdcstr &keyPath) = 0;
+
+protected:
+  IAnnotationViewer() = default;
+  ~IAnnotationViewer() = default;
+};
+
+DECLARE_REFLECTION_STRUCT(IAnnotationViewer);
 
 DOCUMENT(R"(Specifies a pipeline stage for the :class:`PipelineStateViewer`.
 
@@ -1389,6 +1445,11 @@ QWidget.
 :param List[renderdoc.PixelModification] history: A list of pixel events to display.
 )");
   virtual void SetHistory(const rdcarray<PixelModification> &history) = 0;
+
+  DOCUMENT(R"(Indicates that the pixel history was launched as a result of failing to debug a shader,
+so a message will be displayed to explain.
+)");
+  virtual void SetFailedDebug() = 0;
 
 protected:
   IPixelHistoryView() = default;
@@ -2415,6 +2476,36 @@ If no bookmark exists, this function will do nothing.
 )");
   virtual void RemoveBookmark(uint32_t eventId) = 0;
 
+  DOCUMENT(R"(Stores the dependent file data into the capture i.e. shader debug files.
+
+This reads the contents of the dependent files and stores their file contents into the capture.
+This can help the capture to be more portable by embedding all externally referenced dependent files.
+Use :meth:`RemoveDependentFiles` to remove the embedded file data.
+
+.. warning::
+  Will remove all the existing embedded file data from the capture.
+  Will directly modify the capture file on disk.
+
+.. note::
+  This will increase the size of the capture file.
+  Externally referenced files which can't be found on disk are skipped.
+  For remote replay the modifications are performed on the remote machine and copied back to the local host.
+)");
+  virtual void EmbedDependentFiles() = 0;
+
+  DOCUMENT(R"(Removes the dependent files storage from the capture i.e. shader debug files.
+
+The files will be still be considered to be referenced by the capture and could be re-embedded 
+by calling :meth:`EmbedDependentFiles`.
+
+.. warning::
+  Will directly modify the capture file on disk.
+
+.. note::
+  For remote replay the modifications are performed on the remote machine and copied back to the local host.
+)");
+  virtual void RemoveDependentFiles() = 0;
+
   DOCUMENT(R"(Registers a delayed callback to be called after a certain number of milliseconds
 on the UI thread.
 
@@ -2443,6 +2534,13 @@ on the UI thread.
 :rtype: APIInspector
 )");
   virtual IAPIInspector *GetAPIInspector() = 0;
+
+  DOCUMENT(R"(Retrieve the current singleton :class:`AnnotationViewer`.
+
+:return: The current window, which is created (but not shown) it there wasn't one open.
+:rtype: AnnotationViewer
+)");
+  virtual IAnnotationViewer *GetAnnotationViewer() = 0;
 
   DOCUMENT(R"(Retrieve the current singleton :class:`TextureViewer`.
 
@@ -2542,6 +2640,13 @@ on the UI thread.
 )");
   virtual bool HasAPIInspector() = 0;
 
+  DOCUMENT(R"(Check if there is a current :class:`AnnotationViewer` open.
+
+:return: ``True`` if there is a window open.
+:rtype: bool
+)");
+  virtual bool HasAnnotationViewer() = 0;
+
   DOCUMENT(R"(Check if there is a current :class:`TextureViewer` open.
 
 :return: ``True`` if there is a window open.
@@ -2630,6 +2735,9 @@ on the UI thread.
   virtual void ShowEventBrowser() = 0;
   DOCUMENT("Raise the current :class:`APIInspector`, showing it in the default place if needed.");
   virtual void ShowAPIInspector() = 0;
+  DOCUMENT(
+      "Raise the current :class:`AnnotationViewer`, showing it in the default place if needed.");
+  virtual void ShowAnnotationViewer() = 0;
   DOCUMENT("Raise the current :class:`TextureViewer`, showing it in the default place if needed.");
   virtual void ShowTextureViewer() = 0;
   DOCUMENT(R"(Raise the current mesh previewing :class:`BufferViewer`, showing it in the default

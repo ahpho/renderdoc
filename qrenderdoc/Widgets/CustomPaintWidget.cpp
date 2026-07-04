@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -198,6 +198,11 @@ void CustomPaintWidget::paintInternal(QPaintEvent *e)
 void CustomPaintWidgetInternal::mousePressEvent(QMouseEvent *e)
 {
   emit m_Custom.clicked(e);
+}
+
+void CustomPaintWidgetInternal::mouseReleaseEvent(QMouseEvent *e)
+{
+  emit m_Custom.unclicked(e);
 }
 
 void CustomPaintWidgetInternal::mouseDoubleClickEvent(QMouseEvent *event)

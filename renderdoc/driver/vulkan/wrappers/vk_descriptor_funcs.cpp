@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -474,6 +474,11 @@ BufferDescriptorFormat WrappedVulkan::EstimateBufferDescriptor(VkDescriptorType 
       outFormat = BufferDescriptorFormat::UnknownBufferDescriptor;
     }
   }
+  else if(descSize == 8 && descriptorU64[0] == ((bufinfo.address >> 6) | ((byteSize >> 4) << 51)))
+  {
+    outFormat = BufferDescriptorFormat::Packed_5113_Aligned16_8;
+    DescriptorTrieNode::rangeToleranceMask &= 0xFULL;
+  }
   else if(descSize == 16)
   {
     if((descriptorU64[0] & ptrMask) == (bufinfo.address & ptrMask) &&
@@ -654,7 +659,7 @@ void WrappedVulkan::LookupDescriptor(byte *descriptorBytes, size_t descriptorSiz
 
           // verify that descriptor roundtrips that our detection was correct
           info.type = VK_DESCRIPTOR_TYPE_SAMPLER;
-          VkSampler sampler = Unwrap(GetResourceManager()->GetCurrentHandle<VkSampler>(samp));
+          VkSampler sampler = Unwrap(GetResourceManager()->GetHandle<VkSampler>(samp));
           info.data.pSampler = &sampler;
 
           ObjDisp(m_Device)->GetDescriptorEXT(Unwrap(m_Device), &info, descriptorSize, tempMem);
@@ -747,8 +752,8 @@ void WrappedVulkan::LookupDescriptor(byte *descriptorBytes, size_t descriptorSiz
         VkDescriptorImageInfo imInfo = {};
         info.data.pCombinedImageSampler = &imInfo;
 
-        imInfo.sampler = Unwrap(GetResourceManager()->GetCurrentHandle<VkSampler>(samp));
-        imInfo.imageView = Unwrap(GetResourceManager()->GetCurrentHandle<VkImageView>(view));
+        imInfo.sampler = Unwrap(GetResourceManager()->GetHandle<VkSampler>(samp));
+        imInfo.imageView = Unwrap(GetResourceManager()->GetHandle<VkImageView>(view));
 
         // always iterate at least once even if the layouts array is empty
         for(size_t i = 0; i < layouts.size() || (i == 0 && layouts.empty()); i++)
@@ -902,7 +907,7 @@ void WrappedVulkan::LookupDescriptor(byte *descriptorBytes, size_t descriptorSiz
                 {
                   data.SetAccelerationStructure(
                       VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-                      GetResourceManager()->GetCurrentHandle<VkAccelerationStructureKHR>(id));
+                      GetResourceManager()->GetHandle<VkAccelerationStructureKHR>(id));
 
                   return;
                 }
@@ -1099,6 +1104,13 @@ void WrappedVulkan::GetPointerAndSizeForDescriptor(byte *descriptorBytes, size_t
     uint64_t packed = *(uint64_t *)descriptorBytes;
     address = (packed & ((1ULL << 45) - 1)) << 4;
     size = (packed >> 45) << 4;
+  }
+  else if(format == BufferDescriptorFormat::Packed_5113_Aligned16_8 &&
+          descriptorSize == sizeof(uint64_t))
+  {
+    uint64_t packed = *(uint64_t *)descriptorBytes;
+    address = (packed & ((1ULL << 51) - 1)) << 6;
+    size = (packed >> 51) << 4;
   }
   else if(format == BufferDescriptorFormat::Pointer_ElemSize_16 &&
           descriptorSize == sizeof(uint64_t) * 2)
@@ -1581,10 +1593,6 @@ VkDescriptorGetInfoEXT WrappedVulkan::UnwrapInfo(const VkDescriptorGetInfoEXT *p
       break;
     }
     case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-      // ignore the sampler part
-    case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
     {
       VkDescriptorImageInfo *img = (VkDescriptorImageInfo *)ret.data.pCombinedImageSampler;
       if(pDescriptorInfo->data.pCombinedImageSampler)
@@ -1592,6 +1600,18 @@ VkDescriptorGetInfoEXT WrappedVulkan::UnwrapInfo(const VkDescriptorGetInfoEXT *p
         img->imageView = Unwrap(pDescriptorInfo->data.pCombinedImageSampler->imageView);
         img->sampler = Unwrap(pDescriptorInfo->data.pCombinedImageSampler->sampler);
         img->imageLayout = pDescriptorInfo->data.pCombinedImageSampler->imageLayout;
+      }
+      break;
+    }
+    case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+    {
+      VkDescriptorImageInfo *img = (VkDescriptorImageInfo *)ret.data.pSampledImage;
+      if(pDescriptorInfo->data.pSampledImage)
+      {
+        img->imageView = Unwrap(pDescriptorInfo->data.pSampledImage->imageView);
+        img->imageLayout = pDescriptorInfo->data.pSampledImage->imageLayout;
       }
       break;
     }
@@ -1659,8 +1679,7 @@ bool WrappedVulkan::Serialise_vkCreateDescriptorPool(SerialiserType &ser, VkDevi
     }
     else
     {
-      ResourceId live = GetResourceManager()->WrapResource(Unwrap(device), pool);
-      GetResourceManager()->AddLiveResource(DescriptorPool, pool);
+      ResourceId live = GetResourceManager()->WrapResource(DescriptorPool, Unwrap(device), pool);
 
       m_CreationInfo.m_DescSetPool[live].Init(GetResourceManager(), m_CreationInfo, &CreateInfo);
     }
@@ -1683,7 +1702,8 @@ VkResult WrappedVulkan::vkCreateDescriptorPool(VkDevice device,
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pDescriptorPool);
+    ResourceId id =
+        GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pDescriptorPool);
 
     if(IsCaptureMode(m_State))
     {
@@ -1702,10 +1722,6 @@ VkResult WrappedVulkan::vkCreateDescriptorPool(VkDevice device,
       record->AddChunk(chunk);
 
       record->descPoolInfo = new DescPoolInfo;
-    }
-    else
-    {
-      GetResourceManager()->AddLiveResource(id, *pDescriptorPool);
     }
   }
 
@@ -1768,21 +1784,10 @@ bool WrappedVulkan::Serialise_vkCreateDescriptorSetLayout(
     {
       ResourceId live;
 
-      if(GetResourceManager()->HasWrapper(ToTypedHandle(layout)))
-      {
-        live = GetResourceManager()->GetNonDispWrapper(layout)->id;
+      GetResourceManager()->OverrideWrapper(ToTypedHandle(layout));
 
-        // destroy this instance of the duplicate, as we must have matching create/destroy
-        // calls and there won't be a wrapped resource hanging around to destroy this one.
-        ObjDisp(device)->DestroyDescriptorSetLayout(Unwrap(device), layout, NULL);
-
-        // whenever the new ID is requested, return the old ID, via replacements.
-        GetResourceManager()->ReplaceResource(SetLayout, GetResourceManager()->GetOriginalID(live));
-      }
-      else
       {
-        live = GetResourceManager()->WrapResource(Unwrap(device), layout);
-        GetResourceManager()->AddLiveResource(SetLayout, layout);
+        live = GetResourceManager()->WrapResource(SetLayout, Unwrap(device), layout);
 
         m_CreationInfo.m_DescSetLayout[live].Init(GetResourceManager(), m_CreationInfo, live,
                                                   &CreateInfo);
@@ -1854,7 +1859,7 @@ VkResult WrappedVulkan::vkCreateDescriptorSetLayout(VkDevice device,
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pSetLayout);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pSetLayout);
 
     if(IsCaptureMode(m_State))
     {
@@ -1891,8 +1896,6 @@ VkResult WrappedVulkan::vkCreateDescriptorSetLayout(VkDevice device,
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, *pSetLayout);
-
       m_CreationInfo.m_DescSetLayout[id].Init(GetResourceManager(), m_CreationInfo, id, pCreateInfo);
     }
   }
@@ -1923,8 +1926,7 @@ bool WrappedVulkan::Serialise_vkAllocateDescriptorSets(SerialiserType &ser, VkDe
       RDCWARN(
           "Failed to allocate descriptor set %s from pool %s on replay. Assuming pool was "
           "reset and re-used mid-capture, so overflowing.",
-          ToStr(DescriptorSet).c_str(),
-          ToStr(GetResourceManager()->GetOriginalID(GetResID(AllocateInfo.descriptorPool))).c_str());
+          ToStr(DescriptorSet).c_str(), ToStr(GetResID(AllocateInfo.descriptorPool)).c_str());
 
       VulkanCreationInfo::DescSetPool &poolInfo =
           m_CreationInfo.m_DescSetPool[GetResID(AllocateInfo.descriptorPool)];
@@ -1968,8 +1970,7 @@ bool WrappedVulkan::Serialise_vkAllocateDescriptorSets(SerialiserType &ser, VkDe
     ResourceId layoutId = GetResID(AllocateInfo.pSetLayouts[0]);
 
     {
-      ResourceId live = GetResourceManager()->WrapResource(Unwrap(device), descset);
-      GetResourceManager()->AddLiveResource(DescriptorSet, descset);
+      ResourceId live = GetResourceManager()->WrapResource(DescriptorSet, Unwrap(device), descset);
 
       // this is stored in the resource record on capture, we need to be able to look to up
       m_DescriptorSetState[live].layout = layoutId;
@@ -2102,7 +2103,7 @@ VkResult WrappedVulkan::vkAllocateDescriptorSets(VkDevice device,
     if(record)
       id = GetResourceManager()->WrapReusedResource(record, pDescriptorSets[i]);
     else
-      id = GetResourceManager()->WrapResource(Unwrap(device), pDescriptorSets[i]);
+      id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), pDescriptorSets[i]);
 
     if(IsCaptureMode(m_State))
     {
@@ -2165,8 +2166,6 @@ VkResult WrappedVulkan::vkAllocateDescriptorSets(VkDevice device,
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, pDescriptorSets[i]);
-
       m_DescriptorSetState[id].layout = GetResID(pAllocateInfo->pSetLayouts[i]);
     }
   }
@@ -3029,8 +3028,8 @@ bool WrappedVulkan::Serialise_vkCreateDescriptorUpdateTemplate(
     }
     else
     {
-      ResourceId live = GetResourceManager()->WrapResource(Unwrap(device), templ);
-      GetResourceManager()->AddLiveResource(DescriptorUpdateTemplate, templ);
+      ResourceId live =
+          GetResourceManager()->WrapResource(DescriptorUpdateTemplate, Unwrap(device), templ);
 
       m_CreationInfo.m_DescUpdateTemplate[live].Init(GetResourceManager(), m_CreationInfo,
                                                      &CreateInfo);
@@ -3058,7 +3057,8 @@ VkResult WrappedVulkan::vkCreateDescriptorUpdateTemplate(
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pDescriptorUpdateTemplate);
+    ResourceId id =
+        GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pDescriptorUpdateTemplate);
 
     if(IsCaptureMode(m_State))
     {
@@ -3087,8 +3087,6 @@ VkResult WrappedVulkan::vkCreateDescriptorUpdateTemplate(
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, *pDescriptorUpdateTemplate);
-
       m_CreationInfo.m_DescUpdateTemplate[id].Init(GetResourceManager(), m_CreationInfo, pCreateInfo);
     }
   }
@@ -3113,6 +3111,10 @@ bool WrappedVulkan::Serialise_vkUpdateDescriptorSetWithTemplate(
   {
     // decode while capturing.
     GetRecord(descriptorUpdateTemplate)->descTemplateInfo->Apply(pData, apply);
+
+    // set the descriptor set now so serialisation can tell what parameters are valid
+    for(VkWriteDescriptorSet &writeDesc : apply.writes)
+      writeDesc.dstSet = descriptorSet;
   }
 
   SERIALISE_ELEMENT(apply.writes).Named("Decoded Writes"_lit);
@@ -3153,6 +3155,29 @@ void WrappedVulkan::vkUpdateDescriptorSetWithTemplate(
       byte *dst = memory + entry.offset;
       const byte *src = (const byte *)pData + entry.offset;
 
+      bool hasImmutable = false;
+
+      if(IsCaptureMode(m_State))
+      {
+        VkResourceRecord *record = GetRecord(descriptorSet);
+        RDCASSERT(record->descInfo && record->descInfo->layout);
+        const DescSetLayout &layout = *record->descInfo->layout;
+
+        RDCASSERT(entry.dstBinding < record->descInfo->data.binds.size());
+        const DescSetLayout::Binding *layoutBinding = &layout.bindings[entry.dstBinding];
+
+        hasImmutable = layoutBinding->immutableSampler != NULL;
+      }
+      else
+      {
+        const DescSetLayout &layout =
+            m_CreationInfo.m_DescSetLayout[m_DescriptorSetState[GetResID(descriptorSet)].layout];
+
+        const DescSetLayout::Binding *layoutBinding = &layout.bindings[entry.dstBinding];
+
+        hasImmutable = layoutBinding->immutableSampler != NULL;
+      }
+
       if(entry.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER ||
          entry.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER)
       {
@@ -3175,7 +3200,8 @@ void WrappedVulkan::vkUpdateDescriptorSetWithTemplate(
               entry.descriptorType == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)
       {
         bool hasSampler = (entry.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER ||
-                           entry.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+                           entry.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) &&
+                          !hasImmutable;
         bool hasImage = (entry.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
                          entry.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE ||
                          entry.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2022-2025 Baldur Karlsson
+ * Copyright (c) 2022-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -281,6 +281,10 @@ bool NVVulkanCounters::HasCounter(GPUCounter counterID) const
   if(m_Impl->LibraryNotFound || m_Impl->LibraryNotSupported)
   {
     return counterID == GPUCounter::FirstNvidia;
+  }
+  if(!m_Impl->CounterEnumerator)
+  {
+    return false;
   }
   return m_Impl->CounterEnumerator->HasCounter(counterID);
 }

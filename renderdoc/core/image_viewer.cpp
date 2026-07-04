@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -206,7 +206,12 @@ public:
   }
   rdcarray<ResourceDescription> GetResources() { return m_Resources; }
   rdcarray<TextureDescription> GetTextures() { return {m_TexDetails}; }
-  TextureDescription GetTexture(ResourceId id) { return m_TexDetails; }
+  TextureDescription GetTexture(ResourceId id)
+  {
+    if(id != m_CustomTexID)
+      return m_TexDetails;
+    return m_Proxy->GetTexture(id);
+  }
   void GetTextureData(ResourceId tex, const Subresource &sub, const GetTextureDataParams &params,
                       bytebuf &data)
   {
@@ -294,7 +299,6 @@ public:
   rdcarray<uint32_t> GetPassEvents(uint32_t eventId) { return rdcarray<uint32_t>(); }
   rdcarray<EventUsage> GetUsage(ResourceId id) { return rdcarray<EventUsage>(); }
   bool IsRenderOutput(ResourceId id) { return false; }
-  ResourceId GetLiveID(ResourceId id) { return id; }
   rdcarray<GPUCounter> EnumerateCounters() { return {}; }
   CounterDescription DescribeCounter(GPUCounter counterID)
   {
@@ -369,6 +373,7 @@ public:
   }
   void ReplaceResource(ResourceId from, ResourceId to) {}
   void ClearReplayCache() {}
+  void ReloadShaderDebugInformation() {}
   void RemoveReplacement(ResourceId id) {}
   // these are proxy functions, and will never be used
   ResourceId CreateProxyTexture(const TextureDescription &templateTex)

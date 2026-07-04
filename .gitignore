@@ -10,6 +10,7 @@ Release32/
 Release64/
 build/
 build-*/
+build_*/
 /compile_commands.json
 .cache/
 /dist/
@@ -22,7 +23,8 @@ qrenderdoc/Makefile*
 *.ilk
 *.manifest
 *.user
-bin
+x64/
+bin/
 obj/
 .obj/
 *.opensdf

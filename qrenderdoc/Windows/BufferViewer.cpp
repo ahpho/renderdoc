@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -43,6 +43,7 @@
 #include "Widgets/Extended/RDLabel.h"
 #include "Widgets/Extended/RDSplitter.h"
 #include "Windows/Dialogs/AxisMappingDialog.h"
+#include "Windows/Dialogs/CameraControlsDialog.h"
 #include "ui_BufferViewer.h"
 
 struct FixedVarTag
@@ -69,79 +70,14 @@ Q_DECLARE_METATYPE(FixedVarTag);
 
 static const uint32_t MaxVisibleRows = 10000;
 
-namespace NativeScanCode
-{
-enum
-{
-#if defined(Q_OS_WIN32)
-  Key_A = 30,
-  Key_S = 31,
-  Key_D = 32,
-  Key_F = 33,
-  Key_W = 17,
-  Key_R = 19,
-#elif defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)
-  Key_A = 30 + 8,
-  Key_S = 31 + 8,
-  Key_D = 32 + 8,
-  Key_F = 33 + 8,
-  Key_W = 17 + 8,
-  Key_R = 19 + 8,
-#elif defined(Q_OS_MACOS)
-  // scan codes not supported on OS X
-  Key_A = 0xDEADBEF1,
-  Key_S = 0xDEADBEF2,
-  Key_D = 0xDEADBEF3,
-  Key_F = 0xDEADBEF4,
-  Key_W = 0xDEADBEF5,
-  Key_R = 0xDEADBEF6,
-#else
-#error "Unknown platform! Define NativeScanCode"
-#endif
-};
-};    // namespace NativeScanCode
-
-namespace NativeVirtualKey
-{
-enum
-{
-#if defined(Q_OS_WIN32)
-  Key_A = quint32('A'),
-  Key_S = quint32('S'),
-  Key_D = quint32('D'),
-  Key_F = quint32('F'),
-  Key_W = quint32('W'),
-  Key_R = quint32('R'),
-#elif defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)
-  Key_A = quint32('a'),
-  Key_S = quint32('s'),
-  Key_D = quint32('d'),
-  Key_F = quint32('f'),
-  Key_W = quint32('w'),
-  Key_R = quint32('r'),
-#elif defined(Q_OS_MACOS)
-  Key_A = 0x00,
-  Key_S = 0x01,
-  Key_D = 0x02,
-  Key_F = 0x03,
-  Key_W = 0x0D,
-  Key_R = 0x0F,
-#else
-#error "Unknown platform! Define NativeVirtualKey"
-#endif
-};
-};    // namespace NativeVirtualKey
-
 class CameraWrapper
 {
 public:
+  CameraWrapper(ICaptureContext &ctx) : m_Ctx(ctx) {}
   virtual ~CameraWrapper() {}
   virtual bool Update(QRect winSize) = 0;
   virtual ICamera *camera() = 0;
 
-  virtual void MouseWheel(QWheelEvent *e) = 0;
-
-  virtual void MouseClick(QMouseEvent *e) { m_DragStartPos = e->pos(); }
   virtual void MouseMove(QMouseEvent *e)
   {
     if(e->buttons() & Qt::LeftButton)
@@ -154,58 +90,73 @@ public:
     }
   }
 
-  enum class KeyPressDirection
-  {
-    None,
-    Left,
-    Right,
-    Forward,
-    Back,
-    Up,
-    Down,
-  };
-
   KeyPressDirection GetDirection(QKeyEvent *e)
   {
-    // if we have a native scancode, we expect to be able to match it. If we don't then don't get
-    // any false positives by checking the virtual key
-    if(e->nativeScanCode() > 1)
+    const rdcarray<uint32_t> &keys = m_Ctx.Config().MeshViewer_KeySettings;
+    for(int i = 0; i < (int)KeyPressDirection::Count; i++)
     {
-      switch(e->nativeScanCode())
-      {
-        case NativeScanCode::Key_A: return KeyPressDirection::Left;
-        case NativeScanCode::Key_D: return KeyPressDirection::Right;
-        case NativeScanCode::Key_W: return KeyPressDirection::Forward;
-        case NativeScanCode::Key_S: return KeyPressDirection::Back;
-        case NativeScanCode::Key_R: return KeyPressDirection::Up;
-        case NativeScanCode::Key_F: return KeyPressDirection::Down;
-        default: break;
-      }
+      KeyPressDirection dir = KeyPressDirection(i);
+      Qt::Key primary, secondary;
+
+      int p = keySettingIdx(dir, true);
+      int s = keySettingIdx(dir, false);
+
+      if(p < keys.count() && keys[p] != 0)
+        primary = getKeySetting(keys[p]);
+      else
+        primary = getDefaultKey(dir, true);
+
+      if(s < keys.count() && keys[s] != 0)
+        secondary = getKeySetting(keys[s]);
+      else
+        secondary = getDefaultKey(dir, false);
+
+      if(e->key() == primary || e->key() == secondary)
+        return dir;
     }
-    else
+
+    return KeyPressDirection::None;
+  }
+
+  KeyPressDirection GetDirection(QMouseEvent *e)
+  {
+    if(m_Ctx.Config().MeshViewer_KeySettings.size() >= (size_t)KeyPressDirection::NumSettings)
     {
-      switch(e->nativeVirtualKey())
+      for(int i = 0; i < (int)KeyPressDirection::Count; i++)
       {
-        case NativeVirtualKey::Key_A: return KeyPressDirection::Left;
-        case NativeVirtualKey::Key_D: return KeyPressDirection::Right;
-        case NativeVirtualKey::Key_W: return KeyPressDirection::Forward;
-        case NativeVirtualKey::Key_S: return KeyPressDirection::Back;
-        case NativeVirtualKey::Key_R: return KeyPressDirection::Up;
-        case NativeVirtualKey::Key_F: return KeyPressDirection::Down;
-        default: break;
+        KeyPressDirection dir = KeyPressDirection(i);
+        Qt::MouseButton primary =
+            getMouseButtonSetting(m_Ctx.Config().MeshViewer_KeySettings[keySettingIdx(dir, true)]);
+        Qt::MouseButton secondary =
+            getMouseButtonSetting(m_Ctx.Config().MeshViewer_KeySettings[keySettingIdx(dir, false)]);
+
+        if(e->button() == primary || e->button() == secondary)
+          return dir;
       }
     }
 
-    // handle arrow keys, we can do this safely with Qt::Key
-    switch(e->key())
+    return KeyPressDirection::None;
+  }
+
+  KeyPressDirection GetDirection(QWheelEvent *e)
+  {
+    if(m_Ctx.Config().MeshViewer_KeySettings.size() >= (size_t)KeyPressDirection::NumSettings)
     {
-      case Qt::Key_Left: return KeyPressDirection::Left;
-      case Qt::Key_Right: return KeyPressDirection::Right;
-      case Qt::Key_Up: return KeyPressDirection::Forward;
-      case Qt::Key_Down: return KeyPressDirection::Back;
-      case Qt::Key_PageUp: return KeyPressDirection::Up;
-      case Qt::Key_PageDown: return KeyPressDirection::Down;
-      default: break;
+      QPoint angleDelta = e->angleDelta();
+      angleDelta.setX(qMin(1, qMax(-1, angleDelta.x())));
+      angleDelta.setY(qMin(1, qMax(-1, angleDelta.y())));
+
+      for(int i = 0; i < (int)KeyPressDirection::Count; i++)
+      {
+        KeyPressDirection dir = KeyPressDirection(i);
+        QPoint primary =
+            getMouseWheelSetting(m_Ctx.Config().MeshViewer_KeySettings[keySettingIdx(dir, true)]);
+        QPoint secondary =
+            getMouseWheelSetting(m_Ctx.Config().MeshViewer_KeySettings[keySettingIdx(dir, false)]);
+
+        if(angleDelta == primary || angleDelta == secondary)
+          return dir;
+      }
     }
 
     return KeyPressDirection::None;
@@ -217,12 +168,16 @@ public:
 
     if(dir == KeyPressDirection::Left || dir == KeyPressDirection::Right)
       setMove(Direction::Horiz, 0);
-    if(dir == KeyPressDirection::Forward || dir == KeyPressDirection::Back)
+    else if(dir == KeyPressDirection::Forward || dir == KeyPressDirection::Back)
       setMove(Direction::Fwd, 0);
-    if(dir == KeyPressDirection::Up || dir == KeyPressDirection::Down)
+    else if(dir == KeyPressDirection::Up || dir == KeyPressDirection::Down)
       setMove(Direction::Vert, 0);
 
-    if(e->modifiers() & Qt::ShiftModifier)
+    Qt::KeyboardModifier speedMod = Qt::ShiftModifier;
+    if(m_Ctx.Config().MeshViewer_SpeedModifier > 0)
+      speedMod = Qt::KeyboardModifier(m_Ctx.Config().MeshViewer_SpeedModifier);
+
+    if(speedMod != Qt::NoModifier && (e->modifiers() & speedMod))
       m_CurrentSpeed = 3.0f;
     else
       m_CurrentSpeed = 1.0f;
@@ -234,7 +189,7 @@ public:
 
     switch(dir)
     {
-      case KeyPressDirection::None: break;
+      default: break;
       case KeyPressDirection::Left: setMove(Direction::Horiz, -1); break;
       case KeyPressDirection::Right: setMove(Direction::Horiz, 1); break;
       case KeyPressDirection::Forward: setMove(Direction::Fwd, 1); break;
@@ -243,11 +198,46 @@ public:
       case KeyPressDirection::Down: setMove(Direction::Vert, -1); break;
     }
 
-    if(e->modifiers() & Qt::ShiftModifier)
+    Qt::KeyboardModifier speedMod = Qt::ShiftModifier;
+    if(m_Ctx.Config().MeshViewer_SpeedModifier > 0)
+      speedMod = Qt::KeyboardModifier(m_Ctx.Config().MeshViewer_SpeedModifier);
+
+    if(speedMod != Qt::NoModifier && (e->modifiers() & speedMod))
       m_CurrentSpeed = 3.0f;
     else
       m_CurrentSpeed = 1.0f;
   }
+
+  virtual void MouseClick(QMouseEvent *e)
+  {
+    m_DragStartPos = e->pos();
+    KeyPressDirection dir = GetDirection(e);
+
+    switch(dir)
+    {
+      default: break;
+      case KeyPressDirection::Left: setMove(Direction::Horiz, -1); break;
+      case KeyPressDirection::Right: setMove(Direction::Horiz, 1); break;
+      case KeyPressDirection::Forward: setMove(Direction::Fwd, 1); break;
+      case KeyPressDirection::Back: setMove(Direction::Fwd, -1); break;
+      case KeyPressDirection::Up: setMove(Direction::Vert, 1); break;
+      case KeyPressDirection::Down: setMove(Direction::Vert, -1); break;
+    }
+  }
+
+  virtual void MouseUnclick(QMouseEvent *e)
+  {
+    KeyPressDirection dir = GetDirection(e);
+
+    if(dir == KeyPressDirection::Left || dir == KeyPressDirection::Right)
+      setMove(Direction::Horiz, 0);
+    else if(dir == KeyPressDirection::Forward || dir == KeyPressDirection::Back)
+      setMove(Direction::Fwd, 0);
+    else if(dir == KeyPressDirection::Up || dir == KeyPressDirection::Down)
+      setMove(Direction::Vert, 0);
+  }
+
+  virtual void MouseWheel(QWheelEvent *e) {}
 
   float SpeedMultiplier = 0.05f;
 
@@ -263,6 +253,8 @@ protected:
   int move(Direction dir) { return m_CurrentMove[(int)dir]; }
   float currentSpeed() { return m_CurrentSpeed * SpeedMultiplier; }
   QPoint dragStartPos() { return m_DragStartPos; }
+
+  ICaptureContext &m_Ctx;
 private:
   float m_CurrentSpeed = 1.0f;
   int m_CurrentMove[(int)Direction::Num] = {0, 0, 0};
@@ -274,7 +266,10 @@ private:
 class ArcballWrapper : public CameraWrapper
 {
 public:
-  ArcballWrapper() { m_Cam = RENDERDOC_InitCamera(CameraType::Arcball); }
+  ArcballWrapper(ICaptureContext &ctx) : CameraWrapper(ctx)
+  {
+    m_Cam = RENDERDOC_InitCamera(CameraType::Arcball);
+  }
   virtual ~ArcballWrapper() { m_Cam->Shutdown(); }
   ICamera *camera() override { return m_Cam; }
   void Reset(FloatVector pos, float dist)
@@ -299,6 +294,8 @@ public:
 
   void MouseWheel(QWheelEvent *e) override
   {
+    CameraWrapper::MouseWheel(e);
+
     float mod = (1.0f - e->delta() / 2500.0f);
 
     SetDistance(qMax(1e-6f, m_Distance * mod));
@@ -376,7 +373,10 @@ private:
 class FlycamWrapper : public CameraWrapper
 {
 public:
-  FlycamWrapper() { m_Cam = RENDERDOC_InitCamera(CameraType::FPSLook); }
+  FlycamWrapper(ICaptureContext &ctx) : CameraWrapper(ctx)
+  {
+    m_Cam = RENDERDOC_InitCamera(CameraType::FPSLook);
+  }
   virtual ~FlycamWrapper() { m_Cam->Shutdown(); }
   ICamera *camera() override { return m_Cam; }
   void Reset(FloatVector pos)
@@ -431,7 +431,49 @@ public:
     return false;
   }
 
-  void MouseWheel(QWheelEvent *e) override {}
+  virtual void MouseWheel(QWheelEvent *e) override
+  {
+    CameraWrapper::MouseWheel(e);
+
+    KeyPressDirection dir = GetDirection(e);
+
+    FloatVector fwd = m_Cam->GetForward();
+    FloatVector right = m_Cam->GetRight();
+
+    float speed = currentSpeed();
+
+    if(dir == KeyPressDirection::Left || dir == KeyPressDirection::Right)
+    {
+      int horizMove = dir == KeyPressDirection::Left ? -1 : 1;
+      m_Position.x += right.x * speed * (float)horizMove;
+      m_Position.y += right.y * speed * (float)horizMove;
+      m_Position.z += right.z * speed * (float)horizMove;
+    }
+    else if(dir == KeyPressDirection::Up || dir == KeyPressDirection::Down)
+    {
+      // this makes less intuitive sense, instead go 'absolute' up
+      // m_Position.x += up.x * speed * (float)vertMove;
+      // m_Position.y += up.y * speed * (float)vertMove;
+      // m_Position.z += up.z * speed * (float)vertMove;
+
+      int vertMove = dir == KeyPressDirection::Up ? -1 : 1;
+      m_Position.y += speed * (float)vertMove;
+    }
+    else if(dir == KeyPressDirection::Forward || dir == KeyPressDirection::Back)
+    {
+      int fwdMove = dir == KeyPressDirection::Back ? -1 : 1;
+      m_Position.x += fwd.x * speed * (float)fwdMove;
+      m_Position.y += fwd.y * speed * (float)fwdMove;
+      m_Position.z += fwd.z * speed * (float)fwdMove;
+    }
+    else
+    {
+      return;
+    }
+
+    m_Cam->SetPosition(m_Position.x, m_Position.y, m_Position.z);
+  }
+
   void MouseMove(QMouseEvent *e) override
   {
     if(dragStartPos().x() > 0 && e->buttons() == Qt::LeftButton)
@@ -2410,8 +2452,8 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
 
   ui->formatSpecifier->setContext(&m_Ctx);
 
-  m_Flycam = new FlycamWrapper();
-  m_Arcball = new ArcballWrapper();
+  m_Flycam = new FlycamWrapper(m_Ctx);
+  m_Arcball = new ArcballWrapper(m_Ctx);
   m_CurrentCamera = m_Arcball;
 
   m_Output = NULL;
@@ -2435,13 +2477,16 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
   ui->instance->setFont(Formatter::PreferredFont());
   ui->viewIndex->setFont(Formatter::PreferredFont());
   ui->camSpeed->setFont(Formatter::PreferredFont());
-  ui->fovGuess->setFont(Formatter::PreferredFont());
-  ui->aspectGuess->setFont(Formatter::PreferredFont());
-  ui->nearGuess->setFont(Formatter::PreferredFont());
-  ui->farGuess->setFont(Formatter::PreferredFont());
 
   if(meshview)
+  {
     SetupMeshView();
+    if(isMeshDraw())
+    {
+      m_CurStage = MeshDataStage::TaskOut;
+      m_Config.type = MeshDataStage::TaskOut;
+    }
+  }
   else
     SetupRawView();
 
@@ -2565,8 +2610,6 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
   ui->visualisation->adjustSize();
   ui->visualisation->setCurrentIndex(0);
 
-  ui->matrixType->addItems({tr("Perspective"), tr("Orthographic")});
-
   ui->axisMappingCombo->addItems({tr("Y-up, left handed"), tr("Y-up, right handed"),
                                   tr("Z-up, left handed"), tr("Z-up, right handed"), tr("Custom...")});
   ui->axisMappingCombo->setCurrentIndex(0);
@@ -2575,8 +2618,6 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
   ui->wireframeRender->setEnabled(false);
 
   ui->setFormat->setVisible(false);
-
-  ui->fovGuess->setValue(90.0);
 
   ui->controlType->setCurrentIndex(0);
   on_controlType_currentIndexChanged(0);
@@ -2610,17 +2651,6 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
   QObject::connect(ui->out2Table->verticalScrollBar(), &QScrollBar::valueChanged, this,
                    &BufferViewer::data_scrolled);
 
-  QObject::connect(ui->fovGuess, OverloadedSlot<double>::of(&QDoubleSpinBox::valueChanged), this,
-                   &BufferViewer::camGuess_changed);
-  QObject::connect(ui->aspectGuess, OverloadedSlot<double>::of(&QDoubleSpinBox::valueChanged), this,
-                   &BufferViewer::camGuess_changed);
-  QObject::connect(ui->nearGuess, OverloadedSlot<double>::of(&QDoubleSpinBox::valueChanged), this,
-                   &BufferViewer::camGuess_changed);
-  QObject::connect(ui->farGuess, OverloadedSlot<double>::of(&QDoubleSpinBox::valueChanged), this,
-                   &BufferViewer::camGuess_changed);
-  QObject::connect(ui->matrixType, OverloadedSlot<int>::of(&QComboBox::currentIndexChanged),
-                   [this](int) { camGuess_changed(0.0); });
-
   {
     QMenu *extensionsMenu = new QMenu(this);
 
@@ -2636,6 +2666,7 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
 
   QObject::connect(ui->render, &CustomPaintWidget::mouseMove, this, &BufferViewer::render_mouseMove);
   QObject::connect(ui->render, &CustomPaintWidget::clicked, this, &BufferViewer::render_clicked);
+  QObject::connect(ui->render, &CustomPaintWidget::unclicked, this, &BufferViewer::render_unclicked);
   QObject::connect(ui->render, &CustomPaintWidget::keyPress, this, &BufferViewer::render_keyPress);
   QObject::connect(ui->render, &CustomPaintWidget::keyRelease, this,
                    &BufferViewer::render_keyRelease);
@@ -2822,7 +2853,7 @@ void BufferViewer::SetupMeshView()
 
   ui->resourceDetails->setVisible(false);
   ui->formatSpecifier->setVisible(false);
-  ui->cameraControlsGroup->setVisible(false);
+  ui->configurationGroup->setVisible(false);
 
   ui->minBoundsLabel->setText(lit("---"));
   ui->maxBoundsLabel->setText(lit("---"));
@@ -3359,12 +3390,12 @@ void BufferViewer::OnEventChanged(uint32_t eventId)
     float vpWidth = qAbs(vp.width);
     float vpHeight = qAbs(vp.height);
 
-    m_Config.fov = ui->fovGuess->value();
+    m_Config.fov = m_ProjGuess.fov;
     m_Config.aspect = (vpWidth > 0.0f && vpHeight > 0.0f) ? (vpWidth / vpHeight) : 1.0f;
     m_Config.highlightVert = 0;
 
-    if(ui->aspectGuess->value() > 0.0)
-      m_Config.aspect = ui->aspectGuess->value();
+    if(m_ProjGuess.aspect > 0.0)
+      m_Config.aspect = m_ProjGuess.aspect;
   }
   else
   {
@@ -3490,7 +3521,10 @@ void BufferViewer::OnEventChanged(uint32_t eventId)
 
   m_Ctx.Replay().AsyncInvoke([this, me, bufdata](IReplayController *r) {
     if(!me)
+    {
+      delete bufdata;
       return;
+    }
 
     BufferData *buf = NULL;
 
@@ -3602,7 +3636,10 @@ void BufferViewer::OnEventChanged(uint32_t eventId)
       }
 
       if(!me)
+      {
+        delete bufdata;
         return;
+      }
     }
     else
     {
@@ -3694,6 +3731,7 @@ void BufferViewer::OnEventChanged(uint32_t eventId)
       if(!me)
       {
         delete buf;
+        delete bufdata;
         return;
       }
     }
@@ -3711,7 +3749,10 @@ void BufferViewer::OnEventChanged(uint32_t eventId)
 
     GUIInvoke::call(this, [this, bufdata]() {
       if(bufdata->sequence != m_Sequence)
+      {
+        delete bufdata;
         return;
+      }
 
       if(!bufdata->out1Config.statusString.isEmpty())
       {
@@ -3763,7 +3804,7 @@ void BufferViewer::OnEventChanged(uint32_t eventId)
         m_ModelOut2->setSecondaryColumn(-1, m_Config.visualisationMode == Visualisation::Secondary,
                                         false);
 
-      EnableCameraGuessControls();
+      UpdateStageDataControls();
 
       populateBBox(bufdata);
 
@@ -4006,19 +4047,25 @@ void BufferViewer::populateBBox(PopulateBufferData *bufdata)
 
     bbox->input[0] = bufdata->inConfig;
     bbox->input[1] = bufdata->out1Config;
-    bbox->input[2] = bufdata->out1Config;
+    bbox->input[2] = bufdata->out2Config;
 
     QPointer<BufferViewer> me(this);
 
     // fire up a thread to calculate the bounding box
     LambdaThread *thread = new LambdaThread([this, me, bbox] {
       if(!me)
+      {
+        delete bbox;
         return;
+      }
 
       calcBoundingData(*bbox);
 
       if(!me)
+      {
+        delete bbox;
         return;
+      }
 
       GUIInvoke::call(this, [this, bbox]() { UI_UpdateBoundingBox(*bbox); });
     });
@@ -4923,7 +4970,7 @@ void BufferViewer::UpdateCurrentMeshConfig()
     default: break;
   }
 
-  camGuess_changed(0.0);
+  UI_UpdateGuessParameters();
 
   m_Config.showBBox = false;
 
@@ -5017,6 +5064,17 @@ void BufferViewer::render_clicked(QMouseEvent *e)
     m_CurrentCamera->MouseClick(e);
 
   ui->render->setFocus();
+
+  INVOKE_MEMFN(RT_UpdateAndDisplay);
+}
+
+void BufferViewer::render_unclicked(QMouseEvent *e)
+{
+  if(!m_Ctx.IsCaptureLoaded())
+    return;
+
+  if(m_CurrentCamera)
+    m_CurrentCamera->MouseUnclick(e);
 
   INVOKE_MEMFN(RT_UpdateAndDisplay);
 }
@@ -5650,7 +5708,7 @@ bool BufferViewer::isCurrentRasterOut()
         return true;
       else if(m_Ctx.CurPipelineState().GetShader(ShaderStage::Tess_Eval) == ResourceId() &&
               m_Ctx.CurPipelineState().GetShader(ShaderStage::Geometry) == ResourceId() &&
-              m_CurStage != MeshDataStage::VSOut)
+              m_CurStage == MeshDataStage::VSOut)
         return true;
     }
   }
@@ -5876,11 +5934,16 @@ void BufferViewer::data_scrolled(int scrollvalue)
   SyncViews(view, false, true);
 }
 
-void BufferViewer::camGuess_changed(double value)
+void BufferViewer::UI_UpdateGuessParameters()
 {
-  m_Config.ortho = (ui->matrixType->currentIndex() == 1);
+  m_Arcball->camera()->SetNearFar(m_Ctx.Config().MeshViewer_CameraNear,
+                                  m_Ctx.Config().MeshViewer_CameraFar);
+  m_Flycam->camera()->SetNearFar(m_Ctx.Config().MeshViewer_CameraNear,
+                                 m_Ctx.Config().MeshViewer_CameraFar);
 
-  m_Config.fov = ui->fovGuess->value();
+  m_Config.ortho = m_ProjGuess.orthographic;
+
+  m_Config.fov = m_ProjGuess.fov;
 
   m_Config.aspect = 1.0f;
 
@@ -5892,8 +5955,8 @@ void BufferViewer::camGuess_changed(double value)
 
   m_Config.aspect = (vpWidth > 0.0f && vpHeight > 0.0f) ? (vpWidth / vpHeight) : 1.0f;
 
-  if(ui->aspectGuess->value() > 0.0)
-    m_Config.aspect = ui->aspectGuess->value();
+  if(m_ProjGuess.aspect > 0.0)
+    m_Config.aspect = m_ProjGuess.aspect;
 
   // use estimates from post vs data (calculated from vertex position data) if the user
   // hasn't overridden the values
@@ -5921,8 +5984,8 @@ void BufferViewer::camGuess_changed(double value)
     m_Config.position.flipY = m_Out2Data.flipY;
   }
 
-  if(ui->nearGuess->value() > 0.0)
-    m_Config.position.nearPlane = ui->nearGuess->value();
+  if(m_ProjGuess.nearPlane > 0.0)
+    m_Config.position.nearPlane = m_ProjGuess.nearPlane;
 
   m_Config.position.farPlane = 100.0f;
 
@@ -5935,10 +5998,10 @@ void BufferViewer::camGuess_changed(double value)
   else if(m_CurStage == MeshDataStage::MeshOut)
     m_Config.position.farPlane = m_Out2Data.farPlane;
 
-  if(ui->farGuess->value() > 0.0)
-    m_Config.position.farPlane = ui->farGuess->value();
+  if(m_ProjGuess.farPlane > 0.0)
+    m_Config.position.farPlane = m_ProjGuess.farPlane;
 
-  EnableCameraGuessControls();
+  UpdateStageDataControls();
 
   INVOKE_MEMFN(RT_UpdateAndDisplay);
 }
@@ -6010,6 +6073,27 @@ bool BufferViewer::showAxisMappingDialog()
 void BufferViewer::on_axisMappingButton_clicked()
 {
   showAxisMappingDialog();
+}
+
+void BufferViewer::on_camParameters_clicked()
+{
+  CameraControlsDialog dialog(m_Ctx, this);
+  RDDialog::show(&dialog);
+
+  if(dialog.result() == QDialog::Accepted)
+    UI_UpdateGuessParameters();
+}
+
+void BufferViewer::on_guessButton_clicked()
+{
+  ProjectionGuessDialog dialog(m_Ctx, m_ProjGuess, this);
+  RDDialog::show(&dialog);
+
+  if(dialog.result() == QDialog::Accepted)
+  {
+    m_ProjGuess = dialog.getParameters();
+    UI_UpdateGuessParameters();
+  }
 }
 
 void BufferViewer::on_setFormat_toggled(bool checked)
@@ -6948,15 +7032,69 @@ void BufferViewer::UpdateHighlightVerts()
   m_Config.highlightVert = selected[0].row();
 }
 
-void BufferViewer::EnableCameraGuessControls()
+void BufferViewer::UpdateStageDataControls()
 {
-  ui->matrixType->setEnabled(isCurrentRasterOut());
-  ui->aspectGuess->setEnabled(isCurrentRasterOut());
-  ui->nearGuess->setEnabled(isCurrentRasterOut());
-  ui->farGuess->setEnabled(isCurrentRasterOut());
+  if(isCurrentRasterOut())
+  {
+    ui->guessLabel->setVisible(true);
+    ui->guessDetails1->setVisible(true);
+    ui->guessDetails2->setVisible(true);
+    ui->guessButton->setVisible(true);
 
-  // FOV is only available in perspective mode
-  ui->fovGuess->setEnabled(isCurrentRasterOut() && ui->matrixType->currentIndex() == 0);
+    QString aspectStr = tr("Auto");
+    if(m_ProjGuess.aspect > 0)
+      aspectStr = Formatter::Format(m_ProjGuess.aspect);
+
+    if(m_ProjGuess.orthographic)
+      ui->guessDetails1->setText(tr("Orthographic Projection"));
+    else
+      ui->guessDetails1->setText(
+          tr("Perspective Projection, FOV %1").arg(Formatter::Format(m_ProjGuess.fov)));
+
+    if(m_ProjGuess.farPlane == FLT_MAX)
+    {
+      if(m_ProjGuess.nearPlane > 0)
+        ui->guessDetails2->setText(tr("Aspect Ratio %1, Reverse Z Near %2")
+                                       .arg(aspectStr)
+                                       .arg(Formatter::Format(m_ProjGuess.nearPlane)));
+      else
+        ui->guessDetails2->setText(tr("Aspect Ratio %1, Reverse Z Near Automatic").arg(aspectStr));
+    }
+    else
+    {
+      if(m_ProjGuess.nearPlane > 0 && m_ProjGuess.farPlane > 0)
+        ui->guessDetails2->setText(tr("Aspect Ratio %1, Near-Far %2 - %3")
+                                       .arg(aspectStr)
+                                       .arg(Formatter::Format(m_ProjGuess.nearPlane))
+                                       .arg(Formatter::Format(m_ProjGuess.farPlane)));
+      else if(m_ProjGuess.nearPlane > 0)
+        ui->guessDetails2->setText(tr("Aspect Ratio %1, Near %2 Far Auto")
+                                       .arg(aspectStr)
+                                       .arg(Formatter::Format(m_ProjGuess.nearPlane)));
+      else if(m_ProjGuess.farPlane > 0)
+        ui->guessDetails2->setText(tr("Aspect Ratio %1, Near Auto Far %2")
+                                       .arg(aspectStr)
+                                       .arg(Formatter::Format(m_ProjGuess.farPlane)));
+      else
+        ui->guessDetails2->setText(tr("Aspect Ratio %1, Near-Far Automatic").arg(aspectStr));
+    }
+
+    ui->axisMappingLabel->setVisible(false);
+    ui->axisMappingCombo->setVisible(false);
+    ui->axisMappingButton->setVisible(false);
+  }
+  else
+  {
+    ui->guessLabel->setVisible(false);
+    ui->guessDetails1->setVisible(false);
+    ui->guessDetails2->setVisible(false);
+    ui->guessButton->setVisible(false);
+
+    ui->axisMappingLabel->setVisible(true);
+    ui->axisMappingCombo->setVisible(true);
+    ui->axisMappingButton->setVisible(true);
+    ui->axisMappingButton->setEnabled(ui->axisMappingCombo->currentIndex() == 4);
+  }
 }
 
 void BufferViewer::on_outputTabs_currentChanged(int index)
@@ -6965,7 +7103,7 @@ void BufferViewer::on_outputTabs_currentChanged(int index)
   ui->outputTabs->widget(index)->layout()->addWidget(ui->renderContainer);
 
   if(index == 0)
-    m_CurStage = MeshDataStage::VSIn;
+    m_CurStage = isMeshDraw() ? MeshDataStage::TaskOut : MeshDataStage::VSIn;
   else if(index == 1)
     m_CurStage = isMeshDraw() ? MeshDataStage::MeshOut : MeshDataStage::VSOut;
   else if(index == 2)
@@ -6976,10 +7114,7 @@ void BufferViewer::on_outputTabs_currentChanged(int index)
   on_resetCamera_clicked();
   ui->autofitCamera->setEnabled(!isCurrentRasterOut());
 
-  EnableCameraGuessControls();
-  ui->axisMappingCombo->setEnabled(!isCurrentRasterOut());
-  ui->axisMappingButton->setEnabled(!isCurrentRasterOut() &&
-                                    ui->axisMappingCombo->currentIndex() == 4);
+  UpdateStageDataControls();
 
   UpdateCurrentMeshConfig();
 
@@ -6988,7 +7123,7 @@ void BufferViewer::on_outputTabs_currentChanged(int index)
 
 void BufferViewer::on_toggleControls_toggled(bool checked)
 {
-  ui->cameraControlsGroup->setVisible(checked);
+  ui->configurationGroup->setVisible(checked);
 
   // temporarily set minimum bounds to the longest float we could format, to ensure the minimum size
   // we calculate below is as big as needs to be (sigh...). This is necessary because Qt doesn't
@@ -7011,7 +7146,7 @@ void BufferViewer::on_toggleControls_toggled(bool checked)
 
   UI_UpdateBoundingBoxLabels();
 
-  EnableCameraGuessControls();
+  UpdateStageDataControls();
 }
 
 void BufferViewer::on_syncViews_toggled(bool checked)
@@ -7359,7 +7494,7 @@ void BufferViewer::on_autofitCamera_clicked()
       mid = transformedMid;
     }
 
-    mid.z -= len;
+    mid.z -= len * 0.7f;
 
     m_Flycam->Reset(mid);
   }

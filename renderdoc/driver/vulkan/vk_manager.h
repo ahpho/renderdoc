@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -177,23 +177,15 @@ public:
     // if any objects leaked past, it's no longer safe to delete them as we would
     // be calling Shutdown() after the device that owns them is destroyed. Instead
     // we just have to leak ourselves.
-    RDCASSERT(m_LiveResourceMap.empty());
     RDCASSERT(m_InitialContents.empty());
     RDCASSERT(m_ResourceRecords.empty());
-    RDCASSERT(m_CurrentResourceMap.empty());
+    RDCASSERT(m_ResourceMap.empty());
     RDCASSERT(m_WrapperMap.empty());
 
-    m_LiveResourceMap.clear();
     m_InitialContents.clear();
     m_ResourceRecords.clear();
-    m_CurrentResourceMap.clear();
+    m_ResourceMap.clear();
     m_WrapperMap.clear();
-  }
-
-  template <typename realtype>
-  void AddLiveResource(ResourceId id, realtype obj)
-  {
-    ResourceManager::AddLiveResource(id, GetWrapped(obj));
   }
 
   using ResourceManager::AddResourceRecord;
@@ -217,17 +209,10 @@ public:
 
   // easy path for getting the wrapped handle cast to the correct type
   template <typename realtype>
-  realtype GetLiveHandle(ResourceId origid)
+  realtype GetHandle(ResourceId id)
   {
-    return realtype((uint64_t)((
-        typename UnwrapHelper<realtype>::ParentType *)ResourceManager::GetLiveResource(origid)));
-  }
-
-  template <typename realtype>
-  realtype GetCurrentHandle(ResourceId id)
-  {
-    return realtype((uint64_t)((
-        typename UnwrapHelper<realtype>::ParentType *)ResourceManager::GetCurrentResource(id)));
+    return realtype(
+        (uint64_t)((typename UnwrapHelper<realtype>::ParentType *)ResourceManager::GetResource(id)));
   }
 
   // handling memory & image layouts
@@ -290,17 +275,24 @@ public:
   }
 
   template <typename parenttype, typename realtype>
-  ResourceId WrapResource(parenttype parentObj, realtype &obj)
+  ResourceId WrapResource(ResourceId id, parenttype parentObj, realtype &obj)
   {
     RDCASSERT(obj != VK_NULL_HANDLE);
 
-    ResourceId id = ResourceIDGen::GetNewUniqueID();
+    // on replay, we provide an ID for replayed versions of capture-time resources. For
+    // replay-only/internal resources, we auto-gen a resource id.
+    // during capture we should always be auto-gen'ing a resource id for obvious reasons.
+    if(id == ResourceId())
+      id = ResourceIDGen::GetNewUniqueID();
+    else
+      RDCASSERT(IsReplayMode(m_State));
+
     typename UnwrapHelper<realtype>::Outer *wrapped =
         new typename UnwrapHelper<realtype>::Outer(obj, id);
 
     SetTableIfDispatchable(IsCaptureMode(m_State), parentObj, m_Core, wrapped);
 
-    AddCurrentResource(id, wrapped);
+    AddResource(id, wrapped);
 
     if(IsReplayMode(m_State))
       AddWrapper(wrapped, ToTypedHandle(obj));
@@ -373,19 +365,21 @@ public:
     }
   }
 
+  void RemoveAnnotations(ResourceId id);
+
   template <typename realtype>
   void ReleaseWrappedResource(realtype obj, bool clearID = false)
   {
     ResourceId id = GetResID(obj);
 
-    auto origit = m_OriginalIDs.find(id);
-    if(origit != m_OriginalIDs.end())
-      EraseLiveResource(origit->second);
+    RemoveAnnotations(id);
 
     if(IsReplayMode(m_State))
-      ResourceManager::RemoveWrapper(ToTypedHandle(Unwrap(obj)));
+    {
+      ResourceManager::RemoveWrapper(GetWrapped(obj), ToTypedHandle(Unwrap(obj)));
+    }
 
-    ResourceManager::ReleaseCurrentResource(id);
+    ResourceManager::ReleaseResource(id);
     VkResourceRecord *record = GetRecord(obj);
     if(record)
     {

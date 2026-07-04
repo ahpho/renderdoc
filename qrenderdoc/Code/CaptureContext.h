@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -40,6 +40,7 @@
 class MainWindow;
 class EventBrowser;
 class APIInspector;
+class AnnotationDisplay;
 class PipelineStateViewer;
 class BufferViewer;
 class TextureViewer;
@@ -204,12 +205,15 @@ public:
   rdcarray<EventBookmark> GetBookmarks() override { return m_Bookmarks; }
   void SetBookmark(const EventBookmark &mark) override;
   void RemoveBookmark(uint32_t EID) override;
+  void EmbedDependentFiles() override;
+  void RemoveDependentFiles() override;
 
   void DelayedCallback(uint32_t milliseconds, std::function<void()> callback) override;
 
   IMainWindow *GetMainWindow() override;
   IEventBrowser *GetEventBrowser() override;
   IAPIInspector *GetAPIInspector() override;
+  IAnnotationViewer *GetAnnotationViewer() override;
   ITextureViewer *GetTextureViewer() override;
   IBufferViewer *GetMeshPreview() override;
   IPipelineStateViewer *GetPipelineViewer() override;
@@ -225,6 +229,7 @@ public:
 
   bool HasEventBrowser() override { return m_EventBrowser != NULL; }
   bool HasAPIInspector() override { return m_APIInspector != NULL; }
+  bool HasAnnotationViewer() override { return m_AnnotationViewer != NULL; }
   bool HasTextureViewer() override { return m_TextureViewer != NULL; }
   bool HasPipelineViewer() override { return m_PipelineViewer != NULL; }
   bool HasMeshPreview() override { return m_MeshPreview != NULL; }
@@ -239,6 +244,7 @@ public:
   bool HasResourceInspector() override { return m_ResourceInspector != NULL; }
   void ShowEventBrowser() override;
   void ShowAPIInspector() override;
+  void ShowAnnotationViewer() override;
   void ShowTextureViewer() override;
   void ShowMeshPreview() override;
   void ShowPipelineViewer() override;
@@ -312,6 +318,7 @@ private:
   bool m_CaptureLoaded = false, m_LoadInProgress = false, m_CaptureLocal = false,
        m_CaptureTemporary = false;
   QString m_CaptureFile;
+  QString m_RemoteFile;
   CaptureModifications m_CaptureMods = CaptureModifications::NoModifications;
 
   rdcarray<DebugMessage> m_DebugMessages;
@@ -432,6 +439,7 @@ private:
   MainWindow *m_MainWindow = NULL;
   EventBrowser *m_EventBrowser = NULL;
   APIInspector *m_APIInspector = NULL;
+  AnnotationDisplay *m_AnnotationViewer = NULL;
   TextureViewer *m_TextureViewer = NULL;
   BufferViewer *m_MeshPreview = NULL;
   PipelineStateViewer *m_PipelineViewer = NULL;

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2017-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -47,6 +47,7 @@ public:
   // IPixelHistoryView
   QWidget *Widget() override { return this; }
   void SetHistory(const rdcarray<PixelModification> &history) override;
+  void SetFailedDebug() override;
 
   // ICaptureViewer
   void OnCaptureLoaded() override;

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1252,6 +1252,10 @@ void MakeShaderReflection(GLenum shadType, GLuint sepProg, ShaderReflection &ref
   refl.encoding = ShaderEncoding::GLSL;
   refl.debugInfo.compiler = KnownShaderTool::Unknown;
   refl.debugInfo.encoding = ShaderEncoding::GLSL;
+  refl.debugInfo.debuggable = false;
+  refl.debugInfo.debugStatus =
+      "Shader debugging not supported for legacy GLSL shaders.\n"
+      "Only modern GLSL compatible with SPIR-V compilation can be debugged.";
 
   if(shadType == eGL_COMPUTE_SHADER)
   {

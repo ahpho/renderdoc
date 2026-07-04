@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -97,6 +97,12 @@ template <>
 rdcstr convertFromVariant(const QVariant &val)
 {
   return val.toString();
+}
+
+template <>
+uint32_t convertFromVariant(const QVariant &val)
+{
+  return val.toUInt();
 }
 
 template <typename listType>
@@ -509,7 +515,7 @@ bool PersistantConfig::Load(const rdcstr &filename)
   for(const ShaderProcessingTool &dis : ShaderProcessors)
   {
     // if it's declared
-    if(dis.tool != KnownShaderTool::Unknown)
+    if(dis.tool != KnownShaderTool::Unknown && dis.tool < KnownShaderTool::Count)
       tools[(size_t)dis.tool] = true;
   }
 

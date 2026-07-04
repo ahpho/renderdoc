@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -277,12 +277,17 @@ enum TexDisplayFlags
 
 struct ShaderDebugData
 {
+  enum
+  {
+    MAX_QUEUED_OPS = 128
+  };
   void Init(WrappedVulkan *driver, VkDescriptorPool descriptorPool);
   void Destroy(WrappedVulkan *driver);
 
+  VkDescriptorPool DescPool = VK_NULL_HANDLE;
   VkDescriptorSetLayout DescSetLayout = VK_NULL_HANDLE;
   VkPipelineLayout PipeLayout = VK_NULL_HANDLE;
-  VkDescriptorSet DescSet = VK_NULL_HANDLE;
+  VkDescriptorSet DescSets[MAX_QUEUED_OPS];
 
   VkPipeline MathPipe[3] = {};
 
@@ -384,8 +389,6 @@ public:
   bool IsOutputWindowVisible(uint64_t id);
   void FlipOutputWindow(uint64_t id);
 
-  ResourceId GetLiveID(ResourceId id);
-
   rdcarray<GPUCounter> EnumerateCounters();
   CounterDescription DescribeCounter(GPUCounter counterID);
   rdcarray<CounterResult> FetchCounters(const rdcarray<GPUCounter> &counters);
@@ -419,6 +422,7 @@ public:
   void ReplaceResource(ResourceId from, ResourceId to);
   void RemoveReplacement(ResourceId id);
   void ClearReplayCache();
+  void ReloadShaderDebugInformation();
 
   void RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secondaryDraws,
                   const MeshDisplay &cfg);
@@ -710,6 +714,7 @@ private:
     void Init(WrappedVulkan *driver, VkDescriptorPool descriptorPool);
     void Destroy(WrappedVulkan *driver);
 
+    VkPipeline CreateTempViewportPipe(WrappedVulkan *driver, uint32_t viewCount);
     VkPipeline CreateTempMultiviewQuadResolvePipe(WrappedVulkan *driver);
 
     VkDeviceMemory ImageMem = VK_NULL_HANDLE;
@@ -731,7 +736,6 @@ private:
     VkDescriptorSet m_CheckerDescSet = VK_NULL_HANDLE;
     VkPipeline m_CheckerPipeline = VK_NULL_HANDLE;
     VkPipeline m_CheckerMSAAPipeline = VK_NULL_HANDLE;
-    VkPipeline m_CheckerF16Pipeline[8] = {VK_NULL_HANDLE};
     GPUBuffer m_CheckerUBO;
 
     VkDescriptorSetLayout m_QuadDescSetLayout = VK_NULL_HANDLE;

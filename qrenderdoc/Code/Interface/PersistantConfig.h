@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -82,7 +82,7 @@ struct ShaderProcessingTool
   }
   DOCUMENT(R"(The :class:`KnownShaderTool` identifying which known tool this program is.
 
-:type: KnownShaderTool
+:type: renderdoc.KnownShaderTool
 )");
   KnownShaderTool tool = KnownShaderTool::Unknown;
   DOCUMENT(R"(The human-readable name of the program.
@@ -102,12 +102,12 @@ struct ShaderProcessingTool
   rdcstr args;
   DOCUMENT(R"(The input that this program expects.
 
-:type: ShaderEncoding
+:type: renderdoc.ShaderEncoding
 )");
   ShaderEncoding input = ShaderEncoding::Unknown;
   DOCUMENT(R"(The output that this program provides.
 
-:type: ShaderEncoding
+:type: renderdoc.ShaderEncoding
 )");
   ShaderEncoding output = ShaderEncoding::Unknown;
 
@@ -323,6 +323,40 @@ DECLARE_REFLECTION_STRUCT(BugReport);
       ""                                                                                           \
       ":type: bool");                                                                              \
   CONFIG_SETTING_VAL(public, bool, bool, TextureViewer_PerTexYFlip, false)                         \
+                                                                                                   \
+  DOCUMENT(                                                                                        \
+      "List of Qt keycodes for mesh viewer key bindings. Can be empty if no keys are configured "  \
+      "which will revert to default behaviour of physical WASD (independent of local keyboard "    \
+      "layout)."                                                                                   \
+      "\n"                                                                                         \
+      "Defaults to an empty list."                                                                 \
+      ""                                                                                           \
+      ":type: List[int]");                                                                         \
+  CONFIG_SETTING(public, QVariantList, rdcarray<uint32_t>, MeshViewer_KeySettings)                 \
+                                                                                                   \
+  DOCUMENT(                                                                                        \
+      "The Qt modifier code for the mesh viewer 'speed' modifier."                                 \
+      "\n"                                                                                         \
+      "Defaults to ``-1`` which means Shift."                                                      \
+      ""                                                                                           \
+      ":type: int");                                                                               \
+  CONFIG_SETTING_VAL(public, int, int, MeshViewer_SpeedModifier, -1)                               \
+                                                                                                   \
+  DOCUMENT(                                                                                        \
+      "The near plane used in the mesh viewers display."                                           \
+      "\n"                                                                                         \
+      "Defaults to ``0.1``."                                                                       \
+      ""                                                                                           \
+      ":type: float");                                                                             \
+  CONFIG_SETTING_VAL(public, float, float, MeshViewer_CameraNear, 0.1f)                            \
+                                                                                                   \
+  DOCUMENT(                                                                                        \
+      "The far plane used in the mesh viewers display."                                            \
+      "\n"                                                                                         \
+      "Defaults to ``100000.0``."                                                                  \
+      ""                                                                                           \
+      ":type: float");                                                                             \
+  CONFIG_SETTING_VAL(public, float, float, MeshViewer_CameraFar, 100000.0f)                        \
                                                                                                    \
   DOCUMENT(                                                                                        \
       "List of the directories containing custom shader files for the Texture Viewer.\n"           \
@@ -559,6 +593,16 @@ DECLARE_REFLECTION_STRUCT(BugReport);
   CONFIG_SETTING_VAL(public, QString, rdcstr, ExternalTool_RadeonGPUProfiler, "")                  \
                                                                                                    \
   DOCUMENT(                                                                                        \
+      "``True`` if the user has had the annotation viewer displayed when hidden upon loading a"    \
+      "capture that contains annotations. After this is set to true, we won't auto-show the \n"    \
+      "annotation viewer automatically.\n"                                                         \
+      "\n"                                                                                         \
+      "Defaults to ``False``."                                                                     \
+      ""                                                                                           \
+      ":type: bool");                                                                              \
+  CONFIG_SETTING_VAL(public, bool, bool, Annotations_HasAutoShown, false)                          \
+                                                                                                   \
+  DOCUMENT(                                                                                        \
       "``True`` if the user has seen the first tip, which should always be shown first before "    \
       "randomising.\n"                                                                             \
       "\n"                                                                                         \
@@ -662,7 +706,17 @@ DECLARE_REFLECTION_STRUCT(BugReport);
   CONFIG_SETTING(public, QVariantList, rdcarray<rdcstr>, AlwaysLoad_Extensions)                    \
                                                                                                    \
   DOCUMENT("");                                                                                    \
-  CONFIG_SETTING(private, QVariantList, rdcarray<RemoteHost>, RemoteHostList)
+  CONFIG_SETTING(private, QVariantList, rdcarray<RemoteHost>, RemoteHostList)                      \
+                                                                                                   \
+  DOCUMENT("");                                                                                    \
+  DOCUMENT(                                                                                        \
+      "``False`` if :class:`ResourceUsage` should combine resource usage across marker "           \
+      "boundaries.\n"                                                                              \
+      "\n:"                                                                                        \
+      "Defaults to ``False``."                                                                     \
+      ""                                                                                           \
+      ":type: bool");                                                                              \
+  CONFIG_SETTING_VAL(public, bool, bool, ResourceUsage_SplitByMarker, false)
 
 DOCUMENT(R"(The formatting mode used when displaying fields marked as Offsets or Sizes.
 

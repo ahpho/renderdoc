@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1251,7 +1251,7 @@ struct ClearValue
   VkClearValue clear;
 
   operator const VkClearValue *() const { return (VkClearValue *)this; }
-  operator const VkClearValue &() const { return (VkClearValue &)*this; }
+  operator const VkClearValue &() const { return clear; }
 };
 
 struct Viewport : public VkViewport
@@ -1302,7 +1302,7 @@ struct ComputePipelineCreateInfo : public VkComputePipelineCreateInfo
   {
     sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     pNext = NULL;
-    this->flags = 0;
+    this->flags = flags;
     this->stage = stage;
     this->layout = layout;
     this->basePipelineHandle = basePipelineHandle;

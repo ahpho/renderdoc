@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2022-2025 Baldur Karlsson
+ * Copyright (c) 2022-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -153,7 +153,9 @@ AppleWindow::~AppleWindow()
 AppleWindow::AppleWindow(int width, int height, const char *title) : GraphicsWindow(title)
 {
   pAppDelegate->CreateWindow(width, height, title);
-  view = pAppDelegate->GetContentView();
+  NS::View *nsView = pAppDelegate->GetContentView();
+  view = nsView;
+  layer = nsView->layer();
 }
 
 bool AppleWindow::Init()

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2022-2025 Baldur Karlsson
+ * Copyright (c) 2022-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -59,8 +59,8 @@ WrappedMTLBlitCommandEncoder *WrappedMTLCommandBuffer::blitCommandEncoder()
   MTL::BlitCommandEncoder *realMTLBlitCommandEncoder;
   SERIALISE_TIME_CALL(realMTLBlitCommandEncoder = Unwrap(this)->blitCommandEncoder());
   WrappedMTLBlitCommandEncoder *wrappedMTLBlitCommandEncoder;
-  ResourceId id =
-      GetResourceManager()->WrapResource(realMTLBlitCommandEncoder, wrappedMTLBlitCommandEncoder);
+  ResourceId id = GetResourceManager()->WrapResource(ResourceId(), realMTLBlitCommandEncoder,
+                                                     wrappedMTLBlitCommandEncoder);
   wrappedMTLBlitCommandEncoder->SetCommandBuffer(this);
   if(IsCaptureMode(m_State))
   {
@@ -113,7 +113,7 @@ WrappedMTLRenderCommandEncoder *WrappedMTLCommandBuffer::renderCommandEncoderWit
                           Unwrap(this)->renderCommandEncoder(mtlDescriptor));
   mtlDescriptor->release();
   WrappedMTLRenderCommandEncoder *wrappedMTLRenderCommandEncoder;
-  ResourceId id = GetResourceManager()->WrapResource(realMTLRenderCommandEncoder,
+  ResourceId id = GetResourceManager()->WrapResource(ResourceId(), realMTLRenderCommandEncoder,
                                                      wrappedMTLRenderCommandEncoder);
   wrappedMTLRenderCommandEncoder->SetCommandBuffer(this);
   if(IsCaptureMode(m_State))
@@ -165,7 +165,7 @@ bool WrappedMTLCommandBuffer::Serialise_presentDrawable(SerialiserType &ser,
       AddEvent();
 
       ActionDescription action;
-      ResourceId presentedImageId = GetResourceManager()->GetOriginalID(GetResID(presentedImage));
+      ResourceId presentedImageId = GetResID(presentedImage);
       action.customName = StringFormat::Fmt("presentDrawable(%s)", ToStr(presentedImageId).c_str());
       action.flags |= ActionFlags::Present;
       action.copyDestination = presentedImageId;

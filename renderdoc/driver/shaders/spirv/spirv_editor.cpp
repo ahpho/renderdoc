@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1092,6 +1092,63 @@ rdcpair<Id, Id> Editor::AddBufferVariable(rdcarray<Id> &addedGlobals, Id varType
   }
 
   return ret;
+}
+
+void Editor::FlattenSpecConstants(const rdcarray<SpecConstant> &userSpec)
+{
+  // patch all bindings up trivially to account for the extra reservation
+  for(Iter it = Begin(Section::Annotations), end = End(Section::Annotations); it < end; ++it)
+  {
+    if(it.opcode() == Op::Decorate)
+    {
+      OpDecorate dec(it);
+      if(dec.decoration == Decoration::SpecId)
+      {
+        for(const SpecConstant &s : userSpec)
+        {
+          if(s.specID == dec.decoration.specId)
+          {
+            Iter target = GetID(dec.target);
+
+            if(target.opcode() == Op::SpecConstantTrue || target.opcode() == Op::SpecConstantFalse)
+            {
+              RDCCOMPILE_ASSERT(
+                  OpConstantTrue::FixedWordSize == OpSpecConstantTrue::FixedWordSize &&
+                      OpConstantTrue::FixedWordSize == OpSpecConstantFalse::FixedWordSize &&
+                      OpConstantTrue::FixedWordSize == OpConstantFalse::FixedWordSize,
+                  "OpConstantTrue and False should be interchangeable and equal to Spec versions");
+
+              OpSpecConstantTrue orig(target);
+
+              if(s.value != 0)
+                target = OpConstantTrue(orig.resultType, orig.result);
+              else
+                target = OpConstantFalse(orig.resultType, orig.result);
+            }
+            else if(target.opcode() == Op::SpecConstant)
+            {
+              rdcarray<uint32_t> data;
+              data.assign(target.words() + 1, target.size() - 1);
+
+              // first two IDs are type and result
+              size_t constSize = data.byteSize() - 2 * sizeof(Id);
+
+              RDCASSERTEQUAL(s.dataSize, constSize);
+
+              memcpy(&data[2], &s.value, RDCMIN(s.dataSize, constSize));
+
+              target = Operation(Op::Constant, data);
+            }
+
+            break;
+          }
+        }
+
+        // remove the spec id whether we found one or not. If we didn't find one, the default should be used
+        it.nopRemove();
+      }
+    }
+  }
 }
 
 #define TYPETABLE(StructType, variable)                                \

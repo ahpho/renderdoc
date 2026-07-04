@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2019-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -540,7 +540,6 @@ void Processor::RegisterOp(Iter it)
        decoded.capability == Capability::GroupNonUniformShuffle ||
        decoded.capability == Capability::GroupNonUniformShuffleRelative ||
        decoded.capability == Capability::GroupNonUniformClustered ||
-       decoded.capability == Capability::GroupNonUniformQuad ||
        decoded.capability == Capability::GroupNonUniformRotateKHR ||
        decoded.capability == Capability::GroupUniformArithmeticKHR ||
        decoded.capability == Capability::SubgroupBallotKHR ||

@@ -407,7 +407,7 @@ class TestCase:
     def get_source_shader_var_value(self, sourceVars: List[rd.SourceVariableMapping], name, varType, debuggerVars):
         sourceVar = [v for v in sourceVars if v.name == name]
         if len(sourceVar) != 1:
-            raise TestFailureException(f"Couldn't find source variable {name} {varType}")
+            raise TestFailureException(f"Couldn't find source variable {name} type:{varType}")
 
         scalarType, countElems = self.parse_shader_var_type(varType)
 
@@ -417,7 +417,7 @@ class TestCase:
         elif scalarType == 'int':
             return list(debugged.value.s32v[0:countElems])
         else:
-            raise TestFailureException(f"Unhandled scalarType {scalarType} {varType}")
+            raise TestFailureException(f"Unhandled scalarType {scalarType} type:{varType}")
         return None
 
     def check_task_data(self, task_ref, task_data):
@@ -547,6 +547,9 @@ class TestCase:
         self.controller = analyse.open_capture(self.capture_filename, opts=self.get_replay_options())
         self.sdfile = self.controller.GetStructuredFile()
 
+        if not self.validate_eventids(self.controller):
+            raise TestFailureException("ERROR: capture doesn't have valid event IDs.")
+
         log.print("Checking capture")
 
         self.check_capture()
@@ -629,6 +632,127 @@ class TestCase:
 
         log.success("Backbuffer is identical to reference")
 
+    def log_shader_variable(self, var: rd.ShaderVariable) -> None:
+        log.print(f"Shader Variable: {var.name} Type:{var.type} Rows:{var.rows} Columns:{var.columns} Flags:{var.flags} CountMembers:{len(var.members)}")
+
+        for i in range(var.rows * var.columns):
+            type = var.type
+            if type == rd.VarType.UByte or type == rd.VarType.SByte:
+                log.print(f"Byte   {i}: {var.value.u8v[i]}")
+            elif type == rd.VarType.Half or type == rd.VarType.UShort or type == rd.VarType.SShort:
+                log.print(f"Half   {i}: {var.value.u16v[i]}")
+            elif type == rd.VarType.Float:
+                log.print(f"Float  {i}: {var.value.f32v[i]}")
+            elif type == rd.VarType.UInt or type == rd.VarType.SInt or type == rd.VarType.Bool or type == rd.VarType.Enum:
+                log.print(f"Int    {i}: {var.value.u32v[i]}")
+            elif type == rd.VarType.Double:
+                log.print(f"Double {i}: {var.value.f64v[i]}")
+            elif type == rd.VarType.ULong or type == rd.VarType.SLong or type == rd.VarType.GPUPointer:
+                log.print(f"Long   {i}: {var.value.u64v[i]}")
+            else:
+                log.print(f"???    {i}: {var.value.u64v[i]}")
+
+        for m in range(len(var.members)):
+            self.log_shader_variable(var.members[m])
+
+    def compare_shader_variable_change(self, expectedChange: rd.ShaderVariableChange, change: rd.ShaderVariableChange, showDiffs = True) -> bool:
+        ret = True
+        difference = ""
+        (res, difference) = analyse.shadervariable_equal(expectedChange.before, change.before)
+        if not res:
+            if not showDiffs:
+                return False
+            log.error(f"ShaderVariableChange different before {expectedChange.before.name} {change.before.name} {difference}")
+            ret = False
+        (res, difference) = analyse.shadervariable_equal(expectedChange.after, change.after)
+        if not res:
+            if not showDiffs:
+                return False
+            log.error(f"ShaderVariableChange different after {expectedChange.after.name} {change.after.name} {difference}")
+            ret = False
+        return ret
+
+    def compare_shader_variable_changes(self, expectedChanges: List[rd.ShaderVariableChange], changes: List[rd.ShaderVariableChange], showDiffs = True) -> bool:
+        ret = True
+        if (len(expectedChanges) != len(changes)):
+            if not showDiffs:
+                return False
+            log.error(f"Different number of changes:{len(expectedChanges)} != {len(changes)}")
+            return False
+        for i in range(len(expectedChanges)):
+            expected = expectedChanges[i]
+            change = changes[i]
+            if not self.compare_shader_variable_change(expected, change, showDiffs):
+                if not showDiffs:
+                    return False
+                log.error(f"ShaderVariableChange[{i}] does not match")
+                ret = False
+        return ret
+
+    def compare_single_step(self, expectedState: rd.ShaderDebugState, state: rd.ShaderDebugState, showDiffs = True) -> bool:
+        ret = True
+        if expectedState.stepIndex != state.stepIndex:
+            if not showDiffs:
+                return False
+            log.error(f"Different stepIndex: {expectedState.stepIndex} != {state.stepIndex}")
+            ret = False
+        if expectedState.flags != state.flags:
+            if not showDiffs:
+                return False
+            log.error(f"Different flags: {expectedState.flags} != {state.flags}")
+            ret = False
+        if expectedState.nextInstruction != state.nextInstruction:
+            if not showDiffs:
+                return False
+            log.error(f"Different nextInstruction: {expectedState.nextInstruction} != {state.nextInstruction}")
+            ret = False
+        if not self.compare_shader_variable_changes(expectedState.changes, state.changes, showDiffs):
+            if not showDiffs:
+                return False
+            log.error(f"Different changes at nextInstruction:{expectedState.nextInstruction} stepIndex:{expectedState.stepIndex}")
+            ret = False
+        if len(expectedState.callstack) != len(state.callstack):
+            if not showDiffs:
+                return False
+            log.error(f"Different callstack length: {len(expectedState.callstack)} != {len(state.callstack)}")
+            return False
+        for i in range(len(expectedState.callstack)):
+            if expectedState.callstack[i] != state.callstack[i]:
+                if not showDiffs:
+                    return False
+                log.error(f"Different callstack entry[{i}]: {expectedState.callstack[i]} != {state.callstack[i]}")
+                ret = False
+
+        return ret
+
+    def compare_full_traces(self, expectedStates: List[rd.ShaderDebugState], states: List[rd.ShaderDebugState], showDiffs = True) -> bool:
+        ret = True
+        if len(expectedStates) != len(states):
+            if not showDiffs:
+                return False
+            log.error(f"Traces have different number of states: {len(expectedStates)} != {len(states)}")
+            return False
+        for i in range(len(expectedStates)):
+            if not self.compare_single_step(expectedStates[i], states[i], showDiffs):
+                if not showDiffs:
+                    return False
+                log.error(f"Trace state[{i}] does not match")
+                ret = False
+        return ret
+
+    def generate_full_trace(self, trace: rd.ShaderDebugTrace) -> List[rd.ShaderDebugState]:
+        allStates = []
+        allChanges = []
+        while True:
+            states = self.controller.ContinueDebug(trace.debugger)
+            if len(states) == 0:
+                break
+            for state in states:
+                allStates.append(state)
+                allChanges.append(state.changes)
+        self.validate_trace(allChanges)
+        return allStates
+
     def process_trace(self, trace: rd.ShaderDebugTrace, validate: bool = True):
         variables = {}
         cycles = 0
@@ -696,18 +820,18 @@ class TestCase:
         remaining = ''
 
         # Otherwise, take off any child if we haven't started recursing
-        m = re.match("([a-zA-Z0-9_]+)(\[.*|\..*)", path)
+        m = re.match(r"([a-zA-Z0-9_]+)(\[.*|\..*)", path)
         if m:
             child = m.group(1)
             remaining = m.group(2)
         else:
             # array index
-            m = re.match("(\[[0-9]*\])(.*)", path)
+            m = re.match(r"(\[[0-9]*\])(.*)", path)
             if m:
                 child = m.group(1)
                 remaining = m.group(2)
             else:
-                m = re.match("\.([a-zA-Z0-9_]+)(.*)", path)
+                m = re.match(r"\.([a-zA-Z0-9_]+)(.*)", path)
                 if m:
                     child = m.group(1)
                     remaining = m.group(2)
@@ -886,6 +1010,16 @@ class TestCase:
         for var in payload.variables:
             var_data = {}
             var_data[var.name] = []
+            if (var.type.baseType == rd.VarType.Struct):
+                structSize = 0
+                structSize += var.type.members[0].byteOffset
+                for member in var.type.members:
+                    byteWidth = rd.VarTypeByteSize(member.type.baseType)
+                    structSize += byteWidth * member.type.columns * member.type.elements
+                skipBytes = structSize * var.type.elements
+                log.print(f"Skipping struct variable '{var.name}' Size {skipBytes}")
+                offset += skipBytes
+                continue
             # This is not complete to decode all possible payload layouts
             for i in range(var.type.elements):
                 format = rd.ResourceFormat()
@@ -895,7 +1029,8 @@ class TestCase:
                 format.type = rd.ResourceFormatType.Regular
 
                 data =  analyse.unpack_data(format, buffer_data, offset)
-                var_data[var.name] += data
+                if data:
+                    var_data[var.name] += data
                 offset += format.compByteWidth * format.compCount
             ret.append(var_data)
 
@@ -968,6 +1103,12 @@ class TestCase:
         variables = {}
         for i in range(len(allChanges)):
             for c in allChanges[i]:
+                if len(c.after.name) == 0 and len(c.before.name) == 0:
+                    if c.before.type == rd.VarType.ReadOnlyResource or c.before.type == rd.VarType.ReadWriteResource:
+                        continue
+                    if c.after.type == rd.VarType.ReadOnlyResource or c.after.type == rd.VarType.ReadWriteResource:
+                        continue
+
                 if len(c.after.name) == 0:
                     if variables.get(c.before.name) is None:
                         raise TestFailureException(f"Step {i} ShaderVariableChange for '{c.before.name}' not found in existing variables")
@@ -980,8 +1121,9 @@ class TestCase:
                 else:
                     if c.after.name in variables:
                         # Step Forwards: not-first appearance of a variable "before" must equal currently known value
-                        if not analyse.shadervariable_equal(c.before, variables[c.after.name]):
-                            raise TestFailureException(f"Step {i} ShaderVariableChange for '{c.after.name}' before does not match existing entry")
+                        (res, difference) = analyse.shadervariable_equal(c.before, variables[c.after.name])
+                        if not res:
+                            raise TestFailureException(f"Step {i} ShaderVariableChange for '{c.after.name}' before does not match existing entry {difference}")
                     else:
                         # Step Forwards: first appearance of a variable must have "before" = {}
                         if c.before != rd.ShaderVariable():
@@ -994,6 +1136,12 @@ class TestCase:
         # Step Backwards
         for i in reversed(range(len(allChanges))):
             for c in allChanges[i]:
+                if len(c.after.name) == 0 and len(c.before.name) == 0:
+                    if c.before.type == rd.VarType.ReadOnlyResource or c.before.type == rd.VarType.ReadWriteResource:
+                        continue
+                    if c.after.type == rd.VarType.ReadOnlyResource or c.after.type == rd.VarType.ReadWriteResource:
+                        continue
+
                 if len(c.before.name) == 0:
                     if variables.get(c.after.name) is None:
                         raise TestFailureException(f"Step {i} ShaderVariableChange for '{c.after.name}' not found in existing variables")
@@ -1006,8 +1154,9 @@ class TestCase:
                 else:
                     if c.before.name in variables:
                         # Step Backwards: not-first appearance of a variable "after" must equal currently known value
-                        if not analyse.shadervariable_equal(c.after, variables[c.before.name]):
-                            raise TestFailureException(f"Step {i} ShaderVariableChange for '{c.before.name}' after does not match existing entry")
+                        (res, difference) = analyse.shadervariable_equal(c.after, variables[c.before.name])
+                        if not res:
+                            raise TestFailureException(f"Step {i} ShaderVariableChange for '{c.before.name}' after does not match existing entry {difference}")
                     else:
                         # Step Backwards: first appearance of a variable must have "after" = {}
                         if c.after != rd.ShaderVariable():
@@ -1017,4 +1166,26 @@ class TestCase:
                     if not self.validate_shadervariable(c.before):
                         raise TestFailureException(f"Step {i} ShaderVariableChange for '{c.after.name}' before is not well formed")
 
+        return True
+
+    def validate_eventids(self, controller: rd.ReplayController) -> bool:
+        actions = controller.GetRootActions().copy()
+        eventIds = set()
+        maxEventId = 0
+        while len(actions) > 0:
+            action = actions.pop()
+            for event in action.events:
+                eid = event.eventId
+                if eid in eventIds:
+                    log.error(f"ERROR: Duplicated EventId: {eid} Action: {action.actionId} {action.customName}")
+                    return False
+                if eid > maxEventId:
+                    maxEventId = eid
+                eventIds.add(eid)
+            for child in action.children:
+                actions.append(child)
+        for eid in range(1, maxEventId+1):
+            if not eid in eventIds:
+                log.error(f"ERROR: Missing EventId: {eid}")
+                return False
         return True

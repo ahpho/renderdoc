@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -66,8 +66,8 @@ void DoSerialise(SerialiserType &ser, GLResource &el)
 
   if(ser.IsReading())
   {
-    if(id != ResourceId() && rm && rm->HasLiveResource(id))
-      el = rm->GetLiveResource(id);
+    if(id != ResourceId() && rm && rm->HasResource(id))
+      el = rm->GetResource(id);
     else
       el = GLResource(MakeNullResource);
   }

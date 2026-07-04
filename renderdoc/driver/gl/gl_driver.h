@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -59,7 +59,7 @@ struct GLInitParams
   rdcstr renderer, version;
 
   // check if a frame capture section version is supported
-  static const uint64_t CurrentVersion = 0x23;
+  static const uint64_t CurrentVersion = 0x24;
   static bool IsSupportedVersion(uint64_t ver);
 };
 
@@ -185,6 +185,12 @@ private:
 
   void *m_LastCtx;
   int m_ImplicitThreadSwitches = 0;
+
+  // Object and command annotation support
+  Threading::CriticalSection m_AnnotationsLock;
+  std::unordered_map<ResourceId, SDObject *> m_Annotations;    // Object annotations by ResourceId
+  SDObject *m_RootAnnotation = NULL;                           // Root for event annotation state
+  rdcarray<SDObject *> m_EventAnnotations;                     // Track allocations for cleanup
 
   GLContextTLSData m_EmptyTLSData;
   uint64_t m_CurCtxDataTLS;
@@ -574,6 +580,12 @@ private:
   rdcarray<QueuedResource> m_QueuedInitialFetches;
   rdcarray<QueuedResource> m_QueuedReleases;
 
+  void RemoveAnnotations(ResourceId id)
+  {
+    SCOPED_LOCK(m_AnnotationsLock);
+    m_Annotations.erase(id);
+  }
+
   void QueuePrepareInitialState(GLResource res);
   void QueueResourceRelease(GLResource res);
   void CheckQueuedInitialFetches(void *ctx);
@@ -587,7 +599,7 @@ private:
   void RenderText(float x, float y, const rdcstr &text);
   void RenderTextInternal(float x, float y, const rdcstr &text);
 
-  void CreateReplayBackbuffer(const GLInitParams &params, ResourceId fboOrigId, GLuint &fbo,
+  void CreateReplayBackbuffer(const GLInitParams &params, ResourceId fboId, GLuint &fbo,
                               rdcstr bbname);
 
   RenderDoc::FramePixels *SaveBackbufferImage();
@@ -706,6 +718,17 @@ public:
   bool EndFrameCapture(DeviceOwnedWindow devWnd);
   bool DiscardFrameCapture(DeviceOwnedWindow devWnd);
 
+  template <typename SerialiserType>
+  bool Serialise_SetCommandAnnotation(SerialiserType &ser, rdcstr key,
+                                      RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                      RENDERDOC_AnnotationValue value);
+
+  uint32_t SetObjectAnnotation(void *object, const char *key, RENDERDOC_AnnotationType valueType,
+                               uint32_t valueVectorWidth, const RENDERDOC_AnnotationValue *value);
+  uint32_t SetCommandAnnotation(void *queueOrCommandBuffer, const char *key,
+                                RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                const RENDERDOC_AnnotationValue *value);
+
   // map with key being mip level, value being stored data
   typedef std::map<int, bytebuf> CompressedDataStore;
 
@@ -731,6 +754,13 @@ public:
     // used for if the application actually uploaded SPIR-V
     rdcarray<uint32_t> spirvWords;
     SPIRVPatchData patchData;
+
+    // used if the application uploaded GLSL but we were able to compile to SPIR-V
+    bool convertedSPIRV = false;
+    bool convertedAutomapped = false;
+    rdcarray<uint32_t> convertedSpirvWords;
+    SPIRVPatchData convertedPatchData;
+    ShaderReflection convertedRefl;
 
     // the parameters passed to glSpecializeShader
     rdcstr entryPoint;

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -83,6 +83,8 @@ COM_SMARTPTR(ID3D12CommandQueueDownlevel);
 COM_SMARTPTR(ID3D12StateObject);
 COM_SMARTPTR(ID3D12StateObjectProperties);
 
+COM_SMARTPTR(ID3D12QueryHeap);
+
 struct D3D12GraphicsTest;
 
 class D3D12PSOCreator
@@ -137,6 +139,7 @@ public:
   D3D12BufferCreator &UAV();
   D3D12BufferCreator &ASB();
 
+  D3D12BufferCreator &GPUUpload();
   D3D12BufferCreator &Upload();
   D3D12BufferCreator &Readback();
 
@@ -319,3 +322,9 @@ D3D12_INDIRECT_ARGUMENT_DESC dispatchArg();
       exit(1);                                                                            \
     }                                                                                     \
   }
+
+template <typename T>
+void setName(T obj, const std::string &name)
+{
+  obj->SetName(UTF82Wide(name).c_str());
+}

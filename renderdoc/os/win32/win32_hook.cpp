@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -153,7 +153,6 @@ struct CachedHookData
   std::map<rdcstr, DllHookset> DllHooks;
   HMODULE ownmodule = NULL;
   Threading::CriticalSection lock;
-  char lowername[512] = {};
 
   std::set<rdcstr> ignores;
 
@@ -164,6 +163,8 @@ struct CachedHookData
 
   void ApplyHooks(const char *modName, HMODULE module)
   {
+    char lowername[512] = {};
+
     {
       size_t i = 0;
       while(modName[i])
@@ -761,7 +762,7 @@ static bool OrdinalAsString(void *func)
   return uint64_t(func) <= 0xffff;
 }
 
-FARPROC WINAPI Hooked_GetProcAddress(HMODULE mod, LPCSTR func)
+FARPROC WINAPI Hooked_GetProcAddress(HMODULE mod, const LPCSTR func)
 {
   if(mod == NULL || func == NULL || mod == s_HookData->ownmodule)
     return GetProcAddress(mod, func);
@@ -807,6 +808,8 @@ FARPROC WINAPI Hooked_GetProcAddress(HMODULE mod, LPCSTR func)
       RDCDEBUG("Located module %s", it->first.c_str());
 #endif
 
+      LPCSTR searchFunc = func;
+
       if(OrdinalAsString((void *)func))
       {
 #if ENABLED(VERBOSE_DEBUG_HOOK)
@@ -835,14 +838,14 @@ FARPROC WINAPI Hooked_GetProcAddress(HMODULE mod, LPCSTR func)
           return GetProcAddress(mod, func);
         }
 
-        func = it->second.OrdinalNames[ordinal].c_str();
+        searchFunc = it->second.OrdinalNames[ordinal].c_str();
 
 #if ENABLED(VERBOSE_DEBUG_HOOK)
-        RDCDEBUG("found ordinal %s", func);
+        RDCDEBUG("found ordinal %s", searchFunc);
 #endif
       }
 
-      FunctionHook search(func, NULL, NULL);
+      FunctionHook search(searchFunc, NULL, NULL);
 
       auto found =
           std::lower_bound(it->second.FunctionHooks.begin(), it->second.FunctionHooks.end(), search);

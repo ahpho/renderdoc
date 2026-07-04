@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2019-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -623,6 +623,15 @@ rdcstr Program::GetDebugStatus()
 
   // otherwise we need to check that no unsupported vendor extensions are used
   DecodeProgram();
+
+  for(const Declaration &decl : m_Declarations)
+  {
+    if(decl.operand.type == TYPE_CONSTANT_BUFFER && decl.operand.indices.size() == 3 &&
+       decl.operand.indices[2].index == 0xffffffff)
+    {
+      return "Unsupported unbounded ConstantBuffer array";
+    }
+  }
 
   for(const Operation &op : m_Instructions)
   {

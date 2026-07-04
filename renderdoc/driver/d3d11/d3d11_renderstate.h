@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -182,7 +182,7 @@ struct D3D11RenderState
     // happen is the death will be reported to the device. By the time the device actually processes
     // it the object will have an intref again.
     for(size_t i = 0; i < num; i++)
-      ChangeRefRead(stateArray[offset + i], newArray[i]);
+      ChangeRefRead(stateArray[offset + i], newArray ? newArray[i] : NULL);
   }
 
   template <typename T>
@@ -214,7 +214,7 @@ struct D3D11RenderState
   void ChangeRefWrite(T **stateArray, T *const *newArray, size_t offset, size_t num)
   {
     for(size_t i = 0; i < num; i++)
-      ChangeRefWrite(stateArray[offset + i], newArray[i]);
+      ChangeRefWrite(stateArray[offset + i], newArray ? newArray[i] : NULL);
   }
 
   template <typename T>

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2021-2025 Baldur Karlsson
+ * Copyright (c) 2021-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -114,7 +114,7 @@ static bool AnnotateDXBCShader(const DXBC::DXBCContainer *dxbc, uint32_t space,
     for(const Operand &operand : op.operands)
     {
       if(operand.type != TYPE_RESOURCE && operand.type != TYPE_UNORDERED_ACCESS_VIEW &&
-         operand.type != TYPE_SAMPLER)
+         operand.type != TYPE_SAMPLER && operand.type != TYPE_CONSTANT_BUFFER)
         continue;
 
       const Declaration *decl =
@@ -251,7 +251,7 @@ static bool AnnotateDXILShader(const DXBC::DXBCContainer *dxbc, uint32_t space,
   // register IDs of each SRV/UAV/Sampler with slots, and record the base slot in this array for
   // easy access later when annotating dx.op.createHandle calls. We also need to know the base
   // register because the index dxc provides is register-relative
-  rdcarray<rdcpair<uint32_t, uint32_t>> srvBaseSlots, uavBaseSlots, sampBaseSlots;
+  rdcarray<rdcpair<uint32_t, uint32_t>> srvBaseSlots, uavBaseSlots, cbvBaseSlots, sampBaseSlots;
 
   // declare the resource, this happens purely in metadata but we need to store the slot
   uint32_t regSlot = 0;
@@ -271,6 +271,7 @@ static bool AnnotateDXILShader(const DXBC::DXBCContainer *dxbc, uint32_t space,
 
     Metadata *srvs = reslist->children[0];
     Metadata *uavs = reslist->children[1];
+    Metadata *cbvs = reslist->children[2];
     Metadata *samps = reslist->children[3];
     // if there isn't a UAV list, create an empty one so we can add our own
     if(!uavs)
@@ -327,6 +328,56 @@ static bool AnnotateDXILShader(const DXBC::DXBCContainer *dxbc, uint32_t space,
       RDCASSERT(feedbackSlot > 0);
 
       srvBaseSlots[id] = {feedbackSlot, key.bind};
+    }
+
+    key.type = DXBCBytecode::TYPE_CONSTANT_BUFFER;
+
+    for(size_t i = 0; cbvs && i < cbvs->children.size(); i++)
+    {
+      // each Sampler child should have a fixed format
+      const Metadata *cbv = cbvs->children[i];
+      const Constant *slot = cast<Constant>(cbv->children[(size_t)ResField::ID]->value);
+      const Constant *cbvSpace = cast<Constant>(cbv->children[(size_t)ResField::Space]->value);
+      const Constant *reg = cast<Constant>(cbv->children[(size_t)ResField::RegBase]->value);
+
+      if(!slot)
+      {
+        RDCWARN("Unexpected non-constant slot ID in constant buffer");
+        continue;
+      }
+
+      if(!cbvSpace)
+      {
+        RDCWARN("Unexpected non-constant register space in constant buffer");
+        continue;
+      }
+
+      if(!reg)
+      {
+        RDCWARN("Unexpected non-constant register base in constant buffer");
+        continue;
+      }
+
+      uint32_t id = slot->getU32();
+      key.space = cbvSpace->getU32();
+      key.bind = reg->getU32();
+
+      // ensure every valid ID has an index, even if it's 0
+      cbvBaseSlots.resize_for_index(id);
+
+      auto it = slots.find(key);
+
+      // not annotated
+      if(it == slots.end())
+        continue;
+
+      uint32_t feedbackSlot = it->second.slot;
+
+      // we assume all feedback slots are non-zero, so that a 0 base slot can be used as an
+      // identifier for 'this resource isn't annotated'
+      RDCASSERT(feedbackSlot > 0);
+
+      cbvBaseSlots[id] = {feedbackSlot, key.bind};
     }
 
     key.type = DXBCBytecode::TYPE_SAMPLER;
@@ -668,6 +719,8 @@ static bool AnnotateDXILShader(const DXBC::DXBCContainer *dxbc, uint32_t space,
           slotInfo = uavBaseSlots[id];
         else if(kind == HandleKind::Sampler && id < sampBaseSlots.size())
           slotInfo = sampBaseSlots[id];
+        else if(kind == HandleKind::CBuffer && id < cbvBaseSlots.size())
+          slotInfo = cbvBaseSlots[id];
       }
       else
       {
@@ -716,6 +769,8 @@ static bool AnnotateDXILShader(const DXBC::DXBCContainer *dxbc, uint32_t space,
             key.type = DXBCBytecode::TYPE_UNORDERED_ACCESS_VIEW;
           else if(kind == HandleKind::Sampler)
             key.type = DXBCBytecode::TYPE_SAMPLER;
+          else if(kind == HandleKind::CBuffer)
+            key.type = DXBCBytecode::TYPE_CONSTANT_BUFFER;
           else
             continue;
           key.space = spaceArg->getU32();
@@ -972,6 +1027,32 @@ static bool AddArraySlots(WrappedID3D12PipelineState::ShaderEntry *shad, uint32_
 
   const ShaderReflection &refl = shad->GetDetails();
 
+  for(size_t i = 0; i < refl.constantBlocks.size(); i++)
+  {
+    const ConstantBlock &cb = refl.constantBlocks[i];
+    if(cb.bindArraySize > 1)
+    {
+      D3D12FeedbackKey key;
+      key.stage = refl.stage;
+      key.type = DXBCBytecode::TYPE_CONSTANT_BUFFER;
+      key.space = cb.fixedBindSetOrSpace;
+      key.bind = cb.fixedBindNumber;
+
+      DescriptorAccess access;
+      access.stage = refl.stage;
+      access.type = DescriptorType::ConstantBuffer;
+      access.index = i & 0xffff;
+      // descriptor storage side will be calculated later when finalising this with the root
+      // signature information.
+
+      slots[key].numDescriptors = RDCMIN(maxDescriptors, cb.bindArraySize);
+      slots[key].access = access;
+      slots[key].slot = numSlots;
+      numSlots += slots[key].numDescriptors;
+      dynamicUsed = true;
+    }
+  }
+
   for(size_t i = 0; i < refl.readOnlyResources.size(); i++)
   {
     const ShaderResource &ro = refl.readOnlyResources[i];
@@ -1155,23 +1236,7 @@ struct D3D12StatCallback : public D3D12ActionCallback
     {
       // Need to create a new command signature using our modified root signature if the command
       // signature modifies the root arguments i.e. setting root constants, updating bindings.
-      bool needNewCommandSig = false;
-      for(D3D12_INDIRECT_ARGUMENT_DESC &arg : comSig->sig.arguments)
-      {
-        D3D12_INDIRECT_ARGUMENT_TYPE argType = arg.Type;
-        if(argType == D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW ||
-           argType == D3D12_INDIRECT_ARGUMENT_TYPE_INDEX_BUFFER_VIEW ||
-           argType == D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT ||
-           argType == D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW ||
-           argType == D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW ||
-           argType == D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW ||
-           argType == D3D12_INDIRECT_ARGUMENT_TYPE_INCREMENTING_CONSTANT)
-        {
-          needNewCommandSig = true;
-          break;
-        }
-      }
-      if(needNewCommandSig)
+      if(DoesCommandSignatureModifyRootArgs(comSig))
       {
         D3D12_COMMAND_SIGNATURE_DESC comSigDesc;
         comSigDesc.ByteStride = comSig->sig.ByteStride;
@@ -1266,7 +1331,7 @@ bool D3D12Replay::FetchShaderFeedback(uint32_t eventId)
   D3D12ResourceManager *rm = m_pDevice->GetResourceManager();
 
   WrappedID3D12PipelineState *pipe =
-      (WrappedID3D12PipelineState *)rm->GetCurrentAs<ID3D12PipelineState>(rs.pipe);
+      (WrappedID3D12PipelineState *)rm->GetResAs<ID3D12PipelineState>(rs.pipe);
   D3D12RootSignature modsig;
 
   if(!pipe)
@@ -1287,7 +1352,7 @@ bool D3D12Replay::FetchShaderFeedback(uint32_t eventId)
   for(ResourceId id : rs.heaps)
   {
     WrappedID3D12DescriptorHeap *heap =
-        (WrappedID3D12DescriptorHeap *)rm->GetCurrentAs<ID3D12DescriptorHeap>(id);
+        (WrappedID3D12DescriptorHeap *)rm->GetResAs<ID3D12DescriptorHeap>(id);
     D3D12_DESCRIPTOR_HEAP_DESC desc = heap->GetDesc();
     maxDescriptors = RDCMAX(maxDescriptors, desc.NumDescriptors);
   }
@@ -1306,7 +1371,7 @@ bool D3D12Replay::FetchShaderFeedback(uint32_t eventId)
 
   if(result.compute)
   {
-    ID3D12RootSignature *sig = rm->GetCurrentAs<ID3D12RootSignature>(rs.compute.rootsig);
+    ID3D12RootSignature *sig = rm->GetResAs<ID3D12RootSignature>(rs.compute.rootsig);
 
     if(!sig)
     {
@@ -1326,7 +1391,7 @@ bool D3D12Replay::FetchShaderFeedback(uint32_t eventId)
   }
   else
   {
-    ID3D12RootSignature *sig = rm->GetCurrentAs<ID3D12RootSignature>(rs.graphics.rootsig);
+    ID3D12RootSignature *sig = rm->GetResAs<ID3D12RootSignature>(rs.graphics.rootsig);
 
     if(!sig)
     {
@@ -1491,7 +1556,7 @@ bool D3D12Replay::FetchShaderFeedback(uint32_t eventId)
   ID3D12PipelineState *annotatedPipe = NULL;
 
   {
-    pipeDesc.pRootSignature = annotatedSig;
+    pipeDesc.SetRootSig(annotatedSig);
 
     HRESULT hr = m_pDevice->CreatePipeState(pipeDesc, &annotatedPipe);
     if(annotatedPipe == NULL || FAILED(hr))

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2017-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -647,6 +647,14 @@ struct CaptureContextInvoker : ObjectForwarder<ICaptureContext>
   {
     InvokeVoidFunction(&ICaptureContext::RemoveBookmark, EID);
   }
+  virtual void EmbedDependentFiles() override
+  {
+    InvokeVoidFunction(&ICaptureContext::EmbedDependentFiles);
+  }
+  virtual void RemoveDependentFiles() override
+  {
+    InvokeVoidFunction(&ICaptureContext::RemoveDependentFiles);
+  }
   virtual void DelayedCallback(uint32_t milliseconds, std::function<void()> callback) override
   {
     InvokeVoidFunction(&ICaptureContext::DelayedCallback, milliseconds, callback);
@@ -662,6 +670,10 @@ struct CaptureContextInvoker : ObjectForwarder<ICaptureContext>
   virtual IAPIInspector *GetAPIInspector() override
   {
     return InvokeRetFunction<IAPIInspector *>(&ICaptureContext::GetAPIInspector);
+  }
+  virtual IAnnotationViewer *GetAnnotationViewer() override
+  {
+    return InvokeRetFunction<IAnnotationViewer *>(&ICaptureContext::GetAnnotationViewer);
   }
   virtual ITextureViewer *GetTextureViewer() override
   {
@@ -720,6 +732,10 @@ struct CaptureContextInvoker : ObjectForwarder<ICaptureContext>
   {
     return InvokeRetFunction<bool>(&ICaptureContext::HasAPIInspector);
   }
+  virtual bool HasAnnotationViewer() override
+  {
+    return InvokeRetFunction<bool>(&ICaptureContext::HasAnnotationViewer);
+  }
   virtual bool HasTextureViewer() override
   {
     return InvokeRetFunction<bool>(&ICaptureContext::HasTextureViewer);
@@ -776,6 +792,10 @@ struct CaptureContextInvoker : ObjectForwarder<ICaptureContext>
   virtual void ShowAPIInspector() override
   {
     InvokeVoidFunction(&ICaptureContext::ShowAPIInspector);
+  }
+  virtual void ShowAnnotationViewer() override
+  {
+    InvokeVoidFunction(&ICaptureContext::ShowAnnotationViewer);
   }
   virtual void ShowTextureViewer() override
   {

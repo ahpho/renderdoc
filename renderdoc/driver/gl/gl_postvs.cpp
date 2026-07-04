@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -330,8 +330,8 @@ void GLReplay::InitPostVSBuffers(uint32_t eventId)
             gsPatch = m_pDriver->GetShader(pipeDetails.stageShaders[3]).patchData;
           }
 
-          stageShaders[i] = rm->GetCurrentResource(pipeDetails.stageShaders[i]).name;
-          stageSrcPrograms[i] = rm->GetCurrentResource(pipeDetails.stagePrograms[i]).name;
+          stageShaders[i] = rm->GetResource(pipeDetails.stageShaders[i]).name;
+          stageSrcPrograms[i] = rm->GetResource(pipeDetails.stagePrograms[i]).name;
 
           if(stageShaders[i] == stageSrcPrograms[i])
           {
@@ -388,7 +388,7 @@ void GLReplay::InitPostVSBuffers(uint32_t eventId)
           gsPatch = m_pDriver->GetShader(progDetails.stageShaders[3]).patchData;
         }
 
-        stageShaders[i] = rm->GetCurrentResource(progDetails.stageShaders[i]).name;
+        stageShaders[i] = rm->GetResource(progDetails.stageShaders[i]).name;
 
         if(refl)
         {

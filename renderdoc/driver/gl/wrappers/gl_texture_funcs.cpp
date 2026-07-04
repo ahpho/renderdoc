@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -102,8 +102,7 @@ bool WrappedOpenGL::Serialise_glGenTextures(SerialiserType &ser, GLsizei n, GLui
 
     GLResource res = TextureRes(GetCtx(), real);
 
-    ResourceId live = m_ResourceManager->RegisterResource(res);
-    GetResourceManager()->AddLiveResource(texture, res);
+    ResourceId live = m_ResourceManager->RegisterResource(texture, res);
 
     AddResource(texture, ResourceType::Texture, "Texture");
 
@@ -121,7 +120,7 @@ void WrappedOpenGL::glGenTextures(GLsizei n, GLuint *textures)
   for(GLsizei i = 0; i < n; i++)
   {
     GLResource res = TextureRes(GetCtx(), textures[i]);
-    ResourceId id = GetResourceManager()->RegisterResource(res);
+    ResourceId id = GetResourceManager()->RegisterResource(ResourceId(), res);
 
     if(IsCaptureMode(m_State))
     {
@@ -142,7 +141,6 @@ void WrappedOpenGL::glGenTextures(GLsizei n, GLuint *textures)
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, res);
       m_Textures[id].resource = res;
       m_Textures[id].curType = eGL_NONE;
     }
@@ -167,8 +165,7 @@ bool WrappedOpenGL::Serialise_glCreateTextures(SerialiserType &ser, GLenum targe
 
     GLResource res = TextureRes(GetCtx(), real);
 
-    ResourceId live = m_ResourceManager->RegisterResource(res);
-    GetResourceManager()->AddLiveResource(texture, res);
+    ResourceId live = m_ResourceManager->RegisterResource(texture, res);
 
     AddResource(texture, ResourceType::Texture, "Texture");
 
@@ -187,7 +184,7 @@ void WrappedOpenGL::glCreateTextures(GLenum target, GLsizei n, GLuint *textures)
   for(GLsizei i = 0; i < n; i++)
   {
     GLResource res = TextureRes(GetCtx(), textures[i]);
-    ResourceId id = GetResourceManager()->RegisterResource(res);
+    ResourceId id = GetResourceManager()->RegisterResource(ResourceId(), res);
 
     if(IsCaptureMode(m_State))
     {
@@ -212,7 +209,6 @@ void WrappedOpenGL::glCreateTextures(GLenum target, GLsizei n, GLuint *textures)
     }
     else
     {
-      GetResourceManager()->AddLiveResource(id, res);
       m_Textures[id].resource = res;
       m_Textures[id].curType = TextureTarget(target);
       m_Textures[id].creationFlags |= TextureCategory::ShaderRead;
@@ -226,7 +222,7 @@ void WrappedOpenGL::glDeleteTextures(GLsizei n, const GLuint *textures)
   for(GLsizei i = 0; i < n; i++)
   {
     GLResource res = TextureRes(GetCtx(), textures[i]);
-    if(GetResourceManager()->HasCurrentResource(res))
+    if(GetResourceManager()->HasResource(res))
     {
       if(GetResourceManager()->HasResourceRecord(res))
       {
@@ -584,7 +580,7 @@ bool WrappedOpenGL::Serialise_glBindImageTexture(SerialiserType &ser, GLuint uni
   {
     GL.glBindImageTexture(unit, texture.name, level, layered, layer, access, format);
 
-    if(IsLoading(m_State))
+    if(IsLoading(m_State) && texture.name)
       m_Textures[GetResourceManager()->GetResID(texture)].creationFlags |=
           TextureCategory::ShaderReadWrite;
   }
@@ -654,8 +650,9 @@ bool WrappedOpenGL::Serialise_glBindImageTextures(SerialiserType &ser, GLuint fi
     if(IsLoading(m_State))
     {
       for(GLsizei i = 0; i < count; i++)
-        m_Textures[GetResourceManager()->GetResID(textures[i])].creationFlags |=
-            TextureCategory::ShaderReadWrite;
+        if(textures[i].name)
+          m_Textures[GetResourceManager()->GetResID(textures[i])].creationFlags |=
+              TextureCategory::ShaderReadWrite;
     }
   }
 
@@ -719,22 +716,22 @@ bool WrappedOpenGL::Serialise_glTextureView(SerialiserType &ser, GLuint textureH
       EmulateLuminanceFormat(texture.name, target, intformat, dummy);
     }
 
-    ResourceId liveTexId = GetResourceManager()->GetResID(texture);
-    ResourceId liveOrigId = GetResourceManager()->GetResID(origtexture);
+    ResourceId viewId = GetResourceManager()->GetResID(texture);
+    ResourceId texId = GetResourceManager()->GetResID(origtexture);
 
-    m_Textures[liveTexId].curType = TextureTarget(target);
-    m_Textures[liveTexId].internalFormat = internalformat;
-    m_Textures[liveTexId].view = true;
-    m_Textures[liveTexId].width = RDCMAX(1, m_Textures[liveOrigId].width >> minlevel);
-    m_Textures[liveTexId].height = RDCMAX(1, m_Textures[liveOrigId].height >> minlevel);
-    m_Textures[liveTexId].depth = numlayers;
+    m_Textures[viewId].curType = TextureTarget(target);
+    m_Textures[viewId].internalFormat = internalformat;
+    m_Textures[viewId].view = true;
+    m_Textures[viewId].width = RDCMAX(1, m_Textures[texId].width >> minlevel);
+    m_Textures[viewId].height = RDCMAX(1, m_Textures[texId].height >> minlevel);
+    m_Textures[viewId].depth = numlayers;
     if(target == eGL_TEXTURE_3D)
-      m_Textures[liveTexId].depth = RDCMAX(1, m_Textures[liveOrigId].depth >> minlevel);
-    m_Textures[liveTexId].mipsValid = (1 << numlevels) - 1;
-    m_Textures[liveTexId].emulated = emulated;
+      m_Textures[viewId].depth = RDCMAX(1, m_Textures[texId].depth >> minlevel);
+    m_Textures[viewId].mipsValid = (1 << numlevels) - 1;
+    m_Textures[viewId].emulated = emulated;
 
     AddResourceInitChunk(texture);
-    DerivedResource(origtexture, GetResourceManager()->GetOriginalID(liveTexId));
+    DerivedResource(origtexture, viewId);
   }
 
   return true;
@@ -818,10 +815,9 @@ bool WrappedOpenGL::Serialise_glGenerateTextureMipmapEXT(SerialiserType &ser, GL
       AddEvent();
 
       // all mips are now valid
-      ResourceId liveId = GetResourceManager()->GetResID(texture);
-      uint32_t mips =
-          CalcNumMips(m_Textures[liveId].width, m_Textures[liveId].height, m_Textures[liveId].depth);
-      m_Textures[liveId].mipsValid = (1 << mips) - 1;
+      ResourceId id = GetResourceManager()->GetResID(texture);
+      uint32_t mips = CalcNumMips(m_Textures[id].width, m_Textures[id].height, m_Textures[id].depth);
+      m_Textures[id].mipsValid = (1 << mips) - 1;
 
       ActionDescription action;
       action.flags |= ActionFlags::GenMips;
@@ -935,14 +931,13 @@ bool WrappedOpenGL::Serialise_glInvalidateTexImage(SerialiserType &ser, GLuint t
   {
     GL.glInvalidateTexImage(texture.name, level);
 
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
+    ResourceId id = GetResourceManager()->GetResID(texture);
 
     if(m_ReplayOptions.optimisation != ReplayOptimisationLevel::Fastest)
     {
       GLenum attach = eGL_COLOR_ATTACHMENT0;
 
-      ResourceFormat fmt =
-          MakeResourceFormat(m_Textures[liveId].curType, m_Textures[liveId].internalFormat);
+      ResourceFormat fmt = MakeResourceFormat(m_Textures[id].curType, m_Textures[id].internalFormat);
 
       if(fmt.type != ResourceFormatType::Regular && fmt.type != ResourceFormatType::D16S8 &&
          fmt.type != ResourceFormatType::D24S8 && fmt.type != ResourceFormatType::D32S8 &&
@@ -950,11 +945,11 @@ bool WrappedOpenGL::Serialise_glInvalidateTexImage(SerialiserType &ser, GLuint t
          fmt.type != ResourceFormatType::R11G11B10)
       {
         // we don't expect to be able to render to this format, so fill it manually
-        GetReplay()->FillWithDiscardPattern(DiscardType::InvalidateCall, liveId, level);
+        GetReplay()->FillWithDiscardPattern(DiscardType::InvalidateCall, id, level);
       }
       else
       {
-        GLenum base = GetBaseFormat(m_Textures[liveId].internalFormat);
+        GLenum base = GetBaseFormat(m_Textures[id].internalFormat);
         if(base == eGL_DEPTH_STENCIL)
           attach = eGL_DEPTH_STENCIL_ATTACHMENT;
         else if(base == eGL_DEPTH_COMPONENT)
@@ -969,11 +964,11 @@ bool WrappedOpenGL::Serialise_glInvalidateTexImage(SerialiserType &ser, GLuint t
         GL.glGenFramebuffers(1, &fb);
         GL.glBindFramebuffer(eGL_DRAW_FRAMEBUFFER, fb);
 
-        GLenum texTarget = m_Textures[liveId].curType;
+        GLenum texTarget = m_Textures[id].curType;
 
         if(texTarget == eGL_TEXTURE_3D)
         {
-          for(GLsizei z = 0; z < RDCMAX(1, m_Textures[liveId].depth >> level); z++)
+          for(GLsizei z = 0; z < RDCMAX(1, m_Textures[id].depth >> level); z++)
           {
             GL.glFramebufferTextureLayer(eGL_DRAW_FRAMEBUFFER, attach, texture.name, level, z);
             GetReplay()->FillWithDiscardPattern(DiscardType::InvalidateCall, fb, 1, &attach, 0, 0,
@@ -983,7 +978,7 @@ bool WrappedOpenGL::Serialise_glInvalidateTexImage(SerialiserType &ser, GLuint t
         else if(texTarget == eGL_TEXTURE_2D_ARRAY || texTarget == eGL_TEXTURE_2D_MULTISAMPLE_ARRAY ||
                 texTarget == eGL_TEXTURE_CUBE_MAP || texTarget == eGL_TEXTURE_CUBE_MAP_ARRAY)
         {
-          GLsizei depth = m_Textures[liveId].depth;
+          GLsizei depth = m_Textures[id].depth;
           if(texTarget == eGL_TEXTURE_CUBE_MAP)
             depth *= 6;
           for(GLsizei z = 0; z < depth; z++)
@@ -1002,7 +997,7 @@ bool WrappedOpenGL::Serialise_glInvalidateTexImage(SerialiserType &ser, GLuint t
         }
         else if(texTarget == eGL_TEXTURE_1D_ARRAY)
         {
-          for(GLsizei z = 0; z < m_Textures[liveId].height; z++)
+          for(GLsizei z = 0; z < m_Textures[id].height; z++)
           {
             GL.glFramebufferTextureLayer(eGL_DRAW_FRAMEBUFFER, attach, texture.name, level, z);
             GetReplay()->FillWithDiscardPattern(DiscardType::InvalidateCall, fb, 1, &attach, 0, 0,
@@ -1029,7 +1024,7 @@ bool WrappedOpenGL::Serialise_glInvalidateTexImage(SerialiserType &ser, GLuint t
       ActionDescription action;
       action.flags |= ActionFlags::Clear;
 
-      action.copyDestination = GetResourceManager()->GetOriginalID(liveId);
+      action.copyDestination = id;
 
       AddAction(action);
 
@@ -1095,14 +1090,13 @@ bool WrappedOpenGL::Serialise_glInvalidateTexSubImage(SerialiserType &ser, GLuin
   {
     GL.glInvalidateTexSubImage(texture.name, level, xoffset, yoffset, zoffset, width, height, depth);
 
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
+    ResourceId id = GetResourceManager()->GetResID(texture);
 
     if(m_ReplayOptions.optimisation != ReplayOptimisationLevel::Fastest)
     {
       GLenum attach = eGL_COLOR_ATTACHMENT0;
 
-      ResourceFormat fmt =
-          MakeResourceFormat(m_Textures[liveId].curType, m_Textures[liveId].internalFormat);
+      ResourceFormat fmt = MakeResourceFormat(m_Textures[id].curType, m_Textures[id].internalFormat);
 
       if(fmt.type != ResourceFormatType::Regular && fmt.type != ResourceFormatType::D16S8 &&
          fmt.type != ResourceFormatType::D24S8 && fmt.type != ResourceFormatType::D32S8 &&
@@ -1110,12 +1104,12 @@ bool WrappedOpenGL::Serialise_glInvalidateTexSubImage(SerialiserType &ser, GLuin
          fmt.type != ResourceFormatType::R11G11B10)
       {
         // we don't expect to be able to render to this format, so fill it manually
-        GetReplay()->FillWithDiscardPattern(DiscardType::InvalidateCall, liveId, level, xoffset,
+        GetReplay()->FillWithDiscardPattern(DiscardType::InvalidateCall, id, level, xoffset,
                                             yoffset, zoffset, width, height, depth);
       }
       else
       {
-        GLenum base = GetBaseFormat(m_Textures[liveId].internalFormat);
+        GLenum base = GetBaseFormat(m_Textures[id].internalFormat);
         if(base == eGL_DEPTH_STENCIL)
           attach = eGL_DEPTH_STENCIL_ATTACHMENT;
         else if(base == eGL_DEPTH_COMPONENT)
@@ -1130,7 +1124,7 @@ bool WrappedOpenGL::Serialise_glInvalidateTexSubImage(SerialiserType &ser, GLuin
         GL.glGenFramebuffers(1, &fb);
         GL.glBindFramebuffer(eGL_DRAW_FRAMEBUFFER, fb);
 
-        GLenum texTarget = m_Textures[liveId].curType;
+        GLenum texTarget = m_Textures[id].curType;
 
         if(texTarget == eGL_TEXTURE_3D || texTarget == eGL_TEXTURE_2D_ARRAY ||
            texTarget == eGL_TEXTURE_2D_MULTISAMPLE_ARRAY || texTarget == eGL_TEXTURE_CUBE_MAP ||
@@ -1181,7 +1175,7 @@ bool WrappedOpenGL::Serialise_glInvalidateTexSubImage(SerialiserType &ser, GLuin
       ActionDescription action;
       action.flags |= ActionFlags::Clear;
 
-      action.copyDestination = GetResourceManager()->GetOriginalID(liveId);
+      action.copyDestination = id;
 
       AddAction(action);
 
@@ -1277,8 +1271,8 @@ bool WrappedOpenGL::Serialise_glCopyImageSubData(SerialiserType &ser, GLuint src
       ActionDescription action;
       action.flags |= ActionFlags::Copy;
 
-      action.copySource = GetResourceManager()->GetOriginalID(srcid);
-      action.copyDestination = GetResourceManager()->GetOriginalID(dstid);
+      action.copySource = srcid;
+      action.copyDestination = dstid;
 
       action.copyDestinationSubresource.mip = dstLevel;
       if(dstTarget != eGL_TEXTURE_3D)
@@ -2745,21 +2739,21 @@ bool WrappedOpenGL::Serialise_glTextureImage1DEXT(SerialiserType &ser, GLuint te
     bool emulated = EmulateLuminanceFormat(texture.name, target, intFmt, format);
     internalformat = intFmt;
 
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
-    m_Textures[liveId].mipsValid |= 1 << level;
+    ResourceId id = GetResourceManager()->GetResID(texture);
+    m_Textures[id].mipsValid |= 1 << level;
 
     if(level == 0)    // assume level 0 will always get a glTexImage call
     {
-      m_Textures[liveId].width = width;
-      m_Textures[liveId].height = 1;
-      m_Textures[liveId].depth = 1;
+      m_Textures[id].width = width;
+      m_Textures[id].height = 1;
+      m_Textures[id].depth = 1;
       if(target != eGL_NONE)
-        m_Textures[liveId].curType = TextureTarget(target);
-      m_Textures[liveId].dimension = 1;
-      m_Textures[liveId].internalFormat = (GLenum)internalformat;
-      m_Textures[liveId].initFormatHint = format;
-      m_Textures[liveId].initTypeHint = type;
-      m_Textures[liveId].emulated = emulated;
+        m_Textures[id].curType = TextureTarget(target);
+      m_Textures[id].dimension = 1;
+      m_Textures[id].internalFormat = (GLenum)internalformat;
+      m_Textures[id].initFormatHint = format;
+      m_Textures[id].initTypeHint = type;
+      m_Textures[id].emulated = emulated;
     }
 
     // for creation type chunks we forcibly don't use the unpack buffers as we
@@ -2994,23 +2988,23 @@ bool WrappedOpenGL::Serialise_glTextureImage2DEXT(SerialiserType &ser, GLuint te
     bool emulated = EmulateLuminanceFormat(texture.name, target, intFmt, format);
     internalformat = intFmt;
 
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
+    ResourceId id = GetResourceManager()->GetResID(texture);
 
-    uint32_t mipsValid = m_Textures[liveId].mipsValid;
-    m_Textures[liveId].mipsValid |= 1 << level;
+    uint32_t mipsValid = m_Textures[id].mipsValid;
+    m_Textures[id].mipsValid |= 1 << level;
 
     if(level == 0)    // assume level 0 will always get a glTexImage call
     {
-      m_Textures[liveId].width = width;
-      m_Textures[liveId].height = height;
-      m_Textures[liveId].depth = 1;
+      m_Textures[id].width = width;
+      m_Textures[id].height = height;
+      m_Textures[id].depth = 1;
       if(target != eGL_NONE)
-        m_Textures[liveId].curType = TextureTarget(target);
-      m_Textures[liveId].dimension = 2;
-      m_Textures[liveId].internalFormat = (GLenum)internalformat;
-      m_Textures[liveId].initFormatHint = format;
-      m_Textures[liveId].initTypeHint = type;
-      m_Textures[liveId].emulated = emulated;
+        m_Textures[id].curType = TextureTarget(target);
+      m_Textures[id].dimension = 2;
+      m_Textures[id].internalFormat = (GLenum)internalformat;
+      m_Textures[id].initFormatHint = format;
+      m_Textures[id].initTypeHint = type;
+      m_Textures[id].emulated = emulated;
     }
 
     // for creation type chunks we forcibly don't use the unpack buffers as we
@@ -3035,8 +3029,7 @@ bool WrappedOpenGL::Serialise_glTextureImage2DEXT(SerialiserType &ser, GLuint te
       GL.glPixelStorei(eGL_UNPACK_ALIGNMENT, 1);
     }
 
-    if(TextureBinding(target) == eGL_TEXTURE_BINDING_CUBE_MAP &&
-       mipsValid != m_Textures[liveId].mipsValid)
+    if(TextureBinding(target) == eGL_TEXTURE_BINDING_CUBE_MAP && mipsValid != m_Textures[id].mipsValid)
     {
       GLenum ts[] = {
           eGL_TEXTURE_CUBE_MAP_POSITIVE_X, eGL_TEXTURE_CUBE_MAP_NEGATIVE_X,
@@ -3273,21 +3266,21 @@ bool WrappedOpenGL::Serialise_glTextureImage3DEXT(SerialiserType &ser, GLuint te
     bool emulated = EmulateLuminanceFormat(texture.name, target, intFmt, format);
     internalformat = intFmt;
 
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
-    m_Textures[liveId].mipsValid |= 1 << level;
+    ResourceId id = GetResourceManager()->GetResID(texture);
+    m_Textures[id].mipsValid |= 1 << level;
 
     if(level == 0)    // assume level 0 will always get a glTexImage call
     {
-      m_Textures[liveId].width = width;
-      m_Textures[liveId].height = height;
-      m_Textures[liveId].depth = depth;
+      m_Textures[id].width = width;
+      m_Textures[id].height = height;
+      m_Textures[id].depth = depth;
       if(target != eGL_NONE)
-        m_Textures[liveId].curType = TextureTarget(target);
-      m_Textures[liveId].dimension = 3;
-      m_Textures[liveId].internalFormat = (GLenum)internalformat;
-      m_Textures[liveId].initFormatHint = format;
-      m_Textures[liveId].initTypeHint = type;
-      m_Textures[liveId].emulated = emulated;
+        m_Textures[id].curType = TextureTarget(target);
+      m_Textures[id].dimension = 3;
+      m_Textures[id].internalFormat = (GLenum)internalformat;
+      m_Textures[id].initFormatHint = format;
+      m_Textures[id].initTypeHint = type;
+      m_Textures[id].emulated = emulated;
     }
 
     // for creation type chunks we forcibly don't use the unpack buffers as we
@@ -3535,18 +3528,18 @@ bool WrappedOpenGL::Serialise_glCompressedTextureImage1DEXT(SerialiserType &ser,
       databuf = m_ScratchBuf.data();
     }
 
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
-    m_Textures[liveId].mipsValid |= 1 << level;
+    ResourceId id = GetResourceManager()->GetResID(texture);
+    m_Textures[id].mipsValid |= 1 << level;
 
     if(level == 0)    // assume level 0 will always get a glTexImage call
     {
-      m_Textures[liveId].width = width;
-      m_Textures[liveId].height = 1;
-      m_Textures[liveId].depth = 1;
+      m_Textures[id].width = width;
+      m_Textures[id].height = 1;
+      m_Textures[id].depth = 1;
       if(target != eGL_NONE)
-        m_Textures[liveId].curType = TextureTarget(target);
-      m_Textures[liveId].dimension = 1;
-      m_Textures[liveId].internalFormat = internalformat;
+        m_Textures[id].curType = TextureTarget(target);
+      m_Textures[id].dimension = 1;
+      m_Textures[id].internalFormat = internalformat;
     }
 
     // for creation type chunks we forcibly don't use the unpack buffers as we
@@ -3916,20 +3909,20 @@ bool WrappedOpenGL::Serialise_glCompressedTextureImage2DEXT(SerialiserType &ser,
       databuf = m_ScratchBuf.data();
     }
 
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
+    ResourceId id = GetResourceManager()->GetResID(texture);
 
-    uint32_t mipsValid = m_Textures[liveId].mipsValid;
-    m_Textures[liveId].mipsValid |= 1 << level;
+    uint32_t mipsValid = m_Textures[id].mipsValid;
+    m_Textures[id].mipsValid |= 1 << level;
 
     if(level == 0)    // assume level 0 will always get a glTexImage call
     {
-      m_Textures[liveId].width = width;
-      m_Textures[liveId].height = height;
-      m_Textures[liveId].depth = 1;
+      m_Textures[id].width = width;
+      m_Textures[id].height = height;
+      m_Textures[id].depth = 1;
       if(target != eGL_NONE)
-        m_Textures[liveId].curType = TextureTarget(target);
-      m_Textures[liveId].dimension = 2;
-      m_Textures[liveId].internalFormat = internalformat;
+        m_Textures[id].curType = TextureTarget(target);
+      m_Textures[id].dimension = 2;
+      m_Textures[id].internalFormat = internalformat;
     }
 
     // for creation type chunks we forcibly don't use the unpack buffers as we
@@ -3954,8 +3947,7 @@ bool WrappedOpenGL::Serialise_glCompressedTextureImage2DEXT(SerialiserType &ser,
       GL.glPixelStorei(eGL_UNPACK_ALIGNMENT, 1);
     }
 
-    if(TextureBinding(target) == eGL_TEXTURE_BINDING_CUBE_MAP &&
-       mipsValid != m_Textures[liveId].mipsValid)
+    if(TextureBinding(target) == eGL_TEXTURE_BINDING_CUBE_MAP && mipsValid != m_Textures[id].mipsValid)
     {
       GLenum ts[] = {
           eGL_TEXTURE_CUBE_MAP_POSITIVE_X, eGL_TEXTURE_CUBE_MAP_NEGATIVE_X,
@@ -4200,18 +4192,18 @@ bool WrappedOpenGL::Serialise_glCompressedTextureImage3DEXT(SerialiserType &ser,
       databuf = m_ScratchBuf.data();
     }
 
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
-    m_Textures[liveId].mipsValid |= 1 << level;
+    ResourceId id = GetResourceManager()->GetResID(texture);
+    m_Textures[id].mipsValid |= 1 << level;
 
     if(level == 0)    // assume level 0 will always get a glTexImage call
     {
-      m_Textures[liveId].width = width;
-      m_Textures[liveId].height = height;
-      m_Textures[liveId].depth = depth;
+      m_Textures[id].width = width;
+      m_Textures[id].height = height;
+      m_Textures[id].depth = depth;
       if(target != eGL_NONE)
-        m_Textures[liveId].curType = TextureTarget(target);
-      m_Textures[liveId].dimension = 3;
-      m_Textures[liveId].internalFormat = internalformat;
+        m_Textures[id].curType = TextureTarget(target);
+      m_Textures[id].dimension = 3;
+      m_Textures[id].internalFormat = internalformat;
     }
 
     // for creation type chunks we forcibly don't use the unpack buffers as we
@@ -4430,18 +4422,18 @@ bool WrappedOpenGL::Serialise_glCopyTextureImage1DEXT(SerialiserType &ser, GLuin
 
   if(IsReplayingAndReading())
   {
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
-    m_Textures[liveId].mipsValid |= 1 << level;
+    ResourceId id = GetResourceManager()->GetResID(texture);
+    m_Textures[id].mipsValid |= 1 << level;
 
     if(level == 0)    // assume level 0 will always get a glTexImage call
     {
-      m_Textures[liveId].width = width;
-      m_Textures[liveId].height = 1;
-      m_Textures[liveId].depth = 1;
+      m_Textures[id].width = width;
+      m_Textures[id].height = 1;
+      m_Textures[id].depth = 1;
       if(target != eGL_NONE)
-        m_Textures[liveId].curType = TextureTarget(target);
-      m_Textures[liveId].dimension = 1;
-      m_Textures[liveId].internalFormat = internalformat;
+        m_Textures[id].curType = TextureTarget(target);
+      m_Textures[id].dimension = 1;
+      m_Textures[id].internalFormat = internalformat;
     }
 
     GL.glCopyTextureImage1DEXT(texture.name, target, level, internalformat, x, y, width, border);
@@ -4593,18 +4585,18 @@ bool WrappedOpenGL::Serialise_glCopyTextureImage2DEXT(SerialiserType &ser, GLuin
 
   if(IsReplayingAndReading())
   {
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
-    m_Textures[liveId].mipsValid |= 1 << level;
+    ResourceId id = GetResourceManager()->GetResID(texture);
+    m_Textures[id].mipsValid |= 1 << level;
 
     if(level == 0)    // assume level 0 will always get a glTexImage call
     {
-      m_Textures[liveId].width = width;
-      m_Textures[liveId].height = height;
-      m_Textures[liveId].depth = 1;
+      m_Textures[id].width = width;
+      m_Textures[id].height = height;
+      m_Textures[id].depth = 1;
       if(target != eGL_NONE)
-        m_Textures[liveId].curType = TextureTarget(target);
-      m_Textures[liveId].dimension = 2;
-      m_Textures[liveId].internalFormat = internalformat;
+        m_Textures[id].curType = TextureTarget(target);
+      m_Textures[id].dimension = 2;
+      m_Textures[id].internalFormat = internalformat;
     }
 
     GL.glCopyTextureImage2DEXT(texture.name, target, level, internalformat, x, y, width, height,
@@ -4759,16 +4751,16 @@ bool WrappedOpenGL::Serialise_glTextureStorage1DEXT(SerialiserType &ser, GLuint 
     GLenum dummy = eGL_NONE;
     bool emulated = EmulateLuminanceFormat(texture.name, target, internalformat, dummy);
 
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
-    m_Textures[liveId].width = width;
-    m_Textures[liveId].height = 1;
-    m_Textures[liveId].depth = 1;
+    ResourceId id = GetResourceManager()->GetResID(texture);
+    m_Textures[id].width = width;
+    m_Textures[id].height = 1;
+    m_Textures[id].depth = 1;
     if(target != eGL_NONE)
-      m_Textures[liveId].curType = TextureTarget(target);
-    m_Textures[liveId].dimension = 1;
-    m_Textures[liveId].internalFormat = internalformat;
-    m_Textures[liveId].emulated = emulated;
-    m_Textures[liveId].mipsValid = (1 << levels) - 1;
+      m_Textures[id].curType = TextureTarget(target);
+    m_Textures[id].dimension = 1;
+    m_Textures[id].internalFormat = internalformat;
+    m_Textures[id].emulated = emulated;
+    m_Textures[id].mipsValid = (1 << levels) - 1;
 
     if(target != eGL_NONE)
       GL.glTextureStorage1DEXT(texture.name, target, levels, internalformat, width);
@@ -4886,16 +4878,16 @@ bool WrappedOpenGL::Serialise_glTextureStorage2DEXT(SerialiserType &ser, GLuint 
     GLenum dummy = eGL_NONE;
     bool emulated = EmulateLuminanceFormat(texture.name, target, internalformat, dummy);
 
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
-    m_Textures[liveId].width = width;
-    m_Textures[liveId].height = height;
-    m_Textures[liveId].depth = 1;
+    ResourceId id = GetResourceManager()->GetResID(texture);
+    m_Textures[id].width = width;
+    m_Textures[id].height = height;
+    m_Textures[id].depth = 1;
     if(target != eGL_NONE)
-      m_Textures[liveId].curType = TextureTarget(target);
-    m_Textures[liveId].dimension = 2;
-    m_Textures[liveId].internalFormat = internalformat;
-    m_Textures[liveId].emulated = emulated;
-    m_Textures[liveId].mipsValid = (1 << levels) - 1;
+      m_Textures[id].curType = TextureTarget(target);
+    m_Textures[id].dimension = 2;
+    m_Textures[id].internalFormat = internalformat;
+    m_Textures[id].emulated = emulated;
+    m_Textures[id].mipsValid = (1 << levels) - 1;
 
     if(target != eGL_NONE)
       GL.glTextureStorage2DEXT(texture.name, target, levels, internalformat, width, height);
@@ -5017,16 +5009,16 @@ bool WrappedOpenGL::Serialise_glTextureStorage3DEXT(SerialiserType &ser, GLuint 
     GLenum dummy = eGL_NONE;
     bool emulated = EmulateLuminanceFormat(texture.name, target, internalformat, dummy);
 
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
-    m_Textures[liveId].width = width;
-    m_Textures[liveId].height = height;
-    m_Textures[liveId].depth = depth;
+    ResourceId id = GetResourceManager()->GetResID(texture);
+    m_Textures[id].width = width;
+    m_Textures[id].height = height;
+    m_Textures[id].depth = depth;
     if(target != eGL_NONE)
-      m_Textures[liveId].curType = TextureTarget(target);
-    m_Textures[liveId].dimension = 3;
-    m_Textures[liveId].internalFormat = internalformat;
-    m_Textures[liveId].emulated = emulated;
-    m_Textures[liveId].mipsValid = (1 << levels) - 1;
+      m_Textures[id].curType = TextureTarget(target);
+    m_Textures[id].dimension = 3;
+    m_Textures[id].internalFormat = internalformat;
+    m_Textures[id].emulated = emulated;
+    m_Textures[id].mipsValid = (1 << levels) - 1;
 
     if(target != eGL_NONE)
       GL.glTextureStorage3DEXT(texture.name, target, levels, internalformat, width, height, depth);
@@ -5154,17 +5146,17 @@ bool WrappedOpenGL::Serialise_glTextureStorage2DMultisampleEXT(SerialiserType &s
     // if we promoted glTexImage2DMultisample to storage, we need a sized format
     internalformat = GetSizedFormat(internalformat);
 
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
-    m_Textures[liveId].width = width;
-    m_Textures[liveId].height = height;
-    m_Textures[liveId].depth = 1;
-    m_Textures[liveId].samples = samples;
+    ResourceId id = GetResourceManager()->GetResID(texture);
+    m_Textures[id].width = width;
+    m_Textures[id].height = height;
+    m_Textures[id].depth = 1;
+    m_Textures[id].samples = samples;
     if(target != eGL_NONE)
-      m_Textures[liveId].curType = TextureTarget(target);
-    m_Textures[liveId].dimension = 2;
-    m_Textures[liveId].internalFormat = internalformat;
-    m_Textures[liveId].emulated = emulated;
-    m_Textures[liveId].mipsValid = 1;
+      m_Textures[id].curType = TextureTarget(target);
+    m_Textures[id].dimension = 2;
+    m_Textures[id].internalFormat = internalformat;
+    m_Textures[id].emulated = emulated;
+    m_Textures[id].mipsValid = 1;
 
     // some applications may resize MSAA textures using old-style functions, so we can't promote to
     // storage DSA (and a non-storage DSA does not exist so can't be emulated)...
@@ -5343,17 +5335,17 @@ bool WrappedOpenGL::Serialise_glTextureStorage3DMultisampleEXT(SerialiserType &s
     // if we promoted glTexImage3DMultisample to storage, we need a sized format
     internalformat = GetSizedFormat(internalformat);
 
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
-    m_Textures[liveId].width = width;
-    m_Textures[liveId].height = height;
-    m_Textures[liveId].depth = depth;
-    m_Textures[liveId].samples = samples;
+    ResourceId id = GetResourceManager()->GetResID(texture);
+    m_Textures[id].width = width;
+    m_Textures[id].height = height;
+    m_Textures[id].depth = depth;
+    m_Textures[id].samples = samples;
     if(target != eGL_NONE)
-      m_Textures[liveId].curType = TextureTarget(target);
-    m_Textures[liveId].dimension = 2;
-    m_Textures[liveId].internalFormat = internalformat;
-    m_Textures[liveId].emulated = emulated;
-    m_Textures[liveId].mipsValid = 1;
+      m_Textures[id].curType = TextureTarget(target);
+    m_Textures[id].dimension = 2;
+    m_Textures[id].internalFormat = internalformat;
+    m_Textures[id].emulated = emulated;
+    m_Textures[id].mipsValid = 1;
 
     if(target != eGL_NONE)
       GL.glTextureStorage3DMultisampleEXT(texture.name, target, samples, internalformat, width,
@@ -5583,8 +5575,8 @@ bool WrappedOpenGL::Serialise_glTextureSubImage1DEXT(SerialiserType &ser, GLuint
     else if(format == eGL_ALPHA)
     {
       // check if format was converted from alpha-only format to R8, and substitute
-      ResourceId liveId = GetResourceManager()->GetResID(texture);
-      if(m_Textures[liveId].internalFormat == eGL_R8)
+      ResourceId id = GetResourceManager()->GetResID(texture);
+      if(m_Textures[id].internalFormat == eGL_R8)
         format = eGL_RED;
     }
 
@@ -5816,8 +5808,8 @@ bool WrappedOpenGL::Serialise_glTextureSubImage2DEXT(SerialiserType &ser, GLuint
     else if(format == eGL_ALPHA)
     {
       // check if format was converted from alpha-only format to R8, and substitute
-      ResourceId liveId = GetResourceManager()->GetResID(texture);
-      if(m_Textures[liveId].internalFormat == eGL_R8)
+      ResourceId id = GetResourceManager()->GetResID(texture);
+      if(m_Textures[id].internalFormat == eGL_R8)
         format = eGL_RED;
     }
 
@@ -6057,8 +6049,8 @@ bool WrappedOpenGL::Serialise_glTextureSubImage3DEXT(SerialiserType &ser, GLuint
     else if(format == eGL_ALPHA)
     {
       // check if format was converted from alpha-only format to R8, and substitute
-      ResourceId liveId = GetResourceManager()->GetResID(texture);
-      if(m_Textures[liveId].internalFormat == eGL_R8)
+      ResourceId id = GetResourceManager()->GetResID(texture);
+      if(m_Textures[id].internalFormat == eGL_R8)
         format = eGL_RED;
     }
 
@@ -6948,18 +6940,18 @@ bool WrappedOpenGL::Serialise_glTextureBufferRangeEXT(SerialiserType &ser, GLuin
 
   if(IsReplayingAndReading())
   {
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
+    ResourceId id = GetResourceManager()->GetResID(texture);
     if(IsLoading(m_State) && m_CurEventID == 0)
     {
-      m_Textures[liveId].width =
+      m_Textures[id].width =
           uint32_t(size) /
           uint32_t(GetByteSize(1, 1, 1, GetBaseFormat(internalformat), GetDataType(internalformat)));
-      m_Textures[liveId].height = 1;
-      m_Textures[liveId].depth = 1;
+      m_Textures[id].height = 1;
+      m_Textures[id].depth = 1;
       if(target != eGL_NONE)
-        m_Textures[liveId].curType = TextureTarget(target);
-      m_Textures[liveId].internalFormat = internalformat;
-      m_Textures[liveId].mipsValid = 1;
+        m_Textures[id].curType = TextureTarget(target);
+      m_Textures[id].internalFormat = internalformat;
+      m_Textures[id].mipsValid = 1;
     }
 
     if(target != eGL_NONE)
@@ -6970,7 +6962,7 @@ bool WrappedOpenGL::Serialise_glTextureBufferRangeEXT(SerialiserType &ser, GLuin
                               (GLsizei)size);
 
     AddResourceInitChunk(texture);
-    DerivedResource(buffer, GetResourceManager()->GetOriginalID(liveId));
+    DerivedResource(buffer, id);
   }
 
   return true;
@@ -7125,19 +7117,19 @@ bool WrappedOpenGL::Serialise_glTextureBufferEXT(SerialiserType &ser, GLuint tex
 
   if(IsReplayingAndReading())
   {
-    ResourceId liveId = GetResourceManager()->GetResID(texture);
+    ResourceId id = GetResourceManager()->GetResID(texture);
     if(IsLoading(m_State) && m_CurEventID == 0)
     {
       uint32_t Size = 1;
       GL.glGetNamedBufferParameterivEXT(buffer.name, eGL_BUFFER_SIZE, (GLint *)&Size);
-      m_Textures[liveId].width = Size / uint32_t(GetByteSize(1, 1, 1, GetBaseFormat(internalformat),
-                                                             GetDataType(internalformat)));
-      m_Textures[liveId].height = 1;
-      m_Textures[liveId].depth = 1;
+      m_Textures[id].width = Size / uint32_t(GetByteSize(1, 1, 1, GetBaseFormat(internalformat),
+                                                         GetDataType(internalformat)));
+      m_Textures[id].height = 1;
+      m_Textures[id].depth = 1;
       if(target != eGL_NONE)
-        m_Textures[liveId].curType = TextureTarget(target);
-      m_Textures[liveId].internalFormat = internalformat;
-      m_Textures[liveId].mipsValid = 1;
+        m_Textures[id].curType = TextureTarget(target);
+      m_Textures[id].internalFormat = internalformat;
+      m_Textures[id].mipsValid = 1;
     }
 
     if(target != eGL_NONE)
@@ -7146,7 +7138,7 @@ bool WrappedOpenGL::Serialise_glTextureBufferEXT(SerialiserType &ser, GLuint tex
       GL.glTextureBuffer(texture.name, internalformat, buffer.name);
 
     AddResourceInitChunk(texture);
-    DerivedResource(buffer, GetResourceManager()->GetOriginalID(liveId));
+    DerivedResource(buffer, id);
   }
 
   return true;

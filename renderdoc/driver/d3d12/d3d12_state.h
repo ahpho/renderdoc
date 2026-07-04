@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -105,7 +105,7 @@ struct D3D12RenderState
       else if(type == eRootTable)
       {
         D3D12_GPU_DESCRIPTOR_HANDLE handle =
-            rm->GetCurrentAs<ID3D12DescriptorHeap>(id)->GetGPUDescriptorHandleForHeapStart();
+            rm->GetResAs<ID3D12DescriptorHeap>(id)->GetGPUDescriptorHandleForHeapStart();
         handle.ptr += sizeof(D3D12Descriptor) * offset;
         if(unwrapped)
           cmd->SetGraphicsRootDescriptorTable(slot, Unwrap(handle));
@@ -114,17 +114,17 @@ struct D3D12RenderState
       }
       else if(type == eRootCBV)
       {
-        ID3D12Resource *res = rm->GetCurrentAs<ID3D12Resource>(id);
+        ID3D12Resource *res = rm->GetResAs<ID3D12Resource>(id);
         cmd->SetGraphicsRootConstantBufferView(slot, res ? res->GetGPUVirtualAddress() + offset : 0);
       }
       else if(type == eRootSRV)
       {
-        ID3D12Resource *res = rm->GetCurrentAs<ID3D12Resource>(id);
+        ID3D12Resource *res = rm->GetResAs<ID3D12Resource>(id);
         cmd->SetGraphicsRootShaderResourceView(slot, res ? res->GetGPUVirtualAddress() + offset : 0);
       }
       else if(type == eRootUAV)
       {
-        ID3D12Resource *res = rm->GetCurrentAs<ID3D12Resource>(id);
+        ID3D12Resource *res = rm->GetResAs<ID3D12Resource>(id);
         cmd->SetGraphicsRootUnorderedAccessView(slot, res ? res->GetGPUVirtualAddress() + offset : 0);
       }
     }
@@ -139,7 +139,7 @@ struct D3D12RenderState
       else if(type == eRootTable)
       {
         D3D12_GPU_DESCRIPTOR_HANDLE handle =
-            rm->GetCurrentAs<ID3D12DescriptorHeap>(id)->GetGPUDescriptorHandleForHeapStart();
+            rm->GetResAs<ID3D12DescriptorHeap>(id)->GetGPUDescriptorHandleForHeapStart();
         handle.ptr += sizeof(D3D12Descriptor) * offset;
         if(unwrapped)
           cmd->SetComputeRootDescriptorTable(slot, Unwrap(handle));
@@ -148,17 +148,17 @@ struct D3D12RenderState
       }
       else if(type == eRootCBV)
       {
-        ID3D12Resource *res = rm->GetCurrentAs<ID3D12Resource>(id);
+        ID3D12Resource *res = rm->GetResAs<ID3D12Resource>(id);
         cmd->SetComputeRootConstantBufferView(slot, res ? res->GetGPUVirtualAddress() + offset : 0);
       }
       else if(type == eRootSRV)
       {
-        ID3D12Resource *res = rm->GetCurrentAs<ID3D12Resource>(id);
+        ID3D12Resource *res = rm->GetResAs<ID3D12Resource>(id);
         cmd->SetComputeRootShaderResourceView(slot, res ? res->GetGPUVirtualAddress() + offset : 0);
       }
       else if(type == eRootUAV)
       {
-        ID3D12Resource *res = rm->GetCurrentAs<ID3D12Resource>(id);
+        ID3D12Resource *res = rm->GetResAs<ID3D12Resource>(id);
         cmd->SetComputeRootUnorderedAccessView(slot, res ? res->GetGPUVirtualAddress() + offset : 0);
       }
     }
@@ -182,6 +182,13 @@ struct D3D12RenderState
     UINT64 countoffs;
   };
   rdcarray<StreamOut> streamouts;
+
+  struct Predication
+  {
+    ResourceId buffer;
+    UINT64 offset;
+    D3D12_PREDICATION_OP op;
+  } predication;
 
   struct RootSignature
   {

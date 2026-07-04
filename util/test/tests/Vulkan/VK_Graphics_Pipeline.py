@@ -160,7 +160,7 @@ class VK_Graphics_Pipeline(rdtest.TestCase):
 
         is_eq, diff_amt = rdtest.value_compare_diff(history[1].shaderOut.col.floatValue, debuggedValue, eps=5.0E-06)
         if not is_eq:
-            rdtest.log.error(
+            raise rdtest.TestFailureException(
                 "Debugged pixel value {}: {} difference. {} doesn't exactly match history shader output {}".format(
                     debugged.name, diff_amt, debuggedValue, history[1].shaderOut.col.floatValue))
 

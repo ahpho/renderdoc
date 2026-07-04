@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2025-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -41,12 +41,19 @@ cbuffer rootconsts : register(b0)
 }
 
 groupshared float gsmData[MAX_THREADS];
+groupshared int gsmIntData[MAX_THREADS];
+groupshared int gInt;
 
 #define IsTest(x) (root_test == x)
 
 float GetGSMValue(uint i)
 {
   return gsmData[i % MAX_THREADS];
+}
+
+int GetGSMIntValue(uint i)
+{
+  return gsmIntData[i % MAX_THREADS];
 }
 
 [numthreads(MAX_THREADS,1,1)]
@@ -64,11 +71,24 @@ void main(uint3 gid : SV_GroupThreadID)
     gsmData[7] = 1.25f;
     gsmData[8] = 1.25f;
     for(int i=8; i < MAX_THREADS; i++) gsmData[i] = 1.25f;
+    gsmIntData[0] = 125;
+    gsmIntData[1] = 125;
+    gsmIntData[2] = 125;
+    gsmIntData[3] = 125;
+    gsmIntData[4] = 125;
+    gsmIntData[5] = 125;
+    gsmIntData[6] = 125;
+    gsmIntData[7] = 125;
+    gsmIntData[8] = 125;
+    for(int j=8; j < MAX_THREADS; j++) gsmIntData[j] = 125;
+
+    gInt = 25;
   }
 
   GroupMemoryBarrierWithGroupSync();
 
   float4 outval = 0.0f.xxxx;
+  int u = int(gid.x);
 
   if (IsTest(0))
   {
@@ -86,8 +106,10 @@ void main(uint3 gid : SV_GroupThreadID)
     outval.z = GetGSMValue(gid.x ^ 1);
 
     // do calculation with our neighbour
-    gsmData[gid.x] = (1.0f + GetGSMValue(gid.x)) * (1.0f + GetGSMValue(gid.x ^ 1));
+    float value = (1.0f + GetGSMValue(gid.x)) * (1.0f + GetGSMValue(gid.x ^ 1));
 
+    GroupMemoryBarrierWithGroupSync();
+    gsmData[gid.x] = value;
     GroupMemoryBarrierWithGroupSync();
 
     // fourth write, our neighbour should be identical to our value
@@ -123,6 +145,135 @@ void main(uint3 gid : SV_GroupThreadID)
     outval.y = GetGSMValue(gid.x + 1);
     outval.z = GetGSMValue(gid.x + 2);
     outval.w = GetGSMValue(gid.x + 3);
+  }
+  else if (IsTest(3))
+  {
+    int value = (int)(indata[gid.x] * 100.0);
+    gsmIntData[gid.x] = u;
+    GroupMemoryBarrierWithGroupSync();
+    InterlockedAdd(gsmIntData[u], value);
+    InterlockedAdd(gsmIntData[u], -value);
+    GroupMemoryBarrierWithGroupSync();
+    outval.x = (float)GetGSMIntValue(u+0);
+    outval.y = (float)GetGSMIntValue(u+1);
+    outval.z = (float)GetGSMIntValue(u+2);
+    outval.w = (float)GetGSMIntValue(u+3);
+  }
+  else if (IsTest(4))
+  {
+    int value = (int)(indata[gid.x] * 100.0);
+    gsmIntData[gid.x] = u;
+    GroupMemoryBarrierWithGroupSync();
+    InterlockedAnd(gsmIntData[u], value);
+    GroupMemoryBarrierWithGroupSync();
+    outval.x = (float)GetGSMIntValue(u+0);
+    outval.y = (float)GetGSMIntValue(u+1);
+    outval.z = (float)GetGSMIntValue(u+2);
+    outval.w = (float)GetGSMIntValue(u+3);
+  }
+  else if (IsTest(5))
+  {
+    int value = (int)(indata[gid.x] * 100.0);
+    gsmIntData[gid.x] = u;
+    GroupMemoryBarrierWithGroupSync();
+    InterlockedOr(gsmIntData[u], value);
+    GroupMemoryBarrierWithGroupSync();
+    outval.x = (float)GetGSMIntValue(u+0);
+    outval.y = (float)GetGSMIntValue(u+1);
+    outval.z = (float)GetGSMIntValue(u+2);
+    outval.w = (float)GetGSMIntValue(u+3);
+  }
+  else if (IsTest(6))
+  {
+    int value = (int)(indata[gid.x] * 100.0);
+    gsmIntData[gid.x] = u;
+    GroupMemoryBarrierWithGroupSync();
+    InterlockedXor(gsmIntData[u], value);
+    InterlockedXor(gsmIntData[u], value);
+    GroupMemoryBarrierWithGroupSync();
+    outval.x = (float)GetGSMIntValue(u+0);
+    outval.y = (float)GetGSMIntValue(u+1);
+    outval.z = (float)GetGSMIntValue(u+2);
+    outval.w = (float)GetGSMIntValue(u+3);
+  }
+  else if (IsTest(7))
+  {
+    int value = (int)(indata[gid.x] * 100.0);
+    gsmIntData[gid.x] = u;
+    GroupMemoryBarrierWithGroupSync();
+    InterlockedMin(gsmIntData[u], value);
+    GroupMemoryBarrierWithGroupSync();
+    outval.x = (float)GetGSMIntValue(u+0);
+    outval.y = (float)GetGSMIntValue(u+1);
+    outval.z = (float)GetGSMIntValue(u+2);
+    outval.w = (float)GetGSMIntValue(u+3);
+  }
+  else if (IsTest(8))
+  {
+    int value = (int)(indata[gid.x] * 100.0);
+    gsmIntData[gid.x] = u;
+    GroupMemoryBarrierWithGroupSync();
+    InterlockedMax(gsmIntData[u], value);
+    GroupMemoryBarrierWithGroupSync();
+    outval.x = (float)GetGSMIntValue(u+0);
+    outval.y = (float)GetGSMIntValue(u+1);
+    outval.z = (float)GetGSMIntValue(u+2);
+    outval.w = (float)GetGSMIntValue(u+3);
+  }
+  else if (IsTest(9))
+  {
+    int value = (int)(indata[gid.x] * 100.0);
+    gsmIntData[gid.x] = u;
+    GroupMemoryBarrierWithGroupSync();
+    int original;
+    InterlockedExchange(gsmIntData[u], value, original);
+    GroupMemoryBarrierWithGroupSync();
+    outval.x = (float)GetGSMIntValue(u+0);
+    outval.y = (float)GetGSMIntValue(u+1);
+    outval.z = (float)GetGSMIntValue(u+2);
+    outval.w = (float)GetGSMIntValue(u+3);
+  }
+  else if (IsTest(10))
+  {
+    int value = (int)(indata[gid.x] * 100.0);
+    gsmIntData[gid.x] = u;
+    GroupMemoryBarrierWithGroupSync();
+    int original;
+    InterlockedCompareExchange(gsmIntData[u], value, value+1, original);
+    GroupMemoryBarrierWithGroupSync();
+    outval.x = (float)GetGSMIntValue(u+0);
+    outval.y = (float)GetGSMIntValue(u+1);
+    outval.z = (float)GetGSMIntValue(u+2);
+    outval.w = (float)GetGSMIntValue(u+3);
+  }
+  else if (IsTest(11))
+  {
+    int value = (int)(indata[gid.x] * 100.0);
+    gsmIntData[gid.x] = u;
+    GroupMemoryBarrierWithGroupSync();
+    InterlockedCompareStore(gsmIntData[u], value, value+1);
+    GroupMemoryBarrierWithGroupSync();
+    outval.x = (float)GetGSMIntValue(u+0);
+    outval.y = (float)GetGSMIntValue(u+1);
+    outval.z = (float)GetGSMIntValue(u+2);
+    outval.w = (float)GetGSMIntValue(u+3);
+  }
+  else if (IsTest(12))
+  {
+    GroupMemoryBarrierWithGroupSync();
+    outval.x = gInt;
+    GroupMemoryBarrierWithGroupSync();
+    InterlockedAdd(gInt,1);
+    GroupMemoryBarrierWithGroupSync();
+    outval.y = gInt;
+    GroupMemoryBarrierWithGroupSync();
+    InterlockedAdd(gInt,1);
+    GroupMemoryBarrierWithGroupSync();
+    outval.z = gInt;
+    GroupMemoryBarrierWithGroupSync();
+    InterlockedAdd(gInt,1);
+    GroupMemoryBarrierWithGroupSync();
+    outval.w = gInt;
   }
 
   outdata[gid.x] = outval;

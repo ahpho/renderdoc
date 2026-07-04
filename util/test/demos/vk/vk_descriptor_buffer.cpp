@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2025-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -535,7 +535,8 @@ void main()
                         vkh::BufferCreateInfo(size, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR |
                                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
-                                                        VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT),
+                                                        VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT |
+                                                        VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT),
                         VmaAllocationCreateInfo({0, VMA_MEMORY_USAGE_CPU_TO_GPU}));
     setName(ret.buffer, name);
     dataAddress = ret.address;
@@ -956,11 +957,11 @@ void main()
     VkImageView t_comb_30_tex = MakeTestImage("t_comb_30_tex", Vec4f(0.5f, 0.0f, 0.5f, 1.0f));
 
     AllocatedBuffer blasBuffer;
-    VkAccelerationStructureKHR blas;
+    VkAccelerationStructureKHR blas = VK_NULL_HANDLE;
     AllocatedBuffer tlasBuffer;
-    VkAccelerationStructureKHR j;
-    VkAccelerationStructureKHR t_as_60;
-    VkAccelerationStructureKHR u_20;
+    VkAccelerationStructureKHR j = VK_NULL_HANDLE;
+    VkAccelerationStructureKHR t_as_60 = VK_NULL_HANDLE;
+    VkAccelerationStructureKHR u_20 = VK_NULL_HANDLE;
     if(rays)
     {
       Vec3f vertices[] = {

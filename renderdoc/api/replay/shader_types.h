@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -675,6 +675,13 @@ struct SourceVariableMapping
 :type: VarType
 )");
   VarType type = VarType::Unknown;
+
+  DOCUMENT(R"(A flag indicating if this mapping indicates an undefined value - the meaning of which
+is compiler defined but may mean either uninitialised data, unassigned values, or optimised away values.
+
+:type: bool
+)");
+  bool undefinedValue = false;
 
   DOCUMENT(R"(The number of rows in this variable - 1 for vectors, >1 for matrices.
 
@@ -1969,6 +1976,12 @@ shader is not supported for debugging
 :type: str
 )");
   rdcstr debugStatus;
+
+  DOCUMENT(R"(Contains a log of the debug shader loading process i.e. searching for shader PDB.
+
+:type: str
+)");
+  rdcstr debugInfoLoadingLog;
 };
 
 DECLARE_REFLECTION_STRUCT(ShaderDebugInfo);

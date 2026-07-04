@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2017-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -333,6 +333,7 @@ void PythonContext::GlobalInit()
 
     PyObject *redirector = PyObject_CallFunction((PyObject *)&OutputRedirectorType, noparams);
     PyObject_SetAttrString(sysobj, "stdout", redirector);
+    PyObject_SetAttrString(sysobj, "_renderdoc_internal", redirector);
 
     OutputRedirector *output = (OutputRedirector *)redirector;
     output->isStdError = 0;
@@ -653,10 +654,10 @@ QString PythonContext::LoadExtension(ICaptureContext &ctx, const rdcstr &extensi
 
   PyObject *ext = NULL;
 
-  current_global_handle = PyObject_SafeGetAttrString(sysobj, "stdout");
+  current_global_handle = PyObject_SafeGetAttrString(sysobj, "_renderdoc_internal");
 
-  if(!syspath)
-    qCritical() << "couldn't get sys.stdout";
+  if(!current_global_handle)
+    qCritical() << "couldn't get _renderdoc_internal";
 
   QString typeStr;
   QString valueStr;
@@ -1331,7 +1332,7 @@ PyObject *PythonContext::outstream_write(PyObject *self, PyObject *args)
 
       PyFrameObject *frame = PyEval_GetFrame();
 
-      while(message.back() == '\n' || message.back() == '\r')
+      while(!message.empty() && (message.back() == '\n' || message.back() == '\r'))
         message.pop_back();
 
       QString filename = lit("unknown");
@@ -1346,7 +1347,7 @@ PyObject *PythonContext::outstream_write(PyObject *self, PyObject *args)
       }
 
       if(!message.empty())
-        RENDERDOC_LogMessage(redirector->isStdError ? LogType::Error : LogType::Comment, "EXTN",
+        RENDERDOC_LogMessage(redirector->isStdError ? LogType::Warning : LogType::Comment, "EXTN",
                              filename, line, message);
     }
   }
@@ -1444,8 +1445,10 @@ extern "C" PyObject *GetCurrentGlobalHandle()
   PyObject *sys = PyImport_ImportModule("sys");
   if(sys)
   {
-    PyObject *ret = PyObject_SafeGetAttrString(sys, "stdout");
+    PyObject *ret = PyObject_SafeGetAttrString(sys, "_renderdoc_internal");
+
     Py_XDECREF(sys);
+    Py_XDECREF(ret);
     return ret;
   }
 

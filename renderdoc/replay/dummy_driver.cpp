@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2021-2025 Baldur Karlsson
+ * Copyright (c) 2021-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -44,6 +44,8 @@ DummyDriver::DummyDriver(IReplayDriver *original, const rdcarray<const ShaderRef
   m_WindowSystems = original->GetSupportedWindowSystems();
   m_CustomEncodings = original->GetCustomShaderEncodings();
   m_CustomPrefixes = original->GetCustomShaderSourcePrefixes();
+
+  sdfile->Detach();
 }
 
 DummyDriver::~DummyDriver()
@@ -214,11 +216,6 @@ void DummyDriver::InitPostVSBuffers(const rdcarray<uint32_t> &passEvents)
 {
 }
 
-ResourceId DummyDriver::GetLiveID(ResourceId id)
-{
-  return id;
-}
-
 MeshFormat DummyDriver::GetPostVSBuffers(uint32_t eventId, uint32_t instID, uint32_t viewID,
                                          MeshDataStage stage)
 {
@@ -262,6 +259,10 @@ void DummyDriver::FreeTargetResource(ResourceId id)
 }
 
 void DummyDriver::ClearReplayCache()
+{
+}
+
+void DummyDriver::ReloadShaderDebugInformation()
 {
 }
 

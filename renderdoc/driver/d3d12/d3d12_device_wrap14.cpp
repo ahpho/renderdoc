@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2024-2025 Baldur Karlsson
+ * Copyright (c) 2024-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -108,20 +108,9 @@ bool WrappedID3D12Device::Serialise_CreateRootSignatureFromSubobjectInLibrary(
     }
     else
     {
-      if(GetResourceManager()->HasWrapper(ret))
-      {
-        ret->Release();
-        ret = (ID3D12RootSignature *)GetResourceManager()->GetWrapper(ret);
-        ret->AddRef();
+      GetResourceManager()->OverrideWrapper(ret);
 
-        GetResourceManager()->AddLiveResource(pRootSignature, ret);
-      }
-      else
-      {
-        ret = new WrappedID3D12RootSignature(ret, this);
-
-        GetResourceManager()->AddLiveResource(pRootSignature, ret);
-      }
+      ret = new WrappedID3D12RootSignature(pRootSignature, ret, this);
 
       WrappedID3D12RootSignature *wrapped = (WrappedID3D12RootSignature *)ret;
 
@@ -179,7 +168,7 @@ HRESULT WrappedID3D12Device::CreateRootSignatureFromSubobjectInLibrary(
         return ret;
       }
 
-      wrapped = new WrappedID3D12RootSignature(real, this);
+      wrapped = new WrappedID3D12RootSignature(ResourceId(), real, this);
     }
 
     wrapped->sig =
@@ -236,6 +225,18 @@ HRESULT WrappedID3D12Device::CreateRootSignatureFromSubobjectInLibrary(
 
             if(m_BindlessResourceUseActive)
               break;
+          }
+        }
+
+        if(m_BindlessResourceUseActive)
+        {
+          SCOPED_READLOCK(m_CapTransitionLock);
+          if(IsActiveCapturing(m_State))
+          {
+            SCOPED_LOCK(m_ResourceStatesLock);
+
+            for(auto it = m_BindlessFrameRefs.begin(); it != m_BindlessFrameRefs.end(); ++it)
+              GetResourceManager()->MarkResourceFrameReferenced(it->first, it->second);
           }
         }
       }

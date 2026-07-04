@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,7 @@
 #include "d3d12_command_queue.h"
 #include "core/settings.h"
 #include "d3d12_command_list.h"
+#include "d3d12_replay.h"
 #include "d3d12_resources.h"
 
 RDOC_EXTERN_CONFIG(bool, D3D12_Debug_SingleSubmitFlushing);
@@ -102,6 +103,10 @@ void STDMETHODCALLTYPE WrappedID3D12CommandQueue::UpdateTileMappings(
     // register this heap as having been used for sparse binding
     m_pDevice->AddSparseHeap(GetResID(pHeap));
 
+    // mark the heap as dirty if this is a buffer resource
+    if(pResource->GetDesc().Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
+      GetResourceManager()->MarkDirtyResource(GetResID(pHeap));
+
 // define macros to help provide the defaults for NULL arrays
 #define REGION_START(i)                                                 \
   (pResourceRegionStartCoordinates ? pResourceRegionStartCoordinates[i] \
@@ -122,7 +127,7 @@ void STDMETHODCALLTYPE WrappedID3D12CommandQueue::UpdateTileMappings(
 #define RANGE_SIZE(i) (pRangeTileCounts ? pRangeTileCounts[i] : ~0U)
 
     const UINT pageSize = 64 * 1024;
-    const Sparse::Coord texelShape = pageTable.getPageTexelSize();
+    const Sparse::Coord32 texelShape = pageTable.getPageTexelSize();
 
     // this persists from loop to loop. The effective offset is rangeBaseOffset +
     // curRelativeRangeOffset. That allows us to partially use a range in one region then another.
@@ -138,11 +143,11 @@ void STDMETHODCALLTYPE WrappedID3D12CommandQueue::UpdateTileMappings(
 
       // sanitise the region size according to the dimensions of the texture
       // clamp inputs that may be invalid for buffers or 2D to sensible values
-      regionSize.Width = RDCCLAMP(1U, regionSize.Width, pageTable.getResourceSize().x);
+      regionSize.Width = RDCCLAMP(1U, regionSize.Width, pageTable.getResourceTexelDim().x);
       regionSize.Height =
-          (uint16_t)RDCCLAMP(1U, (uint32_t)regionSize.Height, pageTable.getResourceSize().y);
+          (uint16_t)RDCCLAMP(1U, (uint32_t)regionSize.Height, pageTable.getResourceTexelDim().y);
       regionSize.Depth =
-          (uint16_t)RDCCLAMP(1U, (uint32_t)regionSize.Depth, pageTable.getResourceSize().z);
+          (uint16_t)RDCCLAMP(1U, (uint32_t)regionSize.Depth, pageTable.getResourceTexelDim().z);
 
       UINT rangeBaseOffset = RANGE_OFFSET(curRange);
       UINT rangeSize = RANGE_SIZE(curRange);
@@ -408,11 +413,11 @@ void STDMETHODCALLTYPE WrappedID3D12CommandQueue::CopyTileMappings(
         return;
 
       // clamp inputs that may be invalid for buffers or 2D to sensible values
-      size.Width = RDCCLAMP(1U, pRegionSize->Width, dstPageTable.getResourceSize().x);
-      size.Height =
-          (uint16_t)RDCCLAMP(1U, (uint32_t)pRegionSize->Height, dstPageTable.getResourceSize().y);
+      size.Width = RDCCLAMP(1U, pRegionSize->Width, dstPageTable.getResourceTexelDim().x);
+      size.Height = (uint16_t)RDCCLAMP(1U, (uint32_t)pRegionSize->Height,
+                                       dstPageTable.getResourceTexelDim().y);
       size.Depth =
-          (uint16_t)RDCCLAMP(1U, (uint32_t)pRegionSize->Depth, dstPageTable.getResourceSize().z);
+          (uint16_t)RDCCLAMP(1U, (uint32_t)pRegionSize->Depth, dstPageTable.getResourceTexelDim().z);
 
       dstPageTable.copyImageBoxRange(
           dstSub,
@@ -471,8 +476,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
     if(m_PrevQueueId != GetResID(pQueue))
     {
       RDCDEBUG("Previous queue execution was on queue %s, now executing %s, syncing GPU",
-               ToStr(GetResourceManager()->GetOriginalID(m_PrevQueueId)).c_str(),
-               ToStr(GetResourceManager()->GetOriginalID(GetResID(pQueue))).c_str());
+               ToStr(m_PrevQueueId).c_str(), ToStr(GetResID(pQueue)).c_str());
       if(m_PrevQueueId != ResourceId())
         m_pDevice->DeviceWaitForIdle();
 
@@ -488,7 +492,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
 
       for(uint32_t i = 0; i < NumCommandLists; i++)
       {
-        ResourceId cmd = GetResourceManager()->GetOriginalID(GetResID(ppCommandLists[i]));
+        ResourceId cmd = GetResID(ppCommandLists[i]);
 
         ID3D12CommandList *list = Unwrap(ppCommandLists[i]);
         real->ExecuteCommandLists(1, &list);
@@ -507,7 +511,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
               if(it->second.destinationAS != ResourceId())
               {
                 D3D12AccelerationStructure *as =
-                    (D3D12AccelerationStructure *)GetResourceManager()->GetLiveResource(
+                    (D3D12AccelerationStructure *)GetResourceManager()->GetResource(
                         it->second.destinationAS);
                 as->seenReplayBuild = true;
               }
@@ -536,7 +540,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
                                               blasOffs);
 
               WrappedID3D12Resource *blas =
-                  GetResourceManager()->GetLiveAs<WrappedID3D12Resource>(blasId);
+                  GetResourceManager()->GetResAs<WrappedID3D12Resource>(blasId);
 
               D3D12AccelerationStructure *blasCheck = NULL;
               rdcstr invalid;
@@ -554,7 +558,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
                 continue;
               }
 
-              if(id < GetResourceManager()->GetOriginalID(blasCheck->GetResourceID()))
+              if(id < blasCheck->GetResourceID())
               {
                 RDCERR("%s[%u]: BLAS referenced by TLAS is newer than TLAS", ToStr(id).c_str(), desc);
                 continue;
@@ -603,7 +607,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
 
       for(uint32_t c = 0; c < NumCommandLists; c++)
       {
-        ResourceId cmd = GetResourceManager()->GetOriginalID(GetResID(ppCommandLists[c]));
+        ResourceId cmd = GetResID(ppCommandLists[c]);
 
         BakedCmdListInfo &cmdListInfo = m_Cmd.m_BakedCmdListInfo[cmd];
 
@@ -623,9 +627,9 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
           m_Cmd.m_RootEventID++;
         }
 
-        // insert the baked command list in-line into this list of notes, assigning new event and
+        // insert the baked command list in-line into this list of nodes, assigning new event and
         // drawIDs
-        m_Cmd.InsertActionsAndRefreshIDs(cmd, cmdListInfo.action->children);
+        m_Cmd.InsertActionsAndRefreshIDs(cmd, cmdListInfo);
 
         for(size_t e = 0; e < cmdListInfo.action->executedCmds.size(); e++)
         {
@@ -696,7 +700,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
       // advance m_CurEventID to match the events added when reading
       for(uint32_t c = 0; c < NumCommandLists; c++)
       {
-        ResourceId cmd = GetResourceManager()->GetOriginalID(GetResID(ppCommandLists[c]));
+        ResourceId cmd = GetResID(ppCommandLists[c]);
 
         m_Cmd.m_RootEventID += m_Cmd.m_BakedCmdListInfo[cmd].eventCount;
         m_Cmd.m_RootActionID += m_Cmd.m_BakedCmdListInfo[cmd].actionCount;
@@ -733,7 +737,7 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
 
         for(uint32_t c = 0; c < NumCommandLists; c++)
         {
-          ResourceId cmdId = GetResourceManager()->GetOriginalID(GetResID(ppCommandLists[c]));
+          ResourceId cmdId = GetResID(ppCommandLists[c]);
 
           // account for the virtual label at the start of the events here
           // so it matches up to baseEvent
@@ -792,18 +796,18 @@ bool WrappedID3D12CommandQueue::Serialise_ExecuteCommandLists(SerialiserType &se
   return true;
 }
 
-ID3D12Fence *WrappedID3D12CommandQueue::GetRayFence()
+ID3D12Fence *WrappedID3D12CommandQueue::GetCallbackFence()
 {
   // if we don't have a fence for this queue tracking, create it now
-  if(!m_RayFence)
+  if(!m_CallbackFence)
   {
     // create this unwrapped so that it doesn't get recorded into captures
     m_pDevice->GetReal()->CreateFence(0, D3D12_FENCE_FLAG_NONE, __uuidof(ID3D12Fence),
-                                      (void **)&m_RayFence);
-    m_RayFence->SetName(L"Queue Ray Fence");
+                                      (void **)&m_CallbackFence);
+    m_CallbackFence->SetName(L"Queue Callback Fence");
   }
 
-  return m_RayFence;
+  return m_CallbackFence;
 }
 
 void WrappedID3D12CommandQueue::ExecuteCommandLists(UINT NumCommandLists,
@@ -836,7 +840,7 @@ void WrappedID3D12CommandQueue::ExecuteCommandListsInternal(UINT NumCommandLists
   {
     SERIALISE_TIME_CALL(m_pReal->ExecuteCommandLists(NumCommandLists, unwrapped));
 
-    rdcarray<std::function<bool()>> pendingASBuildCallbacks;
+    rdcarray<std::function<bool()>> pendingCallbacks;
 
     for(UINT i = 0; i < NumCommandLists; i++)
     {
@@ -848,24 +852,24 @@ void WrappedID3D12CommandQueue::ExecuteCommandListsInternal(UINT NumCommandLists
         RDCLOG("Submit-callbacks for %s", ToStr(wrapped->GetResourceID()).c_str());
       }
 
-      if(!wrapped->ExecuteImmediateASBuildCallbacks())
+      if(!wrapped->ExecuteImmediateCallbacks())
       {
-        RDCERR("Unable to execute post build for acc struct");
+        RDCERR("Unable to execute list submission callback");
       }
 
-      wrapped->TakeWaitingASBuildCallbacks(pendingASBuildCallbacks);
+      wrapped->TakeWaitingCallbacks(pendingCallbacks);
     }
 
-    if(!pendingASBuildCallbacks.empty())
+    if(!pendingCallbacks.empty())
     {
-      ID3D12Fence *fence = GetRayFence();
+      ID3D12Fence *fence = GetCallbackFence();
 
       // these callbacks need to be synchronised at every submission to process them as soon as the
       // results are available, since we could submit a build on one queue and then a dependent
       // build on another queue later once it's finished without any intermediate submissions on the
       // first queue. For that reason we pass these to the RT handler to hold onto, and tick it
-      GetResourceManager()->GetRTManager()->AddPendingASBuilds(fence, m_RayFenceValue,
-                                                               pendingASBuildCallbacks);
+      GetResourceManager()->GetRTManager()->AddPendingCallbacks(fence, m_RayFenceValue,
+                                                                pendingCallbacks);
 
       // add the signal for those callbacks to wait on
       HRESULT hr = m_pReal->Signal(fence, m_RayFenceValue++);
@@ -1026,7 +1030,7 @@ void WrappedID3D12CommandQueue::ExecuteCommandListsInternal(UINT NumCommandLists
 
       m_RayDispatchesPending.append(rayDispatches);
 
-      HRESULT hr = m_pReal->Signal(GetRayFence(), m_RayFenceValue++);
+      HRESULT hr = m_pReal->Signal(GetCallbackFence(), m_RayFenceValue++);
       CHECK_HR(m_pDevice, hr);
       RDCASSERTEQUAL(hr, S_OK);
     }
@@ -1079,6 +1083,7 @@ void WrappedID3D12CommandQueue::ExecuteCommandListsInternal(UINT NumCommandLists
           res->GetHeapProperties(&heapProps, NULL);
 
           if(heapProps.Type == D3D12_HEAP_TYPE_UPLOAD ||
+             heapProps.Type == D3D12_HEAP_TYPE_GPU_UPLOAD ||
              heapProps.CPUPageProperty == D3D12_CPU_PAGE_PROPERTY_WRITE_COMBINE)
           {
             RDCLOG("Doing GPU readback of mapped memory");
@@ -1088,7 +1093,8 @@ void WrappedID3D12CommandQueue::ExecuteCommandListsInternal(UINT NumCommandLists
             queueReadback.Resize(size);
 
             queueReadback.list->Reset(queueReadback.alloc, NULL);
-            queueReadback.list->CopyBufferRegion(queueReadback.readbackBuf, 0, res, 0, size);
+            Unwrap(queueReadback.list)
+                ->CopyBufferRegion(queueReadback.unwrappedReadbackBuf, 0, res->GetReal(), 0, size);
             queueReadback.list->Close();
             ID3D12CommandList *listptr = Unwrap(queueReadback.list);
             queueReadback.unwrappedQueue->ExecuteCommandLists(1, &listptr);
@@ -1547,6 +1553,47 @@ HRESULT STDMETHODCALLTYPE WrappedID3D12CommandQueue::Present(
   return m_pDownlevel->Present(Unwrap(pOpenCommandList), Unwrap(pSourceTex2D), hWindow, Flags);
 }
 
+template <typename SerialiserType>
+bool WrappedID3D12CommandQueue::Serialise_SetQueueAnnotation(SerialiserType &ser, rdcstr key,
+                                                             RENDERDOC_AnnotationType valueType,
+                                                             uint32_t valueVectorWidth,
+                                                             RENDERDOC_AnnotationValue value)
+{
+  ID3D12CommandQueue *pQueue = this;
+  SERIALISE_ELEMENT(pQueue);
+  SERIALISE_ELEMENT(key);
+  SERIALISE_ELEMENT(valueType);
+  ser.SetStructArg(valueType);
+  SERIALISE_ELEMENT(valueVectorWidth);
+  SERIALISE_ELEMENT(value);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    if(IsLoading(m_State))
+    {
+      if(!m_Cmd.m_RootAnnotation)
+        m_Cmd.m_RootAnnotation = new SDObject("Event Annotations"_lit, "Event Annotations"_lit);
+
+      SDObject *root = m_Cmd.m_RootAnnotation;
+
+      if(valueType == eRENDERDOC_Empty)
+      {
+        root->EraseChildByKeyPath(key);
+      }
+      else
+      {
+        WriteAnnotation(root->CreateChildByKeyPath(key), valueType, valueVectorWidth, value);
+      }
+
+      m_pDevice->GetReplay()->WriteFrameRecord().frameInfo.containsAnnotations = true;
+    }
+  }
+
+  return true;
+}
+
 INSTANTIATE_FUNCTION_SERIALISED(
     void, WrappedID3D12CommandQueue, UpdateTileMappings, ID3D12Resource *pResource,
     UINT NumResourceRegions, const D3D12_TILED_RESOURCE_COORDINATE *pResourceRegionStartCoordinates,
@@ -1573,3 +1620,7 @@ INSTANTIATE_FUNCTION_SERIALISED(void, WrappedID3D12CommandQueue, Signal, ID3D12F
                                 UINT64 Value);
 INSTANTIATE_FUNCTION_SERIALISED(void, WrappedID3D12CommandQueue, Wait, ID3D12Fence *pFence,
                                 UINT64 Value);
+
+INSTANTIATE_FUNCTION_SERIALISED(void, WrappedID3D12CommandQueue, SetQueueAnnotation, rdcstr key,
+                                RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                RENDERDOC_AnnotationValue value);

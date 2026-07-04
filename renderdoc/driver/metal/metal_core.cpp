@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2022-2025 Baldur Karlsson
+ * Copyright (c) 2022-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -487,7 +487,7 @@ void WrappedMTLDevice::AddResource(ResourceId id, ResourceType type, const char 
 
 void WrappedMTLDevice::DerivedResource(ResourceId parentLive, ResourceId child)
 {
-  ResourceId parentId = GetResourceManager()->GetOriginalID(parentLive);
+  ResourceId parentId = parentLive;
 
   GetReplay()->GetResourceDesc(parentId).derivedResources.push_back(child);
   GetReplay()->GetResourceDesc(child).parentResources.push_back(parentId);

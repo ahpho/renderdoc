@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -66,7 +66,6 @@ enum ReplayProxyPacket
 
   eReplayProxy_SavePipelineState,
   eReplayProxy_GetUsage,
-  eReplayProxy_GetLiveID,
   eReplayProxy_GetFrameRecord,
   eReplayProxy_IsRenderOutput,
   eReplayProxy_NeedRemapForFetch,
@@ -114,6 +113,7 @@ enum ReplayProxyPacket
   eReplayProxy_GetDescriptorStores,
 
   eReplayProxy_ClearReplayCache,
+  eReplayProxy_ReloadShaderDebugInformation,
 };
 
 DECLARE_REFLECTION_ENUM(ReplayProxyPacket);
@@ -499,8 +499,6 @@ public:
 
   IMPLEMENT_FUNCTION_PROXIED(bool, IsRenderOutput, ResourceId id);
 
-  IMPLEMENT_FUNCTION_PROXIED(ResourceId, GetLiveID, ResourceId id);
-
   IMPLEMENT_FUNCTION_PROXIED(rdcarray<GPUCounter>, EnumerateCounters);
   IMPLEMENT_FUNCTION_PROXIED(CounterDescription, DescribeCounter, GPUCounter counterID);
   IMPLEMENT_FUNCTION_PROXIED(rdcarray<CounterResult>, FetchCounters,
@@ -564,6 +562,7 @@ public:
   IMPLEMENT_FUNCTION_PROXIED(void, ReplaceResource, ResourceId from, ResourceId to);
   IMPLEMENT_FUNCTION_PROXIED(void, RemoveReplacement, ResourceId id);
   IMPLEMENT_FUNCTION_PROXIED(void, ClearReplayCache);
+  IMPLEMENT_FUNCTION_PROXIED(void, ReloadShaderDebugInformation);
 
   // these functions are not part of the replay driver interface - they are similar to GetBufferData
   // and GetTextureData, but they do extra work to try and optimise transfer by delta-encoding the
@@ -656,8 +655,6 @@ private:
   // this lists any textures which are only created locally (e.g. custom visualisation shaders) and
   // should not be treated as proxied.
   std::set<ResourceId> m_LocalTextures;
-
-  std::map<ResourceId, ResourceId> m_LiveIDs;
 
   struct ShaderReflKey
   {

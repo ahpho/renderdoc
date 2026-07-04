@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -46,7 +46,7 @@ extern "C" const rdcstr VulkanLayerJSONBasename;
 #undef VK_LAYER_EXPORT
 #define VK_LAYER_EXPORT extern "C" __declspec(dllexport)
 
-#elif ENABLED(RDOC_LINUX) || ENABLED(RDOC_ANDROID)
+#elif ENABLED(RDOC_LINUX) || ENABLED(RDOC_ANDROID) || ENABLED(RDOC_APPLE)
 
 #undef VK_LAYER_EXPORT
 #define VK_LAYER_EXPORT __attribute__((visibility("default")))
@@ -433,6 +433,9 @@ VK_LAYER_RENDERDOC_CaptureEnumerateInstanceExtensionProperties(
 #undef HookInitExtensionEXTtoKHR
 #define HookInitExtensionEXTtoKHR(func) (void)0;
 
+#undef HookInitPromotedExtensionEXTtoKHR
+#define HookInitPromotedExtensionEXTtoKHR(func) (void)0;
+
 // proc addr routines
 
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
@@ -549,6 +552,9 @@ VK_LAYER_RENDERDOC_CaptureGetInstanceProcAddr(VkInstance instance, const char *p
 #undef HookInitExtensionEXTtoKHR
 #define HookInitExtensionEXTtoKHR(func) (void)0;
 
+#undef HookInitPromotedExtensionEXTtoKHR
+#define HookInitPromotedExtensionEXTtoKHR(func) (void)0;
+
   HookInitVulkanDevice();
 
   HookInitVulkanDeviceExts();
@@ -631,6 +637,9 @@ VK_LAYER_RENDERDOC_Capture_layerGetPhysicalDeviceProcAddr(VkInstance instance, c
 
 #undef HookInitExtensionEXTtoKHR
 #define HookInitExtensionEXTtoKHR(func) (void)0;
+
+#undef HookInitPromotedExtensionEXTtoKHR
+#define HookInitPromotedExtensionEXTtoKHR(func) (void)0;
 
   HookInitVulkanInstanceExts();
   HookInitVulkanDeviceExts();

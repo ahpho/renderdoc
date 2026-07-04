@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -71,7 +71,21 @@ struct VulkanStatePipeline
   // the index of the last set bound. In the case where we are re-binding sets and don't have a
   // valid pipeline to reference, this can help us resolve which descriptor sets to rebind in the
   // event that they're not all compatible
-  uint32_t lastBoundSet = 0;
+  // we need to track the last descriptor set separately from the last descriptor buffer set,
+  // because if a descriptor buffer set is invalidated the previous last descriptor set may still be
+  // valid. There is no way to do the other direction (any descriptor set bind invalidates all
+  // descriptor buffer set bindings)
+  int32_t lastBoundDescSet = -1;
+  int32_t lastBoundDescBufSet = -1;
+
+  uint32_t LastBoundSet() const
+  {
+    if(UsingDescBufs() && lastBoundDescBufSet >= 0)
+      return lastBoundDescBufSet;
+    if(lastBoundDescSet >= 0)
+      return lastBoundDescSet;
+    return 0;
+  }
 
   bool UsingDescBufs() const
   {
@@ -339,6 +353,8 @@ struct VulkanRenderState
 
       localRead = o.localRead;
 
+      beginCustomResolve = o.beginCustomResolve;
+
       // this will deep copy from the incoming object
       CopyAttachmentNexts();
 
@@ -370,6 +386,9 @@ struct VulkanRenderState
 
     // VK_KHR_dynamic_rendering_local_read
     DynamicRenderingLocalRead localRead;
+
+    // VK_EXT_custom_resolve
+    bool beginCustomResolve = false;
 
   private:
     // VK_KHR_unified_image_layouts

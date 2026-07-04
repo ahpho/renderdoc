@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -51,9 +51,17 @@ HRESULT STDMETHODCALLTYPE WrappedID3D11VideoDevice2::QueryInterface(REFIID riid,
   }
   else if(riid == __uuidof(ID3D11VideoDevice))
   {
-    *ppvObject = (ID3D11VideoDevice *)this;
-    AddRef();
-    return S_OK;
+    if(m_pReal)
+    {
+      *ppvObject = (ID3D11VideoDevice *)this;
+      AddRef();
+      return S_OK;
+    }
+    else
+    {
+      *ppvObject = NULL;
+      return E_NOINTERFACE;
+    }
   }
   else if(riid == __uuidof(ID3D11VideoDevice1))
   {

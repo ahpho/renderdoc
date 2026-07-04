@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2017-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -693,6 +693,24 @@ void SettingsDialog::on_chooseSearchPaths_clicked()
       setLimitedPaths->AddAndOwnChild(makeSDString("$el"_lit, limited[i]));
 
     RENDERDOC_SaveConfigSettings();
+
+    if(m_Ctx.IsCaptureLoaded() && !m_Ctx.Replay().CurrentRemote().IsConnected())
+    {
+      QMessageBox::StandardButton ask = RDDialog::question(
+          this, tr("Shader Search Paths Saved"),
+          tr("The Shader Search Paths changes will automatically be applied the next time any "
+             "capture is opened.<br><br>"
+             "Would you like to reload all shader debug information in the current capture?"),
+          QMessageBox::Yes | QMessageBox::No);
+
+      if(ask == QMessageBox::Yes)
+      {
+        m_Ctx.Replay().AsyncInvoke([this](IReplayController *r) {
+          r->ReloadShaderDebugInformation();
+          GUIInvoke::call(m_Ctx.GetMainWindow()->Widget(), [this]() { m_Ctx.RefreshStatus(); });
+        });
+      }
+    }
   }
 }
 

@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -147,7 +147,10 @@ public:
   RDResult FatalErrorCheck();
   IReplayDriver *MakeDummyDriver();
 
-  void CreateResources(IDXGIFactory *factory);
+  void InitReplayOnDevice(IDXGIFactory *factory);
+
+  void CreateResources();
+
   void DestroyResources();
 
   DriverInformation GetDriverInfo() { return m_DriverInfo; }
@@ -222,8 +225,6 @@ public:
   void InitPostVSBuffers(uint32_t eventId);
   void InitPostVSBuffers(const rdcarray<uint32_t> &passEvents);
 
-  ResourceId GetLiveID(ResourceId id);
-
   void PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subresource &sub,
                  CompType typeCast, float pixel[4]);
   bool GetMinMax(ResourceId texid, const Subresource &sub, CompType typeCast, float *minval,
@@ -254,6 +255,7 @@ public:
   void ReplaceResource(ResourceId from, ResourceId to);
   void RemoveReplacement(ResourceId id);
   void ClearReplayCache();
+  void ReloadShaderDebugInformation();
 
   rdcarray<GPUCounter> EnumerateCounters();
   CounterDescription DescribeCounter(GPUCounter counterID);
@@ -415,6 +417,7 @@ private:
     void Release();
 
     ID3D11RasterizerState *RasterState = NULL;
+    ID3D11RasterizerState *RasterClipState = NULL;
     ID3D11RasterizerState *RasterScissorState = NULL;
 
     ID3D11VertexShader *FullscreenVS = NULL;

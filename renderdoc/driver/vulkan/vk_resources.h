@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -861,7 +861,9 @@ inline void SetTableIfDispatchable(bool writing, VkDevice parent, WrappedVulkan 
 }
 
 bool IsDispatchableRes(WrappedVkRes *ptr);
+bool IsDispatchableRes(VkResourceType type);
 bool IsPostponableRes(const WrappedVkRes *ptr);
+VkResourceType TryIdentifyTypeByPtr(WrappedVkRes *ptr);
 VkResourceType IdentifyTypeByPtr(WrappedVkRes *ptr);
 
 #define UNKNOWN_PREV_IMG_LAYOUT ((VkImageLayout)0xffffffff)
@@ -902,6 +904,7 @@ struct ImageInfo
   uint16_t levelCount = 0;
   uint16_t sampleCount = 0;
   bool storage = false;
+  bool isExternal = false;
   bool isAHB = false;
   VkExtent3D extent = {0, 0, 0};
   VkImageType imageType = VK_IMAGE_TYPE_2D;
@@ -2403,8 +2406,8 @@ public:
   ResourceId baseResource;
   ResourceId baseResourceMem;    // for image views, we need to point to both the image and mem
 
-  VkDeviceSize memOffset;
-  VkDeviceSize memSize;
+  VkDeviceSize memOffset = 0ULL;
+  VkDeviceSize memSize = 0ULL;
   VkResourceType resType;
   bool storable = false;
   bool dedicated = false;

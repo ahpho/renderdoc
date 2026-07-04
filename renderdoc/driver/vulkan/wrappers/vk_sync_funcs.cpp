@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -129,8 +129,7 @@ bool WrappedVulkan::Serialise_vkCreateFence(SerialiserType &ser, VkDevice device
     }
     else
     {
-      ResourceId live = GetResourceManager()->WrapResource(Unwrap(device), fence);
-      GetResourceManager()->AddLiveResource(Fence, fence);
+      GetResourceManager()->WrapResource(Fence, Unwrap(device), fence);
     }
 
     AddResource(Fence, ResourceType::Sync, "Fence");
@@ -154,7 +153,7 @@ VkResult WrappedVulkan::vkCreateFence(VkDevice device, const VkFenceCreateInfo *
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pFence);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pFence);
 
     if(IsCaptureMode(m_State))
     {
@@ -171,10 +170,6 @@ VkResult WrappedVulkan::vkCreateFence(VkDevice device, const VkFenceCreateInfo *
 
       VkResourceRecord *record = GetResourceManager()->AddResourceRecord(*pFence);
       record->AddChunk(chunk);
-    }
-    else
-    {
-      GetResourceManager()->AddLiveResource(id, *pFence);
     }
   }
 
@@ -357,8 +352,7 @@ bool WrappedVulkan::Serialise_vkCreateEvent(SerialiserType &ser, VkDevice device
     }
     else
     {
-      ResourceId live = GetResourceManager()->WrapResource(Unwrap(device), ev);
-      GetResourceManager()->AddLiveResource(Event, ev);
+      GetResourceManager()->WrapResource(Event, Unwrap(device), ev);
     }
 
     AddResource(Event, ResourceType::Sync, "Event");
@@ -376,7 +370,7 @@ VkResult WrappedVulkan::vkCreateEvent(VkDevice device, const VkEventCreateInfo *
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pEvent);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pEvent);
 
     if(IsCaptureMode(m_State))
     {
@@ -393,10 +387,6 @@ VkResult WrappedVulkan::vkCreateEvent(VkDevice device, const VkEventCreateInfo *
 
       VkResourceRecord *record = GetResourceManager()->AddResourceRecord(*pEvent);
       record->AddChunk(chunk);
-    }
-    else
-    {
-      GetResourceManager()->AddLiveResource(id, *pEvent);
     }
   }
 
@@ -565,25 +555,10 @@ bool WrappedVulkan::Serialise_vkCreateSemaphore(SerialiserType &ser, VkDevice de
     {
       ResourceId live;
 
-      if(GetResourceManager()->HasWrapper(ToTypedHandle(sem)))
+      GetResourceManager()->OverrideWrapper(ToTypedHandle(sem));
+
       {
-        live = GetResourceManager()->GetNonDispWrapper(sem)->id;
-
-        RDCWARN(
-            "On replay, semaphore got a duplicate handle - maybe a bug, or it could be an "
-            "indication of an implementation that doesn't use semaphores");
-
-        // destroy this instance of the duplicate, as we must have matching create/destroy
-        // calls and there won't be a wrapped resource hanging around to destroy this one.
-        ObjDisp(device)->DestroySemaphore(Unwrap(device), sem, NULL);
-
-        // whenever the new ID is requested, return the old ID, via replacements.
-        GetResourceManager()->ReplaceResource(Semaphore, GetResourceManager()->GetOriginalID(live));
-      }
-      else
-      {
-        live = GetResourceManager()->WrapResource(Unwrap(device), sem);
-        GetResourceManager()->AddLiveResource(Semaphore, sem);
+        live = GetResourceManager()->WrapResource(Semaphore, Unwrap(device), sem);
       }
     }
 
@@ -608,7 +583,7 @@ VkResult WrappedVulkan::vkCreateSemaphore(VkDevice device, const VkSemaphoreCrea
 
   if(ret == VK_SUCCESS)
   {
-    ResourceId id = GetResourceManager()->WrapResource(Unwrap(device), *pSemaphore);
+    ResourceId id = GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), *pSemaphore);
 
     if(IsCaptureMode(m_State))
     {
@@ -625,10 +600,6 @@ VkResult WrappedVulkan::vkCreateSemaphore(VkDevice device, const VkSemaphoreCrea
 
       VkResourceRecord *record = GetResourceManager()->AddResourceRecord(*pSemaphore);
       record->AddChunk(chunk);
-    }
-    else
-    {
-      GetResourceManager()->AddLiveResource(id, *pSemaphore);
     }
   }
 
@@ -649,7 +620,7 @@ bool WrappedVulkan::Serialise_vkCmdSetEvent(SerialiserType &ser, VkCommandBuffer
 
   if(IsReplayingAndReading())
   {
-    m_LastCmdBufferID = GetResourceManager()->GetOriginalID(GetResID(commandBuffer));
+    m_LastCmdBufferID = GetResID(commandBuffer);
 
     // see top of this file for current event/fence handling
 
@@ -704,7 +675,7 @@ bool WrappedVulkan::Serialise_vkCmdResetEvent(SerialiserType &ser, VkCommandBuff
 
   if(IsReplayingAndReading())
   {
-    m_LastCmdBufferID = GetResourceManager()->GetOriginalID(GetResID(commandBuffer));
+    m_LastCmdBufferID = GetResID(commandBuffer);
 
     // see top of this file for current event/fence handling
 
@@ -791,7 +762,7 @@ bool WrappedVulkan::Serialise_vkCmdWaitEvents(
   // Since it's a convenient place, we unwrap at the same time.
   if(IsReplayingAndReading())
   {
-    m_LastCmdBufferID = GetResourceManager()->GetOriginalID(GetResID(commandBuffer));
+    m_LastCmdBufferID = GetResID(commandBuffer);
 
     for(uint32_t i = 0; i < bufferMemoryBarrierCount; i++)
     {
@@ -1163,7 +1134,7 @@ bool WrappedVulkan::Serialise_vkCmdSetEvent2(SerialiserType &ser, VkCommandBuffe
 
   if(IsReplayingAndReading())
   {
-    m_LastCmdBufferID = GetResourceManager()->GetOriginalID(GetResID(commandBuffer));
+    m_LastCmdBufferID = GetResID(commandBuffer);
 
     // see top of this file for current event/fence handling
 
@@ -1228,7 +1199,7 @@ bool WrappedVulkan::Serialise_vkCmdResetEvent2(SerialiserType &ser, VkCommandBuf
 
   if(IsReplayingAndReading())
   {
-    m_LastCmdBufferID = GetResourceManager()->GetOriginalID(GetResID(commandBuffer));
+    m_LastCmdBufferID = GetResID(commandBuffer);
 
     // see top of this file for current event/fence handling
 
@@ -1292,7 +1263,7 @@ bool WrappedVulkan::Serialise_vkCmdWaitEvents2(SerialiserType &ser, VkCommandBuf
   // Since it's a convenient place, we unwrap at the same time.
   if(IsReplayingAndReading())
   {
-    m_LastCmdBufferID = GetResourceManager()->GetOriginalID(GetResID(commandBuffer));
+    m_LastCmdBufferID = GetResID(commandBuffer);
 
     rdcarray<VkImageMemoryBarrier2> imgBarriers;
     rdcarray<VkBufferMemoryBarrier2> bufBarriers;
@@ -1587,7 +1558,10 @@ VkResult WrappedVulkan::vkTransitionImageLayout(VkDevice device, uint32_t transi
     Serialise_vkTransitionImageLayout(ser, device, transitionCount, pTransitions);
 
     m_FrameCaptureRecord->AddChunk(scope.Get());
+  }
 
+  if(IsCaptureMode(m_State))
+  {
     for(uint32_t i = 0; i < transitionCount; ++i)
     {
       const VkHostImageLayoutTransitionInfo &transition = pTransitions[i];

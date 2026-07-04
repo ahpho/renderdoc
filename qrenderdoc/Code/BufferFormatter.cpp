@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2016-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -2920,6 +2920,10 @@ QString BufferFormatter::DeclareStruct(Packing::Rules pack, ResourceId shader,
       if(pointeeType.name.empty() && pointeeType.members.size() == 1)
       {
         varTypeName = pointeeType.members[0].type.name;
+      }
+      else if(pointeeType.baseType != VarType::Struct && pointeeType.members.size() == 0)
+      {
+        varTypeName = pointeeType.name;
       }
       else
       {

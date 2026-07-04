@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2025-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -95,8 +95,8 @@ void SetOutput(vec4 val)
 
 void Init(vec4 val)
 {
-  tid = gl_GlobalInvocationID;
-  flatId = gl_SubgroupInvocationID;
+  tid = gl_LocalInvocationID;
+  flatId = tid.z * gl_WorkGroupSize.x * gl_WorkGroupSize.y + tid.y * gl_WorkGroupSize.x + tid.x;
   gsmUint4[flatId].xyz = tid;
   gsmUint4[flatId].z = tid.x;
   SetOutput(val);
@@ -422,7 +422,8 @@ void main()
     macros["GROUP_SIZE_X"] = "70";
     macros["GROUP_SIZE_Y"] = "1";
     macros["GROUP_SIZE_Z"] = "1";
-    comppipe_name[countPipes] = "70x1x1";
+    comppipe_name[countPipes] = fmt::format("{}x{}x{}", macros["GROUP_SIZE_X"],
+                                            macros["GROUP_SIZE_Y"], macros["GROUP_SIZE_Z"]);
 
     compPipes[countPipes] = createComputePipeline(vkh::ComputePipelineCreateInfo(
         layout, CompileShaderModule(testShader, ShaderLang::glsl, ShaderStage::comp, "main", macros,

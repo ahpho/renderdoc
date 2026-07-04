@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2019-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,7 @@
 #include "d3d12_device.h"
 #include "core/settings.h"
 #include "driver/dxgi/dxgi_common.h"
+#include "driver/ihv/nv/nv_aftermath.h"
 #include "d3d12_resources.h"
 
 RDOC_EXTERN_CONFIG(bool, Replay_Debug_SingleThreadedCompilation);
@@ -70,6 +71,31 @@ bool WrappedID3D12Device::Serialise_CreatePipelineState(SerialiserType &ser,
                           ((WrappedID3D12PipelineState *)*ppPipelineState)->GetResourceID())
       .TypedAs("ID3D12PipelineState *"_lit);
 
+  ResourceId InlineShaderIDs[8];
+
+  if(IsCaptureMode(m_State))
+  {
+    const D3D12_SHADER_BYTECODE *shaders[] = {
+        &Descriptor.VS, &Descriptor.HS, &Descriptor.DS, &Descriptor.GS,
+        &Descriptor.PS, &Descriptor.CS, &Descriptor.AS, &Descriptor.MS,
+    };
+    RDCCOMPILE_ASSERT(ARRAY_COUNT(InlineShaderIDs) == ARRAY_COUNT(shaders),
+                      "shaders array is incorrectly sized");
+
+    for(uint32_t s = 0; s < ARRAY_COUNT(shaders); s++)
+    {
+      if(shaders[s]->BytecodeLength == 0 || shaders[s]->pShaderBytecode == NULL)
+        continue;
+
+      InlineShaderIDs[s] = ResourceIDGen::GetNewUniqueID();
+    }
+  }
+
+  if(ser.VersionAtLeast(0x16))
+  {
+    SERIALISE_ELEMENT(InlineShaderIDs).Hidden();
+  }
+
   SERIALISE_CHECK_READ_ERRORS();
 
   if(IsReplayingAndReading())
@@ -110,7 +136,7 @@ bool WrappedID3D12Device::Serialise_CreatePipelineState(SerialiserType &ser,
     }
 
     WrappedID3D12PipelineState *wrapped = new WrappedID3D12PipelineState(
-        GetResourceManager()->CreateDeferredHandle<ID3D12PipelineState>(), this);
+        pPipelineState, GetResourceManager()->CreateDeferredHandle<ID3D12PipelineState>(), this);
 
     D3D12_EXPANDED_PIPELINE_STATE_STREAM_DESC *storedDesc =
         new D3D12_EXPANDED_PIPELINE_STATE_STREAM_DESC(OrigDescriptor);
@@ -121,9 +147,11 @@ bool WrappedID3D12Device::Serialise_CreatePipelineState(SerialiserType &ser,
     };
 
     AddResource(pPipelineState, ResourceType::PipelineState, "Pipeline State");
-    if(OrigDescriptor.pRootSignature)
-      DerivedResource(OrigDescriptor.pRootSignature, pPipelineState);
+    if(OrigDescriptor.GetRootSigIfPresent())
+      DerivedResource(OrigDescriptor.GetRootSigIfPresent(), pPipelineState);
 
+    RDCCOMPILE_ASSERT(ARRAY_COUNT(InlineShaderIDs) == ARRAY_COUNT(shaders),
+                      "shaders array is incorrectly sized");
     for(size_t i = 0; i < ARRAY_COUNT(shaders); i++)
     {
       if(shaders[i]->BytecodeLength == 0 || shaders[i]->pShaderBytecode == NULL)
@@ -133,8 +161,12 @@ bool WrappedID3D12Device::Serialise_CreatePipelineState(SerialiserType &ser,
       }
       else
       {
-        WrappedID3D12Shader *entry = WrappedID3D12Shader::AddShader(*shaders[i], this);
+        WrappedID3D12Shader *entry =
+            WrappedID3D12Shader::AddShader(InlineShaderIDs[i], *shaders[i], this);
         entry->AddRef();
+
+        NVAftermath_Shader(ShaderEncoding::DXBC, shaders[i]->pShaderBytecode,
+                           shaders[i]->BytecodeLength);
 
         shaders[i]->pShaderBytecode = entry;
 
@@ -245,7 +277,6 @@ bool WrappedID3D12Device::Serialise_CreatePipelineState(SerialiserType &ser,
           .initialisationChunks.push_back((uint32_t)m_StructuredFile->chunks.size() - 2);
       m_GlobalEXTUAV = ~0U;
     }
-    GetResourceManager()->AddLiveResource(pPipelineState, wrapped);
   }
 
   return true;
@@ -277,7 +308,7 @@ HRESULT WrappedID3D12Device::CreatePipelineState(const D3D12_PIPELINE_STATE_STRE
 
   if(SUCCEEDED(ret))
   {
-    WrappedID3D12PipelineState *wrapped = new WrappedID3D12PipelineState(real, this);
+    WrappedID3D12PipelineState *wrapped = new WrappedID3D12PipelineState(ResourceId(), real, this);
 
     if(IsCaptureMode(m_State))
     {
@@ -329,8 +360,8 @@ HRESULT WrappedID3D12Device::CreatePipelineState(const D3D12_PIPELINE_STATE_STRE
       record->Length = 0;
       wrapped->SetResourceRecord(record);
 
-      if(expandedDesc.pRootSignature)
-        record->AddParent(GetRecord(expandedDesc.pRootSignature));
+      if(expandedDesc.GetRootSigIfPresent())
+        record->AddParent(GetRecord(expandedDesc.GetRootSigIfPresent()));
 
       if(vendorChunk)
         record->AddChunk(vendorChunk);
@@ -338,8 +369,6 @@ HRESULT WrappedID3D12Device::CreatePipelineState(const D3D12_PIPELINE_STATE_STRE
     }
     else
     {
-      GetResourceManager()->AddLiveResource(wrapped->GetResourceID(), wrapped);
-
       D3D12_EXPANDED_PIPELINE_STATE_STREAM_DESC *storedDesc =
           new D3D12_EXPANDED_PIPELINE_STATE_STREAM_DESC(expandedDesc);
 
@@ -357,7 +386,7 @@ HRESULT WrappedID3D12Device::CreatePipelineState(const D3D12_PIPELINE_STATE_STRE
         }
         else
         {
-          WrappedID3D12Shader *sh = WrappedID3D12Shader::AddShader(*shaders[i], this);
+          WrappedID3D12Shader *sh = WrappedID3D12Shader::AddShader(ResourceId(), *shaders[i], this);
           sh->AddRef();
           shaders[i]->pShaderBytecode = sh;
         }

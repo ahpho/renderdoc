@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2015-2026 Baldur Karlsson
  * Copyright (c) 2014 Crytek
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -188,6 +188,25 @@ struct Vec2u
   };
 };
 
+struct Vec3u
+{
+  Vec3u(uint32_t X, uint32_t Y, uint32_t Z)
+  {
+    x = X;
+    y = Y;
+    z = Z;
+  }
+  Vec3u() { x = y = z = 0; }
+  union
+  {
+    struct
+    {
+      uint32_t x, y, z;
+    };
+    uint32_t uv[3];
+  };
+};
+
 struct Vec4u
 {
   Vec4u(uint32_t X, uint32_t Y, uint32_t Z, uint32_t W)
@@ -208,22 +227,22 @@ struct Vec4u
   };
 };
 
-struct Vec3u
+struct Vec3i
 {
-  Vec3u(uint32_t X, uint32_t Y, uint32_t Z)
+  Vec3i(int32_t X, int32_t Y, int32_t Z)
   {
     x = X;
     y = Y;
     z = Z;
   }
-  Vec3u() { x = y = z = 0; }
+  Vec3i() { x = y = z = 0; }
   union
   {
     struct
     {
-      uint32_t x, y, z;
+      int32_t x, y, z;
     };
-    uint32_t uv[3];
+    int32_t uv[3];
   };
 };
 

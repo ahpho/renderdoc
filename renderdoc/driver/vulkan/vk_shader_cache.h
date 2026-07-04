@@ -1,7 +1,7 @@
 /******************************************************************************
  * The MIT License (MIT)
  *
- * Copyright (c) 2019-2025 Baldur Karlsson
+ * Copyright (c) 2018-2026 Baldur Karlsson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -35,6 +35,7 @@ enum class BuiltinShader
   BlitVS,
   First = BlitVS,
   CheckerboardFS,
+  CheckerboardMultiviewFS,
   TexDisplayFS,
   FixedColFS,
   TextVS,
@@ -49,6 +50,7 @@ enum class BuiltinShader
   QuadWriteMultiviewFS,
   TrisizeGS,
   TrisizeFS,
+  TrisizeMultiviewFS,
   TexRemap,
   PixelHistoryMSCopyCS,
   PixelHistoryMSCopyDepthCS,
