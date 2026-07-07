@@ -1,0 +1,4 @@
+[submodule "FakeD3dDll"]
+	path = FakeD3dDll
+	url = https://github.com/ahpho/RenderDocInjector.git
+	branch = main

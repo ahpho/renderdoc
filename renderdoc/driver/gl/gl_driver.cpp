@@ -1255,6 +1255,8 @@ void WrappedOpenGL::ContextData::AssociateWindow(WrappedOpenGL *driver, Windowin
   auto it = windows.find(wndHandle);
   if(it == windows.end())
   {
+    RDCLOG("======> WrappedOpenGL::ContextData::AssociateWindow(): hwnd=%p", wndHandle);
+
     RenderDoc::Inst().AddFrameCapturer(DeviceOwnedWindow(ctx, wndHandle), driver);
 
     if(winSystem != WindowingSystem::Headless && IsCaptureMode(driver->GetState()))

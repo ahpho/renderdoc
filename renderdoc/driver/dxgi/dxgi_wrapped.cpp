@@ -232,6 +232,10 @@ WrappedIDXGISwapChain4::WrappedIDXGISwapChain4(IDXGISwapChain *real, HWND w, ID3
   WrapBuffersAfterResize();
 
   HWND wnd = GetHWND();
+  RDCLOG(
+      "======> WrappedIDXGISwapChain4.ctor: hwnd=%p, IDXGISwapChain1=%p, IDXGISwapChain2=%p, "
+      "IDXGISwapChain3=%p, IDXGISwapChain4=%p",
+      wnd, m_pReal1, m_pReal2, m_pReal3, m_pReal4);
 
   if(wnd)
   {
@@ -1121,6 +1125,7 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGIFactory::QueryInterface(REFIID riid, void 
   {
     AddRef();
     *ppvObject = (IDXGIFactory *)this;
+    RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory)");
     return S_OK;
   }
   else if(riid == __uuidof(IDXGIFactory1))
@@ -1129,10 +1134,12 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGIFactory::QueryInterface(REFIID riid, void 
     {
       AddRef();
       *ppvObject = (IDXGIFactory1 *)this;
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory1) pReal1=true");
       return S_OK;
     }
     else
     {
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory1) pReal1=false");
       return E_NOINTERFACE;
     }
   }
@@ -1142,10 +1149,12 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGIFactory::QueryInterface(REFIID riid, void 
     {
       AddRef();
       *ppvObject = (IDXGIFactory2 *)this;
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory2) pReal2=true");
       return S_OK;
     }
     else
     {
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory2) pReal2=false");
       return E_NOINTERFACE;
     }
   }
@@ -1155,10 +1164,12 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGIFactory::QueryInterface(REFIID riid, void 
     {
       AddRef();
       *ppvObject = (IDXGIFactory3 *)this;
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory3) pReal3=true");
       return S_OK;
     }
     else
     {
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory3) pReal3=false");
       return E_NOINTERFACE;
     }
   }
@@ -1168,10 +1179,12 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGIFactory::QueryInterface(REFIID riid, void 
     {
       AddRef();
       *ppvObject = (IDXGIFactory4 *)this;
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory4) pReal4=true");
       return S_OK;
     }
     else
     {
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory4) pReal4=false");
       return E_NOINTERFACE;
     }
   }
@@ -1181,10 +1194,12 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGIFactory::QueryInterface(REFIID riid, void 
     {
       AddRef();
       *ppvObject = (IDXGIFactory5 *)this;
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory5) pReal5=true");
       return S_OK;
     }
     else
     {
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory5) pReal5=false");
       return E_NOINTERFACE;
     }
   }
@@ -1194,10 +1209,12 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGIFactory::QueryInterface(REFIID riid, void 
     {
       AddRef();
       *ppvObject = (IDXGIFactory6 *)this;
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory6) pReal6=true");
       return S_OK;
     }
     else
     {
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory6) pReal6=false");
       return E_NOINTERFACE;
     }
   }
@@ -1207,10 +1224,12 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGIFactory::QueryInterface(REFIID riid, void 
     {
       AddRef();
       *ppvObject = (IDXGIFactory7 *)this;
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory7) pReal7=true");
       return S_OK;
     }
     else
     {
+      RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(IDXGIFactory7) pReal7=false");
       return E_NOINTERFACE;
     }
   }
@@ -1225,13 +1244,16 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGIFactory::QueryInterface(REFIID riid, void 
     return E_NOINTERFACE;
   }
 
-  return RefCountDXGIObject::QueryInterface("IDXGIFactory", riid, ppvObject);
+  HRESULT hr = RefCountDXGIObject::QueryInterface("IDXGIFactory", riid, ppvObject);
+  RDCLOG("[WrappedIDXGIFactory::QueryInterface] __uuidof(UNKNOWN) = %d", hr == S_OK);
+  return hr;
 }
 
 HRESULT WrappedIDXGIFactory::CreateSwapChain(IUnknown *pDevice, DXGI_SWAP_CHAIN_DESC *pDesc,
                                              IDXGISwapChain **ppSwapChain)
 {
   ID3DDevice *wrapDevice = GetD3DDevice(pDevice);
+  RDCLOG("[WrappedIDXGIFactory::CreateSwapChain] begins. wrapDevice=%p", wrapDevice);
 
   if(wrapDevice)
   {
@@ -1253,14 +1275,27 @@ HRESULT WrappedIDXGIFactory::CreateSwapChain(IUnknown *pDevice, DXGI_SWAP_CHAIN_
 
     if(SUCCEEDED(ret))
     {
+      RDCLOG("[WrappedIDXGIFactory::CreateSwapChain] before new WrappedIDXGISwapChain4=%p",
+             *ppSwapChain);
+
       *ppSwapChain =
           new WrappedIDXGISwapChain4(*ppSwapChain, desc ? desc->OutputWindow : NULL, wrapDevice);
+
+      RDCLOG("[WrappedIDXGIFactory::CreateSwapChain] after new WrappedIDXGISwapChain4=%p",
+             *ppSwapChain);
+    }
+    else
+    {
+      RDCERR("[WrappedIDXGIFactory::CreateSwapChain] error m_pReal->CreateSwapChain");
     }
 
     return ret;
   }
 
-  RDCERR("Creating swap chain with non-hooked device!");
+  RDCERR("[WrappedIDXGIFactory::CreateSwapChain] Creating swap chain with non-hooked device! pDevice=%p, pDesc=%p, ppSwapChain=%p",
+         pDevice, pDesc, ppSwapChain);
+
+  RDCERR("[WrappedIDXGIFactory::CreateSwapChain] This means the swapchain will BYPASS RenderDoc hook. Capture will FAIL!");
 
   return m_pReal->CreateSwapChain(pDevice, pDesc, ppSwapChain);
 }
@@ -1270,7 +1305,11 @@ HRESULT WrappedIDXGIFactory::CreateSwapChainForHwnd(
     const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc, IDXGIOutput *pRestrictToOutput,
     IDXGISwapChain1 **ppSwapChain)
 {
+  RDCLOG("[WrappedIDXGIFactory::CreateSwapChainForHwnd] begins.");
+
   ID3DDevice *wrapDevice = GetD3DDevice(pDevice);
+
+  RDCLOG("[WrappedIDXGIFactory::CreateSwapChainForHwnd] after GetD3DDevice().");
 
   WrappedIDXGIOutput6 *wrappedOutput = (WrappedIDXGIOutput6 *)pRestrictToOutput;
   IDXGIOutput *unwrappedOutput = wrappedOutput ? wrappedOutput->GetReal() : NULL;
@@ -1298,14 +1337,21 @@ HRESULT WrappedIDXGIFactory::CreateSwapChainForHwnd(
 
     if(SUCCEEDED(ret))
     {
+      RDCLOG("[WrappedIDXGIFactory::CreateSwapChainForHwnd] before new WrappedIDXGISwapChain4.");
+
       *ppSwapChain = new WrappedIDXGISwapChain4(*ppSwapChain, hWnd, wrapDevice);
+
+      RDCLOG("[WrappedIDXGIFactory::CreateSwapChainForHwnd] after new WrappedIDXGISwapChain4=%p", *ppSwapChain);
     }
 
     return ret;
   }
   else
   {
-    RDCERR("Creating swap chain with non-hooked device!");
+    RDCERR("[WrappedIDXGIFactory::CreateSwapChainForHwnd] Creating swap chain with non-hooked device! pDevice=%p, hWnd=%p, ppSwapChain=%p",
+           pDevice, hWnd, ppSwapChain);
+
+    RDCERR("[WrappedIDXGIFactory::CreateSwapChainForHwnd] This means the swapchain will BYPASS RenderDoc hook. Capture will FAIL!");
   }
 
   return m_pReal2->CreateSwapChainForHwnd(pDevice, hWnd, pDesc, pFullscreenDesc, unwrappedOutput,
@@ -1317,7 +1363,11 @@ HRESULT WrappedIDXGIFactory::CreateSwapChainForCoreWindow(IUnknown *pDevice, IUn
                                                           IDXGIOutput *pRestrictToOutput,
                                                           IDXGISwapChain1 **ppSwapChain)
 {
+  RDCLOG("[WrappedIDXGIFactory::CreateSwapChainForCoreWindow] begins.");
+
   ID3DDevice *wrapDevice = GetD3DDevice(pDevice);
+
+  RDCLOG("[WrappedIDXGIFactory::CreateSwapChainForCoreWindow] after GetD3DDevice.");
 
   WrappedIDXGIOutput6 *wrappedOutput = (WrappedIDXGIOutput6 *)pRestrictToOutput;
   IDXGIOutput *unwrappedOutput = wrappedOutput ? wrappedOutput->GetReal() : NULL;
@@ -1349,6 +1399,9 @@ HRESULT WrappedIDXGIFactory::CreateSwapChainForCoreWindow(IUnknown *pDevice, IUn
       (*ppSwapChain)->GetHwnd(&wnd);
       if(wnd == NULL)
         wnd = (HWND)pWindow;
+
+      RDCLOG(
+          "[WrappedIDXGIFactory::CreateSwapChainForCoreWindow] before new WrappedIDXGISwapChain4.");
       *ppSwapChain = new WrappedIDXGISwapChain4(*ppSwapChain, wnd, wrapDevice);
     }
 
@@ -1356,7 +1409,7 @@ HRESULT WrappedIDXGIFactory::CreateSwapChainForCoreWindow(IUnknown *pDevice, IUn
   }
   else
   {
-    RDCERR("Creating swap chain with non-hooked device!");
+    RDCERR("[WrappedIDXGIFactory::CreateSwapChainForCoreWindow] Creating swap chain with non-hooked device! pDevice=%p, ppSwapChain=%p", pDevice, ppSwapChain);
   }
 
   return m_pReal2->CreateSwapChainForCoreWindow(pDevice, pWindow, pDesc, unwrappedOutput,
@@ -1368,7 +1421,11 @@ HRESULT WrappedIDXGIFactory::CreateSwapChainForComposition(IUnknown *pDevice,
                                                            IDXGIOutput *pRestrictToOutput,
                                                            IDXGISwapChain1 **ppSwapChain)
 {
+  RDCLOG("[WrappedIDXGIFactory::CreateSwapChainForComposition] begins.");
+
   ID3DDevice *wrapDevice = GetD3DDevice(pDevice);
+
+  RDCLOG("[WrappedIDXGIFactory::CreateSwapChainForComposition] after GetD3DDevice.");
 
   WrappedIDXGIOutput6 *wrappedOutput = (WrappedIDXGIOutput6 *)pRestrictToOutput;
   IDXGIOutput *unwrappedOutput = wrappedOutput ? wrappedOutput->GetReal() : NULL;
@@ -1400,6 +1457,10 @@ HRESULT WrappedIDXGIFactory::CreateSwapChainForComposition(IUnknown *pDevice,
       (*ppSwapChain)->GetHwnd(&wnd);
       if(wnd == NULL)
         wnd = (HWND)0x1;
+
+      RDCLOG(
+          "[WrappedIDXGIFactory::CreateSwapChainForComposition] before new WrappedIDXGISwapChain4.");
+
       *ppSwapChain = new WrappedIDXGISwapChain4(*ppSwapChain, wnd, wrapDevice);
     }
 
@@ -1407,7 +1468,7 @@ HRESULT WrappedIDXGIFactory::CreateSwapChainForComposition(IUnknown *pDevice,
   }
   else
   {
-    RDCERR("Creating swap chain with non-hooked device!");
+    RDCERR("[WrappedIDXGIFactory::CreateSwapChainForComposition] Creating swap chain with non-hooked device! pDevice=%p, ppSwapChain=%p", pDevice, ppSwapChain);
   }
 
   return m_pReal2->CreateSwapChainForComposition(pDevice, pDesc, unwrappedOutput, ppSwapChain);

@@ -840,7 +840,7 @@ private:
           wrap->GetReplay()->SetDevConfiguration(cfg);
         }
 
-        RDCDEBUG("created wrapped device.");
+        RDCDEBUG("created wrapped device: WrappedID3D12Device");
 
         *ppDevice = (ID3D12Device *)wrap;
 
@@ -907,6 +907,8 @@ private:
         return E_UNEXPECTED;
       }
     }
+
+    RDCLOG("[D3D12CreateDevice_hook] ====> d3d12hooks.Create_Internal");
 
     return d3d12hooks.Create_Internal(createFunc, NULL, pAdapter, MinimumFeatureLevel, riid,
                                       ppDevice);
@@ -1004,6 +1006,8 @@ HRESULT CreateD3D12_Internal(RealD3D12CreateFunction real, D3D12DevConfiguration
                              IUnknown *pAdapter, D3D_FEATURE_LEVEL MinimumFeatureLevel, REFIID riid,
                              void **ppDevice)
 {
+  RDCLOG("[CreateD3D12_Internal] ====> D3D12Hook::d3d12hooks.Create_Internal");
+
   return D3D12Hook::d3d12hooks.Create_Internal(real, devConfig, pAdapter, MinimumFeatureLevel, riid,
                                                ppDevice);
 }

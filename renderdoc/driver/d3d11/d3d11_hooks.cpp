@@ -111,11 +111,22 @@ private:
     // if we're already inside a wrapped create, then DON'T do anything special. Just call onwards
     if(CheckRecurse())
     {
+      RDCDEBUG("[Create_Internal] <======> Recurse, call real. Flags %x", Flags);
       return real(pAdapter, DriverType, Software, Flags, pFeatureLevels, FeatureLevels, SDKVersion,
                   pSwapChainDesc, ppSwapChain, ppDevice, pFeatureLevel, ppImmediateContext);
     }
 
-    RDCDEBUG("Call to Create_Internal Flags %x", Flags);
+	//ksh
+    static LONG s_D3D11CreateCount = 0;
+    LONG createIdx = InterlockedIncrement(&s_D3D11CreateCount);
+    RDCLOG("[Create_Internal #%d] ======> Call to Create_Internal, static Flags=%x", createIdx, Flags);
+
+    if(ppSwapChain && *ppSwapChain)
+      RDCLOG("[Create_Internal #%d] ======> ppSwapChain=%p *ppSwapChain=%p", createIdx, ppSwapChain, *ppSwapChain);
+    else if(ppSwapChain && *ppSwapChain == NULL)
+      RDCLOG("[Create_Internal #%d] ======> ppSwapChain=%p *ppSwapChain=%p (will NOT wrap SwapChain)", createIdx, ppSwapChain, NULL);
+    else if(ppSwapChain == NULL)
+      RDCLOG("[Create_Internal #%d] ======> ppSwapChain=NULL (will NOT wrap SwapChain, device-only create)", createIdx);
 
     // we should no longer go through here in the replay application
     RDCASSERT(!RenderDoc::Inst().IsReplayApp());
@@ -139,7 +150,7 @@ private:
       pUsedSwapDesc->Windowed = TRUE;
     }
 
-    RDCDEBUG("Calling real createdevice...");
+    RDCDEBUG("[Create_Internal] Calling real createdevice...");
 
     // Hack for D3DGear which crashes if ppDevice is NULL
     ID3D11Device *dummydev = NULL;
@@ -157,7 +168,7 @@ private:
     if(dummyUsed)
       ppDevice = NULL;
 
-    RDCDEBUG("Called real createdevice...");
+    RDCDEBUG("[Create_Internal] Called real createdevice...");
 
     bool suppress = false;
 
@@ -169,7 +180,7 @@ private:
     }
     else if(SUCCEEDED(ret) && ppDevice)
     {
-      RDCDEBUG("succeeded and hooking.");
+      RDCDEBUG("[Create_Internal #%d] succeeded and hooking.", createIdx);
 
       if(!WrappedID3D11Device::IsAlloc(*ppDevice))
       {
@@ -182,16 +193,26 @@ private:
           memcpy(params.FeatureLevels, pFeatureLevels, sizeof(D3D_FEATURE_LEVEL) * FeatureLevels);
 
         WrappedID3D11Device *wrap = new WrappedID3D11Device(*ppDevice, params);
+		//ksh
+        RDCLOG("[Create_Internal #%d] NEW WrappedID3D11Device=%p (real=%p, ppSwapChain=%p)",
+               createIdx, wrap, *ppDevice, ppSwapChain ? *ppSwapChain : NULL);
 
-        RDCDEBUG("created wrapped device.");
+        RDCDEBUG("created wrapped device: WrappedID3D11Device");
 
         *ppDevice = wrap;
 
         wrap->GetImmediateContext(ppImmediateContext);
 
         if(ppSwapChain && *ppSwapChain)
+        {
+          RDCDEBUG("to create WrappedIDXGISwapChain4 ");
           *ppSwapChain = new WrappedIDXGISwapChain4(
               *ppSwapChain, pSwapChainDesc ? pSwapChainDesc->OutputWindow : NULL, wrap);
+        }
+        else
+        {
+          RDCDEBUG("not to create WrappedIDXGISwapChain4 ");
+        }
       }
     }
     else if(SUCCEEDED(ret))
@@ -205,6 +226,8 @@ private:
 
     EndRecurse();
 
+    RDCLOG("[Create_Internal] <====== ends.");
+    
     return ret;
   }
 
@@ -244,6 +267,8 @@ private:
       return E_UNEXPECTED;
     }
 
+    RDCLOG("[D3D11CreateDeviceAndSwapChain_hook] ====> d3d11hooks.Create_Internal");
+
     return d3d11hooks.Create_Internal(createFunc, pAdapter, DriverType, Software, Flags,
                                       pFeatureLevels, FeatureLevels, SDKVersion, pSwapChainDesc,
                                       ppSwapChain, ppDevice, pFeatureLevel, ppImmediateContext);
@@ -262,6 +287,8 @@ HRESULT CreateD3D11_Internal(RealD3D11CreateFunction real, __in_opt IDXGIAdapter
                              __out_opt D3D_FEATURE_LEVEL *pFeatureLevel,
                              __out_opt ID3D11DeviceContext **ppImmediateContext)
 {
+  RDCLOG("[CreateD3D11_Internal] ====> D3D11Hook::d3d11hooks.Create_Internal");
+
   return D3D11Hook::d3d11hooks.Create_Internal(
       real, pAdapter, DriverType, Software, Flags, pFeatureLevels, FeatureLevels, SDKVersion,
       pSwapChainDesc, ppSwapChain, ppDevice, pFeatureLevel, ppImmediateContext);

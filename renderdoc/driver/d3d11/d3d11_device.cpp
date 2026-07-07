@@ -261,6 +261,9 @@ WrappedID3D11Device::WrappedID3D11Device(ID3D11Device *realDevice, D3D11InitPara
 
 WrappedID3D11Device::~WrappedID3D11Device()
 {
+  RDCLOG("[~WrappedID3D11Device=%p] m_pCurrentWrappedDevice==this: %d, m_SwapChains.size=%d, realDevice=%p",
+         this, m_pCurrentWrappedDevice == this, m_SwapChains.size(), m_pDevice);
+
   if(m_pCurrentWrappedDevice == this)
     m_pCurrentWrappedDevice = NULL;
 

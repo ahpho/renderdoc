@@ -290,6 +290,8 @@ void STDMETHODCALLTYPE WrappedID3D12SharingContract::Present(_In_ ID3D12Resource
 
     Keyboard::AddInputWindow(WindowingSystem::Win32, window);
 
+    //RDCLOG("[Present] ======> WrappedID3D12SharingContract::Present: hwnd=%p", window);//ksh
+
     RenderDoc::Inst().AddFrameCapturer(
         DeviceOwnedWindow(m_pDevice.GetFrameCapturerDevice(), window), m_pDevice.GetFrameCapturer());
   }

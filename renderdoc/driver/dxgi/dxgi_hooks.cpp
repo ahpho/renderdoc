@@ -250,7 +250,7 @@ public:
 public:
   void RegisterHooks()
   {
-    RDCLOG("Registering DXGI hooks");
+    RDCLOG("DXGIHook::RegisterHooks(), Registering DXGI hooks -------------------------------------------------");
 
     LibraryHooks::RegisterLibraryHook("dxgi.dll", NULL);
 
@@ -278,6 +278,7 @@ private:
     if(ppFactory)
       *ppFactory = NULL;
     HRESULT ret = dxgihooks.CreateDXGIFactory()(riid, ppFactory);
+    RDCLOG("DXGIHook::CreateDXGIFactory_hook() -------------------------------------------------");
 
     if(SUCCEEDED(ret))
       RefCountDXGIObject::HandleWrap("CreateDXGIFactory", riid, ppFactory);
@@ -290,6 +291,7 @@ private:
     if(ppFactory)
       *ppFactory = NULL;
     HRESULT ret = dxgihooks.CreateDXGIFactory1()(riid, ppFactory);
+    RDCLOG("DXGIHook::CreateDXGIFactory1_hook() -------------------------------------------------");
 
     if(SUCCEEDED(ret))
       RefCountDXGIObject::HandleWrap("CreateDXGIFactory1", riid, ppFactory);
@@ -302,6 +304,7 @@ private:
     if(ppFactory)
       *ppFactory = NULL;
     HRESULT ret = dxgihooks.CreateDXGIFactory2()(Flags, riid, ppFactory);
+    RDCLOG("DXGIHook::CreateDXGIFactory2_hook() -------------------------------------------------");
 
     if(SUCCEEDED(ret))
       RefCountDXGIObject::HandleWrap("CreateDXGIFactory2", riid, ppFactory);
@@ -319,6 +322,7 @@ private:
       dxgihooks.m_RenderDocAnalysis.AddRef();
       if(ppDebug)
         *ppDebug = &dxgihooks.m_RenderDocAnalysis;
+      RDCLOG("DXGIGetDebugInterface_hook == uuidof(IDXGraphicsAnalysis) -------------------------------------------------");
       return S_OK;
     }
     if(riid == __uuidof(IDXGIInfoQueue))
@@ -326,6 +330,8 @@ private:
       RDCWARN(
           "Returning a dummy IDXGIInfoQueue that does nothing. RenderDoc takes control of the "
           "debug layer.");
+      RDCLOG("DXGIGetDebugInterface_hook == uuidof(IDXGIInfoQueue) -------------------------------------------------");
+
       dxgihooks.m_DummyInfoQueue.AddRef();
       if(ppDebug)
         *ppDebug = &dxgihooks.m_DummyInfoQueue;
@@ -335,9 +341,15 @@ private:
     // IDXGIDebug and IDXGIDebug1 can come through here, but we don't need to wrap them.
 
     if(dxgihooks.GetDebugInterface())
+    {
+      RDCLOG("DXGIGetDebugInterface_hook == uuidof(IDXGIInfoQueue) -------------------------------------------------");
       return dxgihooks.GetDebugInterface()(riid, ppDebug);
+    }
     else
+    {
+      RDCLOG("DXGIGetDebugInterface_hook == E_NOINTERFACE -------------------------------------------------");
       return E_NOINTERFACE;
+    }
   }
 
   static HRESULT WINAPI DXGIGetDebugInterface1_hook(UINT Flags, REFIID riid, void **ppDebug)
@@ -350,6 +362,7 @@ private:
       dxgihooks.m_RenderDocAnalysis.AddRef();
       if(ppDebug)
         *ppDebug = &dxgihooks.m_RenderDocAnalysis;
+      RDCLOG("DXGIGetDebugInterface1_hook == uuidof(IDXGraphicsAnalysis) -------------------------------------------------");
       return S_OK;
     }
     if(riid == __uuidof(IDXGIInfoQueue))
@@ -357,6 +370,7 @@ private:
       RDCWARN(
           "Returning a dummy IDXGIInfoQueue that does nothing. RenderDoc takes control of the "
           "debug layer.");
+      RDCLOG("DXGIGetDebugInterface1_hook == uuidof(IDXGIInfoQueue) -------------------------------------------------");
       dxgihooks.m_DummyInfoQueue.AddRef();
       if(ppDebug)
         *ppDebug = &dxgihooks.m_DummyInfoQueue;
@@ -366,9 +380,15 @@ private:
     // IDXGIDebug and IDXGIDebug1 can come through here, but we don't need to wrap them.
 
     if(dxgihooks.GetDebugInterface1())
+    {
+      RDCLOG("dxgihooks.GetDebugInterface1() -------------------------------------------------");
       return dxgihooks.GetDebugInterface1()(Flags, riid, ppDebug);
+    }
     else
+    {
+      RDCLOG("DXGIGetDebugInterface1_hook == E_NOINTERFACE -------------------------------------------------");
       return E_NOINTERFACE;
+    }
   }
 };
 

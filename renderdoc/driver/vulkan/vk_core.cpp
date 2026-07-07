@@ -5094,6 +5094,8 @@ VkResourceRecord *WrappedVulkan::RegisterSurface(WindowingSystem system, void *h
 
   RDCLOG("RegisterSurface() window %p", handle);
 
+  RDCLOG("======> WrappedOpenGL::ContextData::AssociateWindow: hwnd=%p", handle);
+
   RenderDoc::Inst().AddFrameCapturer(DeviceOwnedWindow(LayerDisp(m_Instance), handle), this);
 
   return (VkResourceRecord *)new PackedWindowHandle(system, handle);

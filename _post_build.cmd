@@ -33,6 +33,7 @@ copy /Y "%OutDir%..\..\build_armeabi-v7a\bin\org.renderdoc.renderdoccmd.arm32.ap
 copy /Y "%OutDir%..\..\build_arm64-v8a\bin\org.renderdoc.renderdoccmd.arm64.apk" "%InstallDir%plugins\android\"
 copy /Y "%OutDir%..\..\build_x86\bin\org.renderdoc.renderdoccmd.x86.apk" "%InstallDir%plugins\android\"
 copy /Y "%OutDir%..\..\build_x86_64\bin\org.renderdoc.renderdoccmd.x64.apk" "%InstallDir%plugins\android\"
+@echo 已复制 4 个 apk 文件。
 
 REM 拷贝我自己的工具
 copy /Y "%OutDir%d3d9.dll" "%InstallDir%工具在这里\安卓模拟器\"

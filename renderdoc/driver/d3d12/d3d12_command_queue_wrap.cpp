@@ -1537,6 +1537,8 @@ HRESULT STDMETHODCALLTYPE WrappedID3D12CommandQueue::Present(
 
     Keyboard::AddInputWindow(WindowingSystem::Win32, hWindow);
 
+    //RDCLOG("[Present] ======> WrappedID3D12CommandQueue::Present: hwnd=%p", hWindow);//ksh
+
     RenderDoc::Inst().AddFrameCapturer(
         DeviceOwnedWindow(m_pDevice->GetFrameCapturerDevice(), hWindow),
         m_pDevice->GetFrameCapturer());
