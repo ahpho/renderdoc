@@ -603,7 +603,7 @@ public:
       return 1;
     }
 
-    HANDLE readyEvent = CreateEventA(NULL, TRUE, FALSE, "RENDERDOC_CRASHHANDLE");
+    HANDLE readyEvent = CreateEventA(NULL, TRUE, FALSE, "SENDERDOD_CRASHHANDLE");
 
     if(readyEvent != NULL)
     {
@@ -693,7 +693,7 @@ public:
 
       std::string reportPath = conv(dumpFolder) + "\\" + dumpId + ".zip";
 
-      RENDERDOC_CreateBugReport(rdcstr(conv(wlogpath).c_str()), rdcstr(conv(wdump).c_str()),
+      SENDERDOD_CreateBugReport(rdcstr(conv(wlogpath).c_str()), rdcstr(conv(wdump).c_str()),
                                 rdcstr(reportPath.c_str()));
 
       for(size_t i = 0; i < reportPath.size(); i++)

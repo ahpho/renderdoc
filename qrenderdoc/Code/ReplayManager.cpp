@@ -34,12 +34,12 @@ ReplayManager::ReplayManager()
   m_Running = false;
   m_Thread = NULL;
 
-  RENDERDOC_RegisterMemoryRegion(this, sizeof(ReplayManager));
+  SENDERDOD_RegisterMemoryRegion(this, sizeof(ReplayManager));
 }
 
 ReplayManager::~ReplayManager()
 {
-  RENDERDOC_UnregisterMemoryRegion(this);
+  SENDERDOD_UnregisterMemoryRegion(this);
 }
 
 void ReplayManager::OpenCapture(const QString &capturefile, const ReplayOptions &opts,
@@ -397,7 +397,7 @@ void ReplayManager::PingRemote()
 void ReplayManager::ReopenCaptureFile(const QString &path)
 {
   if(!m_CaptureFile)
-    m_CaptureFile = RENDERDOC_OpenCaptureFile();
+    m_CaptureFile = SENDERDOD_OpenCaptureFile();
   m_CaptureFile->OpenFile(path, "rdc", NULL);
 }
 
@@ -416,7 +416,7 @@ ExecuteResult ReplayManager::ExecuteAndInject(const rdcstr &exe, const rdcstr &w
   }
   else
   {
-    ret = RENDERDOC_ExecuteAndInject(exe, workingDir, cmdLine, env, capturefile, opts, false);
+    ret = SENDERDOD_ExecuteAndInject(exe, workingDir, cmdLine, env, capturefile, opts, false);
   }
 
   return ret;
@@ -450,7 +450,7 @@ void ReplayManager::run(int proxyRenderer, const QString &capturefile, const Rep
   }
   else
   {
-    m_CaptureFile = RENDERDOC_OpenCaptureFile();
+    m_CaptureFile = SENDERDOD_OpenCaptureFile();
 
     m_CreateResult = m_CaptureFile->OpenFile(capturefile, "rdc", NULL);
 

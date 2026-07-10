@@ -625,31 +625,31 @@ void GraphicsTest::Prepare(int argc, char **argv)
     }
   }
 
-  pRENDERDOC_GetAPI RENDERDOC_GetAPI = NULL;
+  pRENDERDOC_GetAPI SENDERDOD_GetAPI = NULL;
 
 #if defined(WIN32)
   HMODULE mod = GetModuleHandleA("renderdoc.dll");
   if(mod)
-    RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)GetProcAddress(mod, "RENDERDOC_GetAPI");
+    SENDERDOD_GetAPI = (pRENDERDOC_GetAPI)GetProcAddress(mod, "SENDERDOD_GetAPI");
 #elif defined(ANDROID)
   void *mod = dlopen("libVkLayer_GLES_RenderDoc.so", RTLD_NOW | RTLD_NOLOAD);
   if(mod)
-    RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)dlsym(mod, "RENDERDOC_GetAPI");
+    SENDERDOD_GetAPI = (pRENDERDOC_GetAPI)dlsym(mod, "SENDERDOD_GetAPI");
 #elif defined(__linux__)
   void *mod = dlopen("librenderdoc.so", RTLD_NOW | RTLD_NOLOAD);
   if(mod)
-    RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)dlsym(mod, "RENDERDOC_GetAPI");
+    SENDERDOD_GetAPI = (pRENDERDOC_GetAPI)dlsym(mod, "SENDERDOD_GetAPI");
 #elif defined(__APPLE__)
   void *mod = dlopen("librenderdoc.dylib", RTLD_NOW | RTLD_NOLOAD);
   if(mod)
-    RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)dlsym(mod, "RENDERDOC_GetAPI");
+    SENDERDOD_GetAPI = (pRENDERDOC_GetAPI)dlsym(mod, "SENDERDOD_GetAPI");
 #else
 #error UNKNOWN PLATFORM
 #endif
 
-  if(RENDERDOC_GetAPI)
+  if(SENDERDOD_GetAPI)
   {
-    int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_7_0, (void **)&rdoc);
+    int ret = SENDERDOD_GetAPI(eRENDERDOC_API_Version_1_7_0, (void **)&rdoc);
 
     if(ret != 1)
       rdoc = NULL;

@@ -283,9 +283,9 @@ MainWindow::MainWindow(ICaptureContext &ctx) : QMainWindow(NULL), ui(new Ui::Mai
   m_RemoteProbe = new LambdaThread([this]() {
     // fetch all device protocols to start them processing
     rdcarray<rdcstr> protocols;
-    RENDERDOC_GetSupportedDeviceProtocols(&protocols);
+    SENDERDOD_GetSupportedDeviceProtocols(&protocols);
     for(const rdcstr &p : protocols)
-      RENDERDOC_GetDeviceProtocolController(p);
+      SENDERDOD_GetDeviceProtocolController(p);
 
     while(m_RemoteProbeSemaphore.available())
     {
@@ -316,7 +316,7 @@ MainWindow::MainWindow(ICaptureContext &ctx) : QMainWindow(NULL), ui(new Ui::Mai
 #endif
 
   // only allow sending error reports if we have a valid git commit hash
-  rdcstr hash = RENDERDOC_GetCommitHash();
+  rdcstr hash = SENDERDOD_GetCommitHash();
   if(hash.length() != 40 || hash.find_first_not_of("0123456789abcdef") >= 0)
   {
     qInfo() << "Disabling error reports due to invalid commit hash";
@@ -456,7 +456,7 @@ MainWindow::MainWindow(ICaptureContext &ctx) : QMainWindow(NULL), ui(new Ui::Mai
 #define SELF_HOST_NAME "librdocself.so"
 #endif
 
-  if(RENDERDOC_CanSelfHostedCapture(SELF_HOST_NAME))
+  if(SENDERDOD_CanSelfHostedCapture(SELF_HOST_NAME))
   {
     QAction *begin = new QAction(tr("Start Self-hosted Capture"), this);
     QAction *end = new QAction(tr("End Self-hosted Capture"), this);
@@ -466,14 +466,14 @@ MainWindow::MainWindow(ICaptureContext &ctx) : QMainWindow(NULL), ui(new Ui::Mai
       begin->setEnabled(false);
       end->setEnabled(true);
 
-      RENDERDOC_StartSelfHostCapture(SELF_HOST_NAME);
+      SENDERDOD_StartSelfHostCapture(SELF_HOST_NAME);
     });
 
     QObject::connect(end, &QAction::triggered, [begin, end]() {
       begin->setEnabled(true);
       end->setEnabled(false);
 
-      RENDERDOC_EndSelfHostCapture(SELF_HOST_NAME);
+      SENDERDOD_EndSelfHostCapture(SELF_HOST_NAME);
     });
 
     ui->menu_Tools->addSeparator();
@@ -489,7 +489,7 @@ MainWindow::MainWindow(ICaptureContext &ctx) : QMainWindow(NULL), ui(new Ui::Mai
   ui->menu_Export_As->setEnabled(false);
 
   {
-    ICaptureFile *tmp = RENDERDOC_OpenCaptureFile();
+    ICaptureFile *tmp = SENDERDOD_OpenCaptureFile();
     rdcarray<CaptureFileFormat> formats = tmp->GetCaptureFileFormats();
 
     for(const CaptureFileFormat &fmt : formats)
@@ -787,7 +787,7 @@ void MainWindow::OnInjectTrigger(uint32_t PID, const rdcarray<EnvironmentModific
   LambdaThread *th = new LambdaThread([this, PID, env, name, opts, callback]() {
     QString capturefile = m_Ctx.TempCaptureFilename(name);
 
-    ExecuteResult ret = RENDERDOC_InjectIntoProcess(PID, env, capturefile, opts, false);
+    ExecuteResult ret = SENDERDOD_InjectIntoProcess(PID, env, capturefile, opts, false);
 
     GUIInvoke::call(this, [this, PID, ret, callback]() {
       if(ret.result.code != ResultCode::Succeeded)
@@ -830,7 +830,7 @@ void MainWindow::LoadCapture(const QString &filename, const ReplayOptions &opts,
 
     if(local)
     {
-      ICaptureFile *file = RENDERDOC_OpenCaptureFile();
+      ICaptureFile *file = SENDERDOD_OpenCaptureFile();
 
       ResultDetails result = file->OpenFile(filename, "rdc", NULL);
 
@@ -1218,14 +1218,14 @@ void MainWindow::SetTitle(const QString &filename)
     text += lit(FULL_VERSION_STRING);
   else
     text += tr("Unstable %1 Build (%2 - %3)")
-                .arg(RENDERDOC_IsReleaseBuild() ? lit("Release") : lit("Development"))
+                .arg(SENDERDOD_IsReleaseBuild() ? lit("Release") : lit("Development"))
                 .arg(lit(FULL_VERSION_STRING))
-                .arg(QString::fromLatin1(RENDERDOC_GetCommitHash()));
+                .arg(QString::fromLatin1(SENDERDOD_GetCommitHash()));
 
   if(IsRunningAsAdmin())
     text += tr(" (Administrator)");
 
-  if(QString::fromLatin1(RENDERDOC_GetVersionString()) != lit(MAJOR_MINOR_VERSION_STRING))
+  if(QString::fromLatin1(SENDERDOD_GetVersionString()) != lit(MAJOR_MINOR_VERSION_STRING))
     text += tr(" - !! VERSION MISMATCH DETECTED !!");
 
   setWindowTitle(text);
@@ -1242,7 +1242,7 @@ bool MainWindow::HandleMismatchedVersions()
   {
     qCritical() << "Version mismatch between UI (" << lit(MAJOR_MINOR_VERSION_STRING) << ")"
                 << "and core"
-                << "(" << QString::fromUtf8(RENDERDOC_GetVersionString()) << ")";
+                << "(" << QString::fromUtf8(SENDERDOD_GetVersionString()) << ")";
 
 #if !RENDERDOC_OFFICIAL_BUILD
     RDDialog::critical(
@@ -1274,7 +1274,7 @@ bool MainWindow::HandleMismatchedVersions()
 
 bool MainWindow::IsVersionMismatched()
 {
-  return QString::fromLatin1(RENDERDOC_GetVersionString()) != lit(MAJOR_MINOR_VERSION_STRING);
+  return QString::fromLatin1(SENDERDOD_GetVersionString()) != lit(MAJOR_MINOR_VERSION_STRING);
 }
 
 void MainWindow::ClearRecentCaptureFiles()
@@ -2976,12 +2976,12 @@ void MainWindow::sendErrorReport(bool forceCaptureInclusion)
     return;
 
   rdcstr report;
-  RENDERDOC_CreateBugReport(RENDERDOC_GetLogFile(), "", report);
+  SENDERDOD_CreateBugReport(SENDERDOD_GetLogFile(), "", report);
 
   QVariantMap json;
 
   json[lit("version")] = lit(FULL_VERSION_STRING);
-  json[lit("gitcommit")] = QString::fromLatin1(RENDERDOC_GetCommitHash());
+  json[lit("gitcommit")] = QString::fromLatin1(SENDERDOD_GetCommitHash());
   json[lit("replaycrash")] = 1;
   json[lit("manual")] = 1;
   json[lit("forcecapture")] = forceCaptureInclusion ? 1 : 0;
@@ -3082,7 +3082,7 @@ void MainWindow::updateToolsMenuOptions()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-  if(RENDERDOC_IsGlobalHookActive())
+  if(SENDERDOD_IsGlobalHookActive())
   {
     RDDialog::critical(this, tr("Global hook active"),
                        tr("Cannot close RenderDoc while global hook is active."));
@@ -3333,6 +3333,6 @@ bool MainWindow::isUnshareableDeviceInUse()
   if(m_Ctx.Replay().CurrentRemote().Protocol()->SupportsMultiplePrograms(host))
     return false;
 
-  uint32_t ident = RENDERDOC_EnumerateRemoteTargets(host, 0);
+  uint32_t ident = SENDERDOD_EnumerateRemoteTargets(host, 0);
   return ident != 0;
 }

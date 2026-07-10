@@ -1189,7 +1189,7 @@ protected:
     if(ret == NULL)
       RENDERDOC_OutOfMemory(sz);
 #else
-    ret = RENDERDOC_AllocArrayMem(sz);
+    ret = SENDERDOD_AllocArrayMem(sz);
 #endif
     return ret;
   }
@@ -1198,7 +1198,7 @@ protected:
 #ifdef RENDERDOC_EXPORTS
     free(p);
 #else
-    RENDERDOC_FreeArrayMem(p);
+    SENDERDOD_FreeArrayMem(p);
 #endif
   }
 
@@ -1582,7 +1582,7 @@ struct SDChunk : public SDObject
     if(ret == NULL)
       RENDERDOC_OutOfMemory(sz);
 #else
-    ret = RENDERDOC_AllocArrayMem(sz);
+    ret = SENDERDOD_AllocArrayMem(sz);
 #endif
     return ret;
   }
@@ -1591,7 +1591,7 @@ struct SDChunk : public SDObject
 #ifdef RENDERDOC_EXPORTS
     free(p);
 #else
-    RENDERDOC_FreeArrayMem(p);
+    SENDERDOD_FreeArrayMem(p);
 #endif
   }
   void *operator new[](size_t count) = delete;
@@ -1724,7 +1724,7 @@ private:
     if(ret == NULL)
       RENDERDOC_OutOfMemory(sz);
 #else
-    ret = RENDERDOC_AllocArrayMem(sz);
+    ret = SENDERDOD_AllocArrayMem(sz);
 #endif
     return ret;
   }
@@ -1733,7 +1733,7 @@ private:
 #ifdef RENDERDOC_EXPORTS
     free(p);
 #else
-    RENDERDOC_FreeArrayMem(p);
+    SENDERDOD_FreeArrayMem(p);
 #endif
   }
 

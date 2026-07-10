@@ -125,13 +125,13 @@ VA_IGNORE_REST_OF_FILE
 %ignore rdhalf;
 %ignore bytebuf;
 
-// special handling for RENDERDOC_GetDefaultCaptureOptions to transform output parameter to a return value
+// special handling for SENDERDOD_GetDefaultCaptureOptions to transform output parameter to a return value
 %typemap(in, numinputs=0) CaptureOptions *defaultOpts { $1 = new CaptureOptions; }
 %typemap(argout) CaptureOptions *defaultOpts {
   $result = SWIG_NewPointerObj($1, $descriptor(struct CaptureOptions*), SWIG_POINTER_OWN);
 }
 
-// same for RENDERDOC_GetSupportedDeviceProtocols
+// same for SENDERDOD_GetSupportedDeviceProtocols
 %typemap(in, numinputs=0) rdcarray<rdcstr> *supportedProtocols { $1 = new rdcarray<rdcstr>; }
 %typemap(argout) rdcarray<rdcstr> *supportedProtocols {
   $result = ConvertToPy(*$1);
@@ -139,7 +139,7 @@ VA_IGNORE_REST_OF_FILE
 }
 %typemap(freearg) rdcarray<rdcstr> *supportedProtocols { }
 
-// same for RENDERDOC_CreateRemoteServerConnection
+// same for SENDERDOD_CreateRemoteServerConnection
 %typemap(in, numinputs=0) IRemoteServer **rend (IRemoteServer *outRenderer) {
   outRenderer = NULL;
   $1 = &outRenderer;

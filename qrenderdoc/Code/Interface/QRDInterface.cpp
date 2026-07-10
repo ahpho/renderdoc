@@ -75,7 +75,7 @@ CaptureSettings::CaptureSettings()
   autoStart = false;
   queuedFrameCap = 0;
   numQueuedFrames = 0;
-  RENDERDOC_GetDefaultCaptureOptions(&options);
+  SENDERDOD_GetDefaultCaptureOptions(&options);
 }
 
 CaptureSettings::operator QVariant() const
