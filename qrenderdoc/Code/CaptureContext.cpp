@@ -75,7 +75,7 @@ CaptureContext::CaptureContext(PersistantConfig &cfg) : m_Config(cfg)
   m_CaptureLoaded = false;
   m_LoadInProgress = false;
 
-  RENDERDOC_RegisterMemoryRegion(this, sizeof(CaptureContext));
+  SENDERDOD_RegisterMemoryRegion(this, sizeof(CaptureContext));
 
   memset(&m_APIProps, 0, sizeof(m_APIProps));
 
@@ -91,7 +91,7 @@ CaptureContext::CaptureContext(PersistantConfig &cfg) : m_Config(cfg)
 
   m_QtHelper = new MiniQtHelper(*this);
 
-  qApp->setApplicationVersion(QString::fromLatin1(RENDERDOC_GetVersionString()));
+  qApp->setApplicationVersion(QString::fromLatin1(SENDERDOD_GetVersionString()));
 
   m_Icon = new QIcon();
   m_Icon->addFile(QStringLiteral(":/logo.svg"), QSize(), QIcon::Normal, QIcon::Off);
@@ -235,7 +235,7 @@ CaptureContext::CaptureContext(PersistantConfig &cfg) : m_Config(cfg)
 CaptureContext::~CaptureContext()
 {
   delete m_QtHelper;
-  RENDERDOC_UnregisterMemoryRegion(this);
+  SENDERDOD_UnregisterMemoryRegion(this);
   delete m_Icon;
   m_Replay.CloseThread();
   delete m_MainWindow;
@@ -1241,7 +1241,7 @@ void CaptureContext::RecompressCapture()
   else
   {
     // for remote files we open a new short-lived handle on the temporary file
-    tempCap = cap = RENDERDOC_OpenCaptureFile();
+    tempCap = cap = SENDERDOD_OpenCaptureFile();
     cap->OpenFile(tempFilename, "rdc", NULL);
   }
 
@@ -1491,7 +1491,7 @@ bool CaptureContext::ImportCapture(const CaptureFileFormat &fmt, const rdcstr &i
   float progress = 0.0f;
 
   LambdaThread *th = new LambdaThread([rdcfile, importfile, ext, &progress, &result]() {
-    ICaptureFile *file = RENDERDOC_OpenCaptureFile();
+    ICaptureFile *file = SENDERDOD_OpenCaptureFile();
 
     result = file->OpenFile(importfile, ext.toUtf8().data(),
                             [&progress](float p) { progress = p * 0.5f; });
@@ -1550,7 +1550,7 @@ void CaptureContext::ExportCapture(const CaptureFileFormat &fmt, const rdcstr &e
 
   if(!file)
   {
-    local = file = RENDERDOC_OpenCaptureFile();
+    local = file = SENDERDOD_OpenCaptureFile();
     result = file->OpenFile(m_CaptureFile, "rdc", NULL);
   }
 

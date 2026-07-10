@@ -7,15 +7,15 @@ Make sure to use a matching API header for your build - if you use a newer heade
 
 This page describes the RenderDoc API exposed to applications being captured, both in overall organisation as well as a specific reference on each function.
 
-To begin using the API you need to fetch the ``RENDERDOC_GetAPI`` function. You should do this dynamically, it is not recommended to actually link against RenderDoc's DLL as it's intended to be injected or loaded at runtime. The header does not declare ``RENDERDOC_GetAPI``, it declares a function pointer typedef ``pRENDERDOC_GetAPI`` that you can use.
+To begin using the API you need to fetch the ``SENDERDOD_GetAPI`` function. You should do this dynamically, it is not recommended to actually link against RenderDoc's DLL as it's intended to be injected or loaded at runtime. The header does not declare ``SENDERDOD_GetAPI``, it declares a function pointer typedef ``pRENDERDOC_GetAPI`` that you can use.
 
 The recommended way to access the RenderDoc API is to passively check if the module is loaded, and use the API if it is. This lets you continue to use RenderDoc entirely as normal, launching your program through the UI, but you can access additional functionality to e.g. trigger captures at custom times. When your program is launched independently it will see that the RenderDoc module is not present and safely fall back.
 
-To do this you'll use your platforms dynamic library functions to see if the library is open already - e.g. ``GetModuleHandle`` on Windows, or ``dlopen`` with the ``RTLD_NOW | RTLD_NOLOAD`` flags if available on \*nix systems. On most platforms you can just search for the module name - ``renderdoc.dll`` on Windows, or ``librenderdoc.so`` on Linux, or ``libVkLayer_GLES_RenderDoc.so`` on Android should be sufficient here, so you don't need to know the path to where RenderDoc is running from. This will vary by platform however so consult your platform's OS documentation. Then you can use ``GetProcAddress`` or ``dlsym`` to fetch the ``RENDERDOC_GetAPI`` function using the typedef above.
+To do this you'll use your platforms dynamic library functions to see if the library is open already - e.g. ``GetModuleHandle`` on Windows, or ``dlopen`` with the ``RTLD_NOW | RTLD_NOLOAD`` flags if available on \*nix systems. On most platforms you can just search for the module name - ``renderdoc.dll`` on Windows, or ``librenderdoc.so`` on Linux, or ``libVkLayer_GLES_RenderDoc.so`` on Android should be sufficient here, so you don't need to know the path to where RenderDoc is running from. This will vary by platform however so consult your platform's OS documentation. Then you can use ``GetProcAddress`` or ``dlsym`` to fetch the ``SENDERDOD_GetAPI`` function using the typedef above.
 
 .. _renderdoc-api-example:
 
-.. cpp:function:: int RENDERDOC_GetAPI(RENDERDOC_Version version, void **outAPIPointers)
+.. cpp:function:: int SENDERDOD_GetAPI(RENDERDOC_Version version, void **outAPIPointers)
 
 
     This function is the only entry point actually exported from the RenderDoc module. You call this function with the desired API version, and pass it the address of a pointer to the appropriate struct type. If successful, RenderDoc will set the pointer to point to a struct containing the function pointers for the API functions (detailed below) and return 1.
@@ -34,9 +34,9 @@ To do this you'll use your platforms dynamic library functions to see if the lib
        // At init, on windows
        if(HMODULE mod = GetModuleHandleA("renderdoc.dll"))
        {
-           pRENDERDOC_GetAPI RENDERDOC_GetAPI =
-               (pRENDERDOC_GetAPI)GetProcAddress(mod, "RENDERDOC_GetAPI");
-           int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void **)&rdoc_api);
+           pRENDERDOC_GetAPI SENDERDOD_GetAPI =
+               (pRENDERDOC_GetAPI)GetProcAddress(mod, "SENDERDOD_GetAPI");
+           int ret = SENDERDOD_GetAPI(eRENDERDOC_API_Version_1_1_2, (void **)&rdoc_api);
            assert(ret == 1);
        }
 
@@ -44,8 +44,8 @@ To do this you'll use your platforms dynamic library functions to see if the lib
        // For android replace librenderdoc.so with libVkLayer_GLES_RenderDoc.so
        if(void *mod = dlopen("librenderdoc.so", RTLD_NOW | RTLD_NOLOAD))
        {
-           pRENDERDOC_GetAPI RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)dlsym(mod, "RENDERDOC_GetAPI");
-           int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void **)&rdoc_api);
+           pRENDERDOC_GetAPI SENDERDOD_GetAPI = (pRENDERDOC_GetAPI)dlsym(mod, "SENDERDOD_GetAPI");
+           int ret = SENDERDOD_GetAPI(eRENDERDOC_API_Version_1_1_2, (void **)&rdoc_api);
            assert(ret == 1);
        }
 

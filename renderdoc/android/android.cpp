@@ -1632,7 +1632,7 @@ ExecuteResult AndroidRemoteServer::ExecuteAndInject(const rdcstr &packageAndActi
     while(elapsed < timeout)
     {
       // Check if the target app has started yet and we can connect to it.
-      ITargetControl *control = RENDERDOC_CreateTargetControl(
+      ITargetControl *control = SENDERDOD_CreateTargetControl(
           AndroidController::m_Inst.GetProtocolName() + "://" + m_deviceID, ident, "testConnection",
           false);
       if(control)
@@ -1683,7 +1683,7 @@ AndroidController AndroidController::m_Inst;
 
 DeviceProtocolRegistration androidProtocol("adb", &AndroidController::Get);
 
-extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_CheckAndroidPackage(
+extern "C" RENDERDOC_API void RENDERDOC_CC SENDERDOD_CheckAndroidPackage(
     const rdcstr &URL, const rdcstr &packageAndActivity, AndroidFlags *flags)
 {
   IDeviceProtocolHandler *adb = RenderDoc::Inst().GetDeviceProtocol("adb");

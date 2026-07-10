@@ -207,7 +207,7 @@ private:
                                           LPPROCESS_INFORMATION lpProcessInformation)>
                            realFunc,
                        DWORD dwCreationFlags, bool inject, LPVOID pEnvironment,
-                       LPPROCESS_INFORMATION lpProcessInformation)
+                       LPPROCESS_INFORMATION lpProcessInformation, const rdcstr &appDesc)
   {
     bool recursive = syshooks.CheckRecurse();
 
@@ -294,9 +294,10 @@ private:
       env = (void *)envA.data();
     }
 
-    RDCDEBUG("Calling real %s", entryPoint);
+    RDCDEBUG("Calling real %s for %s", entryPoint, appDesc.c_str());
     BOOL ret = realFunc(dwCreationFlags, env, lpProcessInformation);
-    RDCDEBUG("Called real %s", entryPoint);
+    RDCDEBUG("Called real %s for %s (PID=%u)", entryPoint, appDesc.c_str(),
+             lpProcessInformation->dwProcessId);
 
     if(ret && inject)
     {
@@ -368,6 +369,24 @@ private:
                         lpCommandLine ? StringFormat::UTF82Wide(lpCommandLine).c_str() : NULL);
   }
 
+  static rdcstr GetProcessDesc(LPCWSTR lpApplicationName, LPCWSTR lpCommandLine)
+  {
+    if(lpApplicationName)
+      return StringFormat::Wide2UTF8(lpApplicationName);
+    if(lpCommandLine)
+      return StringFormat::Wide2UTF8(lpCommandLine);
+    return "<unknown>";
+  }
+
+  static rdcstr GetProcessDesc(LPCSTR lpApplicationName, LPCSTR lpCommandLine)
+  {
+    if(lpApplicationName)
+      return lpApplicationName;
+    if(lpCommandLine)
+      return lpCommandLine;
+    return "<unknown>";
+  }
+
   static BOOL WINAPI CreateProcessA_hook(
       __in_opt LPCSTR lpApplicationName, __inout_opt LPSTR lpCommandLine,
       __in_opt LPSECURITY_ATTRIBUTES lpProcessAttributes,
@@ -383,7 +402,7 @@ private:
                                            lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 
   static BOOL WINAPI CreateProcessW_hook(__in_opt LPCWSTR lpApplicationName,
@@ -404,7 +423,7 @@ private:
                                            lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 
   static BOOL WINAPI API110CreateProcessA_hook(
@@ -422,7 +441,7 @@ private:
               bInheritHandles, flags, env, lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 
   static BOOL WINAPI API110CreateProcessW_hook(
@@ -440,7 +459,7 @@ private:
               bInheritHandles, flags, env, lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 
   static BOOL WINAPI API111CreateProcessA_hook(
@@ -458,7 +477,7 @@ private:
               bInheritHandles, flags, env, lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 
   static BOOL WINAPI API111CreateProcessW_hook(
@@ -476,7 +495,7 @@ private:
               bInheritHandles, flags, env, lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 
   static BOOL WINAPI API112CreateProcessA_hook(
@@ -494,7 +513,7 @@ private:
               bInheritHandles, flags, env, lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 
   static BOOL WINAPI API112CreateProcessW_hook(
@@ -512,7 +531,7 @@ private:
               bInheritHandles, flags, env, lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 
   static BOOL WINAPI CreateProcessAsUserA_hook(
@@ -529,7 +548,7 @@ private:
               bInheritHandles, flags, env, lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 
   static BOOL WINAPI CreateProcessAsUserW_hook(
@@ -546,7 +565,7 @@ private:
               bInheritHandles, flags, env, lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 
   static BOOL WINAPI CreateProcessWithLogonW_hook(LPCWSTR lpUsername, LPCWSTR lpDomain,
@@ -565,7 +584,7 @@ private:
                                                     lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 
   static BOOL WINAPI API110CreateProcessAsUserW_hook(
@@ -582,7 +601,7 @@ private:
               bInheritHandles, flags, env, lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 
   static BOOL WINAPI API111CreateProcessAsUserW_hook(
@@ -599,7 +618,7 @@ private:
               bInheritHandles, flags, env, lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 
   static BOOL WINAPI API112CreateProcessAsUserW_hook(
@@ -616,7 +635,7 @@ private:
               bInheritHandles, flags, env, lpCurrentDirectory, lpStartupInfo, pi);
         },
         dwCreationFlags, ShouldInject(lpApplicationName, lpCommandLine), lpEnvironment,
-        lpProcessInformation);
+        lpProcessInformation, GetProcessDesc(lpApplicationName, lpCommandLine));
   }
 };
 

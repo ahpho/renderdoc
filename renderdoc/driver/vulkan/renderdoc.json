@@ -8,12 +8,12 @@
     "implementation_version": "@RENDERDOC_VERSION_MINOR@",
     "description": "Debugging capture layer for RenderDoc",
     "functions": {
-      "vkGetInstanceProcAddr": "VK_LAYER_RENDERDOC_CaptureGetInstanceProcAddr",
-      "vkGetDeviceProcAddr": "VK_LAYER_RENDERDOC_CaptureGetDeviceProcAddr",
-      "vkNegotiateLoaderLayerInterfaceVersion": "VK_LAYER_RENDERDOC_CaptureNegotiateLoaderLayerInterfaceVersion"
+      "vkGetInstanceProcAddr": "VK_LAYER_SENDERDOD_CaptureGetInstanceProcAddr",
+      "vkGetDeviceProcAddr": "VK_LAYER_SENDERDOD_CaptureGetDeviceProcAddr",
+      "vkNegotiateLoaderLayerInterfaceVersion": "VK_LAYER_SENDERDOD_CaptureNegotiateLoaderLayerInterfaceVersion"
     },
     "pre_instance_functions": {
-      "vkEnumerateInstanceExtensionProperties": "VK_LAYER_RENDERDOC_CaptureEnumerateInstanceExtensionProperties"
+      "vkEnumerateInstanceExtensionProperties": "VK_LAYER_SENDERDOD_CaptureEnumerateInstanceExtensionProperties"
     },
     "instance_extensions": [
       {

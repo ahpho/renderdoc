@@ -82,7 +82,7 @@ CrashDialog::CrashDialog(PersistantConfig &cfg, QVariantMap crashReportJSON, QWi
     // hide the preview until we have a successful thumbnail
     ui->capturePreviewFrame->hide();
 
-    ICaptureFile *cap = RENDERDOC_OpenCaptureFile();
+    ICaptureFile *cap = SENDERDOD_OpenCaptureFile();
 
     ResultDetails result = cap->OpenFile(capInfo.absoluteFilePath(), "", NULL);
 

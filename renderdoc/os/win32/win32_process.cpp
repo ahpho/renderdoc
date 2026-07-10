@@ -212,7 +212,7 @@ extern "C" __declspec(dllexport) void __cdecl INTERNAL_SetCaptureFile(const char
 
 extern "C" __declspec(dllexport) void __cdecl INTERNAL_SetDebugLogFile(const char *logfile)
 {
-  RENDERDOC_SetDebugLogFile(logfile ? logfile : rdcstr());
+  SENDERDOD_SetDebugLogFile(logfile ? logfile : rdcstr());
 }
 
 static EnvironmentModification tempEnvMod;
