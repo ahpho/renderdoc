@@ -53,6 +53,114 @@ typedef void(__cdecl *pINTERNAL_SetDebugLogFile)(const char *logfile);
   } while(0)
 #endif
 
+#define __YYSLS 1
+
+#if __YYSLS
+// no-CRT wildcard substring match (case-insensitive).
+// Pattern uses '*' which matches any characters including path separators.
+// Returns true if 'pat' matches some substring of 'path'.
+// If pat contains no '*', falls back to plain substring (same as FindStringOrdinal).
+static bool WildcardMatchOrdinal(const wchar_t *path, const wchar_t *pat)
+{
+  // no CRT: compute lengths manually
+  int patLen = 0;
+  for(const wchar_t *p = pat; *p; p++)
+    patLen++;
+
+  // fast path: no wildcard -> plain substring match (existing behavior)
+  bool hasStar = 0;
+  for(int i = 0; i < patLen; i++)
+  {
+    if(pat[i] == L'*')
+    {
+      hasStar = 1;
+      break;
+    }
+  }
+
+  if(!hasStar)
+    return FindStringOrdinal(FIND_FROMSTART, path, -1, pat, -1, TRUE) >= 0;
+
+  // wildcard path: walk pattern segments separated by '*' against path.
+  // We try matching starting at every position in path (substring semantics).
+  int pathLen = 0;
+  for(const wchar_t *p = path; *p; p++)
+    pathLen++;
+
+  // case-insensitive char compare using ASCII fold (safe for paths)
+  auto cicmp = [](wchar_t a, wchar_t b) -> bool {
+    if(a >= L'A' && a <= L'Z')
+      a += 32;
+    if(b >= L'A' && b <= L'Z')
+      b += 32;
+    return a == b;
+  };
+
+  // try every starting position in path
+  for(int start = 0; start <= pathLen; start++)
+  {
+    int pi = 0; // pattern index
+    int ti = start; // path index
+
+    while(pi < patLen)
+    {
+      if(pat[pi] == L'*')
+      {
+        // skip consecutive stars
+        pi++;
+        while(pi < patLen && pat[pi] == L'*')
+          pi++;
+        // if '*' is at end, everything matches
+        if(pi >= patLen)
+          return true;
+        // try matching the next literal segment at every remaining position in path
+        bool found = false;
+        for(int j = ti; j <= pathLen; j++)
+        {
+          // try matching pat[pi..] starting at path[j]
+          int pp = pi;
+          int jj = j;
+          while(pp < patLen && pat[pp] != L'*' && jj < pathLen)
+          {
+            if(!cicmp(pat[pp], path[jj]))
+              goto next_j;
+            pp++;
+            jj++;
+          }
+          if(pp >= patLen || pat[pp] == L'*')
+          {
+            // matched whole segment (or hit next star)
+            pi = pp;
+            ti = jj;
+            found = true;
+            break;
+          }
+          next_j:;
+        }
+        if(!found)
+          break; // this start position failed, try next
+      }
+      else
+      {
+        // literal char match
+        if(ti >= pathLen || !cicmp(pat[pi], path[ti]))
+          break;
+        pi++;
+        ti++;
+      }
+    }
+
+    // pattern fully consumed = match
+    if(pi >= patLen)
+      return true;
+
+    // pattern not consumed but we broke out -> try next start position
+  }
+
+  return false;
+}
+#endif
+
 void CheckHook()
 {
   ShimData *data = NULL;
@@ -99,8 +207,13 @@ void CheckHook()
 
     GetModuleFileNameW(NULL, exepath, exepathLen - 1);
 
+#if __YYSLS
+    // ksh: Wildcard match, falls back to plain substring if no '*' in pattern
+    int find = WildcardMatchOrdinal(exepath, data->pathmatchstring) ? 0 : -1;
+#else
     // no str*cmp functions
     int find = FindStringOrdinal(FIND_FROMSTART, exepath, -1, data->pathmatchstring, -1, TRUE);
+#endif
 
     if(find >= 0)
     {

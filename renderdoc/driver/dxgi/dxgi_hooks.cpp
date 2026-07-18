@@ -250,15 +250,30 @@ public:
 public:
   void RegisterHooks()
   {
-    RDCLOG("DXGIHook::RegisterHooks(), Registering DXGI hooks -------------------------------------------------");
+    RDCLOG("Registering DXGI hooks");
 
     LibraryHooks::RegisterLibraryHook("dxgi.dll", NULL);
+
+    m_RecurseSlot = Threading::AllocateTLSSlot();
+    Threading::SetTLSValue(m_RecurseSlot, NULL);
 
     CreateDXGIFactory.Register("dxgi.dll", "CreateDXGIFactory", CreateDXGIFactory_hook);
     CreateDXGIFactory1.Register("dxgi.dll", "CreateDXGIFactory1", CreateDXGIFactory1_hook);
     CreateDXGIFactory2.Register("dxgi.dll", "CreateDXGIFactory2", CreateDXGIFactory2_hook);
     GetDebugInterface.Register("dxgi.dll", "DXGIGetDebugInterface", DXGIGetDebugInterface_hook);
     GetDebugInterface1.Register("dxgi.dll", "DXGIGetDebugInterface1", DXGIGetDebugInterface1_hook);
+
+    // ksh: also hook the NVIDIA Streamline interposer's re-exported factory entry points, since the
+    // game calls those instead of dxgi.dll. Separate HookedFunction objects; the re-entrancy guard
+    // in CreateDXGIFactory*_Impl prevents double-wrapping when Streamline internally calls real dxgi.
+    RDCLOG("Registering sl.interposer.dll DXGI factory hooks (NVIDIA Streamline)");
+    LibraryHooks::RegisterLibraryHook("sl.interposer.dll", NULL);
+    CreateDXGIFactory_Interposer.Register("sl.interposer.dll", "CreateDXGIFactory",
+                                          CreateDXGIFactory_Interposer_hook);
+    CreateDXGIFactory1_Interposer.Register("sl.interposer.dll", "CreateDXGIFactory1",
+                                           CreateDXGIFactory1_Interposer_hook);
+    CreateDXGIFactory2_Interposer.Register("sl.interposer.dll", "CreateDXGIFactory2",
+                                           CreateDXGIFactory2_Interposer_hook);
   }
 
 private:
@@ -273,43 +288,120 @@ private:
   HookedFunction<PFN_GET_DEBUG_INTERFACE> GetDebugInterface;
   HookedFunction<PFN_GET_DEBUG_INTERFACE1> GetDebugInterface1;
 
-  static HRESULT WINAPI CreateDXGIFactory_hook(__in REFIID riid, __out void **ppFactory)
+  // ksh: NVIDIA Streamline interposer (sl.interposer.dll) re-exports CreateDXGIFactory*. The game
+  // links against those, not dxgi.dll, so we must hook the interposer to see the app's factory
+  // (and therefore swapchain) creation. Separate HookedFunction objects (own orig) per the
+  // shim-recursion lesson from d3d12_hooks.cpp.
+  HookedFunction<PFN_CREATE_DXGI_FACTORY> CreateDXGIFactory_Interposer;
+  HookedFunction<PFN_CREATE_DXGI_FACTORY> CreateDXGIFactory1_Interposer;
+  HookedFunction<PFN_CREATE_DXGI_FACTORY2> CreateDXGIFactory2_Interposer;
+
+  // ksh: re-entrancy guard. When our interposer factory hook runs, Streamline internally calls the
+  // real dxgi.dll!CreateDXGIFactory, which our GetProcAddress hook redirects back to our dxgi.dll
+  // factory hook -> that would wrap the factory a second time. The guard makes the inner call pass
+  // through unwrapped so only the outer (interposer) layer wraps.
+  static uint64_t m_RecurseSlot;
+  static bool CheckRecurse()
+  {
+    if(Threading::GetTLSValue(m_RecurseSlot) == NULL)
+    {
+      Threading::SetTLSValue(m_RecurseSlot, (void *)1);
+      return false;
+    }
+    return true;
+  }
+  static void EndRecurse() { Threading::SetTLSValue(m_RecurseSlot, NULL); }
+
+  // shared body for CreateDXGIFactory / CreateDXGIFactory1 (same signature). The real function is
+  // passed explicitly to avoid shim recursion between dxgi.dll and sl.interposer.dll.
+  static HRESULT CreateDXGIFactory_Impl(PFN_CREATE_DXGI_FACTORY realFunc, const char *tag,
+                                        const char *apiName, REFIID riid, void **ppFactory)
   {
     if(ppFactory)
       *ppFactory = NULL;
-    HRESULT ret = dxgihooks.CreateDXGIFactory()(riid, ppFactory);
-    RDCLOG("DXGIHook::CreateDXGIFactory_hook() -------------------------------------------------");
 
-    if(SUCCEEDED(ret))
-      RefCountDXGIObject::HandleWrap("CreateDXGIFactory", riid, ppFactory);
+    if(!realFunc)
+    {
+      RDCERR("[%s:%s] no real function pointer!", apiName, tag);
+      return E_UNEXPECTED;
+    }
+
+    bool recurse = CheckRecurse();
+
+    HRESULT ret = realFunc(riid, ppFactory);
+    RDCLOG("[%s:%s] -------- ret=0x%x, recurse=%d --------", apiName, tag, ret, (int)recurse);
+
+    // only wrap at the outermost layer; if we're re-entered (Streamline calling the real dxgi),
+    // pass the real factory straight through.
+    if(SUCCEEDED(ret) && !recurse)
+      RefCountDXGIObject::HandleWrap(apiName, riid, ppFactory);
+
+    if(!recurse)
+      EndRecurse();
 
     return ret;
+  }
+
+  static HRESULT CreateDXGIFactory2_Impl(PFN_CREATE_DXGI_FACTORY2 realFunc, const char *tag,
+                                         UINT Flags, REFIID riid, void **ppFactory)
+  {
+    if(ppFactory)
+      *ppFactory = NULL;
+
+    if(!realFunc)
+    {
+      RDCERR("[CreateDXGIFactory2:%s] no real function pointer!", tag);
+      return E_UNEXPECTED;
+    }
+
+    bool recurse = CheckRecurse();
+
+    HRESULT ret = realFunc(Flags, riid, ppFactory);
+    RDCLOG("[CreateDXGIFactory2:%s] -------- ret=0x%x, recurse=%d --------", tag, ret,
+           (int)recurse);
+
+    if(SUCCEEDED(ret) && !recurse)
+      RefCountDXGIObject::HandleWrap("CreateDXGIFactory2", riid, ppFactory);
+
+    if(!recurse)
+      EndRecurse();
+
+    return ret;
+  }
+
+  static HRESULT WINAPI CreateDXGIFactory_hook(__in REFIID riid, __out void **ppFactory)
+  {
+    return CreateDXGIFactory_Impl(dxgihooks.CreateDXGIFactory(), "dxgi", "CreateDXGIFactory", riid,
+                                  ppFactory);
+  }
+
+  static HRESULT WINAPI CreateDXGIFactory_Interposer_hook(__in REFIID riid, __out void **ppFactory)
+  {
+    return CreateDXGIFactory_Impl(dxgihooks.CreateDXGIFactory_Interposer(), "sl",
+                                  "CreateDXGIFactory", riid, ppFactory);
   }
 
   static HRESULT WINAPI CreateDXGIFactory1_hook(__in REFIID riid, __out void **ppFactory)
   {
-    if(ppFactory)
-      *ppFactory = NULL;
-    HRESULT ret = dxgihooks.CreateDXGIFactory1()(riid, ppFactory);
-    RDCLOG("DXGIHook::CreateDXGIFactory1_hook() -------------------------------------------------");
+    return CreateDXGIFactory_Impl(dxgihooks.CreateDXGIFactory1(), "dxgi", "CreateDXGIFactory1", riid,
+                                  ppFactory);
+  }
 
-    if(SUCCEEDED(ret))
-      RefCountDXGIObject::HandleWrap("CreateDXGIFactory1", riid, ppFactory);
-
-    return ret;
+  static HRESULT WINAPI CreateDXGIFactory1_Interposer_hook(__in REFIID riid, __out void **ppFactory)
+  {
+    return CreateDXGIFactory_Impl(dxgihooks.CreateDXGIFactory1_Interposer(), "sl",
+                                  "CreateDXGIFactory1", riid, ppFactory);
   }
 
   static HRESULT WINAPI CreateDXGIFactory2_hook(UINT Flags, REFIID riid, void **ppFactory)
   {
-    if(ppFactory)
-      *ppFactory = NULL;
-    HRESULT ret = dxgihooks.CreateDXGIFactory2()(Flags, riid, ppFactory);
-    RDCLOG("DXGIHook::CreateDXGIFactory2_hook() -------------------------------------------------");
+    return CreateDXGIFactory2_Impl(dxgihooks.CreateDXGIFactory2(), "dxgi", Flags, riid, ppFactory);
+  }
 
-    if(SUCCEEDED(ret))
-      RefCountDXGIObject::HandleWrap("CreateDXGIFactory2", riid, ppFactory);
-
-    return ret;
+  static HRESULT WINAPI CreateDXGIFactory2_Interposer_hook(UINT Flags, REFIID riid, void **ppFactory)
+  {
+    return CreateDXGIFactory2_Impl(dxgihooks.CreateDXGIFactory2_Interposer(), "sl", Flags, riid,
+                                   ppFactory);
   }
 
   static HRESULT WINAPI DXGIGetDebugInterface_hook(REFIID riid, void **ppDebug)
@@ -322,7 +414,7 @@ private:
       dxgihooks.m_RenderDocAnalysis.AddRef();
       if(ppDebug)
         *ppDebug = &dxgihooks.m_RenderDocAnalysis;
-      RDCLOG("DXGIGetDebugInterface_hook == uuidof(IDXGraphicsAnalysis) -------------------------------------------------");
+      RDCLOG("DXGIGetDebugInterface_hook == uuidof(IDXGraphicsAnalysis)");
       return S_OK;
     }
     if(riid == __uuidof(IDXGIInfoQueue))
@@ -330,7 +422,7 @@ private:
       RDCWARN(
           "Returning a dummy IDXGIInfoQueue that does nothing. RenderDoc takes control of the "
           "debug layer.");
-      RDCLOG("DXGIGetDebugInterface_hook == uuidof(IDXGIInfoQueue) -------------------------------------------------");
+      RDCLOG("DXGIGetDebugInterface_hook == uuidof(IDXGIInfoQueue)");
 
       dxgihooks.m_DummyInfoQueue.AddRef();
       if(ppDebug)
@@ -339,15 +431,14 @@ private:
     }
 
     // IDXGIDebug and IDXGIDebug1 can come through here, but we don't need to wrap them.
-
     if(dxgihooks.GetDebugInterface())
     {
-      RDCLOG("DXGIGetDebugInterface_hook == uuidof(IDXGIInfoQueue) -------------------------------------------------");
+      RDCLOG("DXGIGetDebugInterface_hook == dxgihooks.GetDebugInterface()");
       return dxgihooks.GetDebugInterface()(riid, ppDebug);
     }
     else
     {
-      RDCLOG("DXGIGetDebugInterface_hook == E_NOINTERFACE -------------------------------------------------");
+      RDCLOG("error: DXGIGetDebugInterface_hook == E_NOINTERFACE");
       return E_NOINTERFACE;
     }
   }
@@ -362,7 +453,7 @@ private:
       dxgihooks.m_RenderDocAnalysis.AddRef();
       if(ppDebug)
         *ppDebug = &dxgihooks.m_RenderDocAnalysis;
-      RDCLOG("DXGIGetDebugInterface1_hook == uuidof(IDXGraphicsAnalysis) -------------------------------------------------");
+      RDCLOG("DXGIGetDebugInterface1_hook == uuidof(IDXGraphicsAnalysis)");
       return S_OK;
     }
     if(riid == __uuidof(IDXGIInfoQueue))
@@ -370,7 +461,8 @@ private:
       RDCWARN(
           "Returning a dummy IDXGIInfoQueue that does nothing. RenderDoc takes control of the "
           "debug layer.");
-      RDCLOG("DXGIGetDebugInterface1_hook == uuidof(IDXGIInfoQueue) -------------------------------------------------");
+
+      RDCLOG("DXGIGetDebugInterface1_hook == uuidof(IDXGIInfoQueue)");
       dxgihooks.m_DummyInfoQueue.AddRef();
       if(ppDebug)
         *ppDebug = &dxgihooks.m_DummyInfoQueue;
@@ -381,15 +473,16 @@ private:
 
     if(dxgihooks.GetDebugInterface1())
     {
-      RDCLOG("dxgihooks.GetDebugInterface1() -------------------------------------------------");
+      RDCLOG("DXGIGetDebugInterface1_hook == dxgihooks.GetDebugInterface1()");
       return dxgihooks.GetDebugInterface1()(Flags, riid, ppDebug);
     }
     else
     {
-      RDCLOG("DXGIGetDebugInterface1_hook == E_NOINTERFACE -------------------------------------------------");
+      RDCLOG("error: DXGIGetDebugInterface1_hook == E_NOINTERFACE");
       return E_NOINTERFACE;
     }
   }
 };
 
 DXGIHook DXGIHook::dxgihooks;
+uint64_t DXGIHook::m_RecurseSlot = 0;
