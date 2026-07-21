@@ -130,8 +130,10 @@ rdcarray<ABI> GetSupportedABIs(const rdcstr &deviceID)
 #if 1
   rdcstr adbAbi = adbExecCommand(deviceID, "shell getprop ro.product.cpu.abi").strStdout.trimmed();
 #else
-  rdcstr adbAbi = adbExecCommand(deviceID, "shell getprop ro.product.cpu.abilist").strStdout.trimmed();
-  if(strstr(adbAbi.c_str(), "arm64-v8a")) adbAbi = "arm64-v8a";
+  rdcstr adbAbi =
+      adbExecCommand(deviceID, "shell getprop ro.product.cpu.abilist").strStdout.trimmed();
+  if(strstr(adbAbi.c_str(), "arm64-v8a"))
+    adbAbi = "arm64-v8a";
 #endif
 
   // these returned lists should be such that the first entry is the 'lowest command denominator' -

@@ -1292,10 +1292,14 @@ HRESULT WrappedIDXGIFactory::CreateSwapChain(IUnknown *pDevice, DXGI_SWAP_CHAIN_
     return ret;
   }
 
-  RDCERR("[WrappedIDXGIFactory::CreateSwapChain] Creating swap chain with non-hooked device! pDevice=%p, pDesc=%p, ppSwapChain=%p",
-         pDevice, pDesc, ppSwapChain);
+  RDCERR(
+      "[WrappedIDXGIFactory::CreateSwapChain] Creating swap chain with non-hooked device! "
+      "pDevice=%p, pDesc=%p, ppSwapChain=%p",
+      pDevice, pDesc, ppSwapChain);
 
-  RDCERR("[WrappedIDXGIFactory::CreateSwapChain] This means the swapchain will BYPASS RenderDoc hook. Capture will FAIL!");
+  RDCERR(
+      "[WrappedIDXGIFactory::CreateSwapChain] This means the swapchain will BYPASS RenderDoc hook. "
+      "Capture will FAIL!");
 
   return m_pReal->CreateSwapChain(pDevice, pDesc, ppSwapChain);
 }
@@ -1341,17 +1345,22 @@ HRESULT WrappedIDXGIFactory::CreateSwapChainForHwnd(
 
       *ppSwapChain = new WrappedIDXGISwapChain4(*ppSwapChain, hWnd, wrapDevice);
 
-      RDCLOG("[WrappedIDXGIFactory::CreateSwapChainForHwnd] after new WrappedIDXGISwapChain4=%p", *ppSwapChain);
+      RDCLOG("[WrappedIDXGIFactory::CreateSwapChainForHwnd] after new WrappedIDXGISwapChain4=%p",
+             *ppSwapChain);
     }
 
     return ret;
   }
   else
   {
-    RDCERR("[WrappedIDXGIFactory::CreateSwapChainForHwnd] Creating swap chain with non-hooked device! pDevice=%p, hWnd=%p, ppSwapChain=%p",
-           pDevice, hWnd, ppSwapChain);
+    RDCERR(
+        "[WrappedIDXGIFactory::CreateSwapChainForHwnd] Creating swap chain with non-hooked device! "
+        "pDevice=%p, hWnd=%p, ppSwapChain=%p",
+        pDevice, hWnd, ppSwapChain);
 
-    RDCERR("[WrappedIDXGIFactory::CreateSwapChainForHwnd] This means the swapchain will BYPASS RenderDoc hook. Capture will FAIL!");
+    RDCERR(
+        "[WrappedIDXGIFactory::CreateSwapChainForHwnd] This means the swapchain will BYPASS "
+        "RenderDoc hook. Capture will FAIL!");
   }
 
   return m_pReal2->CreateSwapChainForHwnd(pDevice, hWnd, pDesc, pFullscreenDesc, unwrappedOutput,
@@ -1409,7 +1418,10 @@ HRESULT WrappedIDXGIFactory::CreateSwapChainForCoreWindow(IUnknown *pDevice, IUn
   }
   else
   {
-    RDCERR("[WrappedIDXGIFactory::CreateSwapChainForCoreWindow] Creating swap chain with non-hooked device! pDevice=%p, ppSwapChain=%p", pDevice, ppSwapChain);
+    RDCERR(
+        "[WrappedIDXGIFactory::CreateSwapChainForCoreWindow] Creating swap chain with non-hooked "
+        "device! pDevice=%p, ppSwapChain=%p",
+        pDevice, ppSwapChain);
   }
 
   return m_pReal2->CreateSwapChainForCoreWindow(pDevice, pWindow, pDesc, unwrappedOutput,
@@ -1459,7 +1471,8 @@ HRESULT WrappedIDXGIFactory::CreateSwapChainForComposition(IUnknown *pDevice,
         wnd = (HWND)0x1;
 
       RDCLOG(
-          "[WrappedIDXGIFactory::CreateSwapChainForComposition] before new WrappedIDXGISwapChain4.");
+          "[WrappedIDXGIFactory::CreateSwapChainForComposition] before new "
+          "WrappedIDXGISwapChain4.");
 
       *ppSwapChain = new WrappedIDXGISwapChain4(*ppSwapChain, wnd, wrapDevice);
     }
@@ -1468,7 +1481,10 @@ HRESULT WrappedIDXGIFactory::CreateSwapChainForComposition(IUnknown *pDevice,
   }
   else
   {
-    RDCERR("[WrappedIDXGIFactory::CreateSwapChainForComposition] Creating swap chain with non-hooked device! pDevice=%p, ppSwapChain=%p", pDevice, ppSwapChain);
+    RDCERR(
+        "[WrappedIDXGIFactory::CreateSwapChainForComposition] Creating swap chain with non-hooked "
+        "device! pDevice=%p, ppSwapChain=%p",
+        pDevice, ppSwapChain);
   }
 
   return m_pReal2->CreateSwapChainForComposition(pDevice, pDesc, unwrappedOutput, ppSwapChain);

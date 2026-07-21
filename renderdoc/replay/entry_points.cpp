@@ -201,10 +201,10 @@ extern "C" RENDERDOC_API ICamera *RENDERDOC_CC SENDERDOD_InitCamera(CameraType t
 
 extern "C" RENDERDOC_API const char *RENDERDOC_CC SENDERDOD_GetVersionString()
 {
-  //todo.ksh 测试C#调用后内存释放:)
-  //char *result = (char *)malloc(64);
-  //strcpy_s(result, 64, MAJOR_MINOR_VERSION_STRING);
-  //return result;
+  // todo.ksh 测试C#调用后内存释放:)
+  // char *result = (char *)malloc(64);
+  // strcpy_s(result, 64, MAJOR_MINOR_VERSION_STRING);
+  // return result;
   return MAJOR_MINOR_VERSION_STRING;
 }
 

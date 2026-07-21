@@ -102,22 +102,19 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 {
   BOOL ret = TRUE;
 
-  switch (ul_reason_for_call)
+  switch(ul_reason_for_call)
   {
     case DLL_PROCESS_ATTACH:
       rfx::ReadDebugIni();
       // 请和OUTPUT_LOG_TO_PRINTF配合使用
-      if(RenderDoc::Inst().GetDebugIniBool(RFX_SECTION, "enableConsole") || true)//ksh
+      if(RenderDoc::Inst().GetDebugIniBool(RFX_SECTION, "enableConsole") || true)    // ksh
         CreateConsole();
       ret = add_hooks();
       SetLastError(0);
       break;
-    case DLL_THREAD_ATTACH:
-      break;
-    case DLL_THREAD_DETACH:
-      break;
-    case DLL_PROCESS_DETACH:
-      break;
+    case DLL_THREAD_ATTACH: break;
+    case DLL_THREAD_DETACH: break;
+    case DLL_PROCESS_DETACH: break;
   }
 
   return ret;

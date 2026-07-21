@@ -632,7 +632,7 @@ RenderDoc::RenderDoc()
 
 void RenderDoc::Initialise()
 {
-  RDCLOGOUTPUT();//ksh
+  RDCLOGOUTPUT();    // ksh
 
   RDCLOG("=================================================================================>");
   RDCLOG("=================================================================================>");
@@ -1756,7 +1756,7 @@ RDCFile *RenderDoc::CreateRDC(RDCDriver driver, uint32_t frameNum, const FramePi
 
   FileIO::CreateParentDirectory(m_CurrentLogFile);
 
-  RDCLOG("====> [CreateRDC] 2 m_CaptureFileTemplate=%s", m_CaptureFileTemplate.c_str()); 
+  RDCLOG("====> [CreateRDC] 2 m_CaptureFileTemplate=%s", m_CaptureFileTemplate.c_str());
   RDCLOG("====> [CreateRDC] 2 suffix=%s", suffix.c_str());
   RDCLOG("====> [CreateRDC] 2 m_CurrentLogFile=%s", m_CurrentLogFile.c_str());
   if(m_CurrentLogFile.size() < 28)

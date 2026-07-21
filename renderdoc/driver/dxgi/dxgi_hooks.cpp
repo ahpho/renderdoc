@@ -357,8 +357,7 @@ private:
     bool recurse = CheckRecurse();
 
     HRESULT ret = realFunc(Flags, riid, ppFactory);
-    RDCLOG("[CreateDXGIFactory2:%s] -------- ret=0x%x, recurse=%d --------", tag, ret,
-           (int)recurse);
+    RDCLOG("[CreateDXGIFactory2:%s] -------- ret=0x%x, recurse=%d --------", tag, ret, (int)recurse);
 
     if(SUCCEEDED(ret) && !recurse)
       RefCountDXGIObject::HandleWrap("CreateDXGIFactory2", riid, ppFactory);
@@ -383,8 +382,8 @@ private:
 
   static HRESULT WINAPI CreateDXGIFactory1_hook(__in REFIID riid, __out void **ppFactory)
   {
-    return CreateDXGIFactory_Impl(dxgihooks.CreateDXGIFactory1(), "dxgi", "CreateDXGIFactory1", riid,
-                                  ppFactory);
+    return CreateDXGIFactory_Impl(dxgihooks.CreateDXGIFactory1(), "dxgi", "CreateDXGIFactory1",
+                                  riid, ppFactory);
   }
 
   static HRESULT WINAPI CreateDXGIFactory1_Interposer_hook(__in REFIID riid, __out void **ppFactory)

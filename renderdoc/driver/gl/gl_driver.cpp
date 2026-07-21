@@ -1036,7 +1036,7 @@ void WrappedOpenGL::UseUnusedSupportedFunction(const char *name)
 {
   // ksh: OpenGL时强行忽略指定函数，参考：
   // https://zhuanlan.zhihu.com/p/688951417
-  if (!RenderDoc::Inst().GetDebugIniBool(RFX_SECTION, "disableIgnoreEGLImageTargetTexture"))
+  if(!RenderDoc::Inst().GetDebugIniBool(RFX_SECTION, "disableIgnoreEGLImageTargetTexture"))
   {
     if(strcmp(name, "glEGLImageTargetTexture2DOES") == 0)
     {
@@ -1284,8 +1284,9 @@ void WrappedOpenGL::ContextData::CreateResourceRecord(WrappedOpenGL *driver, voi
 void WrappedOpenGL::CreateContext(GLWindowingData winData, void *shareContext,
                                   GLInitParams initParams, bool core, bool attribsCreate)
 {
-  RDCLOG("[WrappedOpenGL::CreateContext] %s context %p created %s, sharing with context %p", core ? "Core" : "Compatibility",
-         winData.ctx, attribsCreate ? "with attribs" : "without attribs", shareContext);
+  RDCLOG("[WrappedOpenGL::CreateContext] %s context %p created %s, sharing with context %p",
+         core ? "Core" : "Compatibility", winData.ctx,
+         attribsCreate ? "with attribs" : "without attribs", shareContext);
 
   ContextData &ctxdata = m_ContextData[winData.ctx];
   ctxdata.ctx = winData.ctx;
@@ -2258,7 +2259,8 @@ void WrappedOpenGL::SwapBuffers(WindowingSystem winSystem, void *windowHandle)
 
   if(RenderDoc::Inst().ShouldTriggerCapture(m_FrameCounter) && IsBackgroundCapturing(m_State))
   {
-    RDCLOG("[rf-rd] gl_driver.cpp, ShouldTriggerCapture! isBackground=%d", IsBackgroundCapturing(m_State));
+    RDCLOG("[rf-rd] gl_driver.cpp, ShouldTriggerCapture! isBackground=%d",
+           IsBackgroundCapturing(m_State));
     RenderDoc::Inst().StartFrameCapture(devWnd);
 
     m_AppControlledCapture = false;

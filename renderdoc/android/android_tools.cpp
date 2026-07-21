@@ -369,7 +369,7 @@ Process::ProcessResult adbExecCommand(const rdcstr &device, const rdcstr &args,
                                       const rdcstr &workDir, bool silent)
 {
   rdcstr adb = getToolPath(ToolDir::PlatformTools, "adb", false);
-  rdcstr adb2 = PcEmulatorCustomAdb::getNewAdbPath(adb, device, workDir, silent); // todo.ksh
+  rdcstr adb2 = PcEmulatorCustomAdb::getNewAdbPath(adb, device, workDir, silent);    // todo.ksh
 
   Process::ProcessResult result;
   rdcstr deviceArgs;

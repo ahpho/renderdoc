@@ -462,10 +462,10 @@ public:
     cb(progress);
   }
 
-  // Rfx: debug.ini
-  #ifndef RFX_SECTION
-  #define RFX_SECTION "RfxSo"
-  #endif
+// Rfx: debug.ini
+#ifndef RFX_SECTION
+#define RFX_SECTION "RfxSo"
+#endif
   void SetDebugIniValue(const rdcstr &section, const rdcstr &key, const rdcstr &value);
   bool GetDebugIniBool(const rdcstr &section, const rdcstr &key);
 
@@ -656,10 +656,10 @@ public:
   bool HasEmbeddedFiles(RDCFile *rdc) const;
   RDResult ReadExternalFiles(RDCFile *rdc);
 
-  //todo.ksh
+  // todo.ksh
   bool CheckNamedPipeToCapture();
   rdcstr GetWritableDir();
-  int fd_fifo = -1; // fifo handle to communicate with Unity native plugin(example)
+  int fd_fifo = -1;    // fifo handle to communicate with Unity native plugin(example)
   int nSleepCount = 0;
 
 private:
@@ -689,7 +689,7 @@ private:
 
   bool m_Replay;
 
-  std::map<rdcstr, rdcstr> m_DebugIniMap; // Rfx
+  std::map<rdcstr, rdcstr> m_DebugIniMap;    // Rfx
 
   uint32_t m_Cap;
 

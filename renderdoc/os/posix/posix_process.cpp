@@ -590,16 +590,17 @@ static pid_t RunProcess(rdcstr appName, rdcstr workDir, const rdcstr &cmdLine, c
     return 0;
 
   char **argv = new char *[argvList.size() + 1];
-  for (size_t i = 0; i < argvList.size(); i++)
+  for(size_t i = 0; i < argvList.size(); i++)
   {
     argv[i] = argvList[i].data();
     RDCLOG("[rf-rd] RunProcess, argvList[%d]=%s", i, (argv[i] ? argv[i] : "n/a"));
   }
-    
+
   argv[argvList.size()] = NULL;
 
   const rdcstr appPath(GetAbsoluteAppPathFromName(appName));
-  RDCLOG("[rf-rd] appName=%s, appPath=%s", ((!appName.empty()) ? appName.c_str() : "n/a"), ((!appPath.empty()) ? appPath.c_str() : "n/a"));
+  RDCLOG("[rf-rd] appName=%s, appPath=%s", ((!appName.empty()) ? appName.c_str() : "n/a"),
+         ((!appPath.empty()) ? appPath.c_str() : "n/a"));
 
   pid_t childPid = 0;
 
@@ -705,9 +706,10 @@ uint32_t Process::LaunchProcess(const rdcstr &app, const rdcstr &workingDir, con
       RDCERR("Could not create stderr pipe");
   }
 
-  RDCLOG("[rf-rd] Process::LaunchProcess, app=%s, dir=%s, cmd=%s", app.c_str(), workingDir.c_str(), cmdLine.c_str());
+  RDCLOG("[rf-rd] Process::LaunchProcess, app=%s, dir=%s, cmd=%s", app.c_str(), workingDir.c_str(),
+         cmdLine.c_str());
   char **currentEnvironment = GetCurrentEnvironment();
-  if (currentEnvironment)
+  if(currentEnvironment)
   {
     /*for(int i = 0; i < 10; i++)
       RDCLOG("====> currentEnvironment[%d]=%s", i, currentEnvironment[i] ? currentEnvironment[i] : "n/a");*/
@@ -811,7 +813,8 @@ void GetHookingEnvMods(rdcarray<EnvironmentModification> &modifications, const C
                                                   "RENDERDOC_ORIGPRELOAD",
                                                   Process::GetEnvVariable(PRELOAD_ENV_VAR)));
 
-  RDCLOG("[rf-rd] GetHookingEnvMods, push_back, RENDERDOC_ORIGPRELOAD, %s, %s", PRELOAD_ENV_VAR, Process::GetEnvVariable(PRELOAD_ENV_VAR).c_str());
+  RDCLOG("[rf-rd] GetHookingEnvMods, push_back, RENDERDOC_ORIGPRELOAD, %s, %s", PRELOAD_ENV_VAR,
+         Process::GetEnvVariable(PRELOAD_ENV_VAR).c_str());
 
   modifications.push_back(
       EnvironmentModification(EnvMod::Append, EnvSep::Platform, LIB_PATH_ENV_VAR, ownlibpath));
@@ -925,7 +928,8 @@ void ResetHookingEnvVars()
 {
   direct_setenv(LIB_PATH_ENV_VAR, Process::GetEnvVariable("RENDERDOC_ORIGLIBPATH").c_str(), true);
   direct_setenv(PRELOAD_ENV_VAR, Process::GetEnvVariable("RENDERDOC_ORIGPRELOAD").c_str(), true);
-  RDCLOG("[rf-rd] ResetHookingEnvVars, %s = %s", "RENDERDOC_ORIGPRELOAD", Process::GetEnvVariable("RENDERDOC_ORIGPRELOAD").c_str());
+  RDCLOG("[rf-rd] ResetHookingEnvVars, %s = %s", "RENDERDOC_ORIGPRELOAD",
+         Process::GetEnvVariable("RENDERDOC_ORIGPRELOAD").c_str());
   direct_setenv("RENDERDOC_ORIGLIBPATH", "", true);
   direct_setenv("RENDERDOC_ORIGPRELOAD", "", true);
 }
@@ -950,7 +954,8 @@ rdcpair<RDResult, uint32_t> Process::LaunchAndInjectIntoProcess(
   for(const EnvironmentModification &e : envList)
     modifications.push_back(e);
 
-  RDCLOG("[rf-rd] Process::LaunchAndInjectIntoProcess, app=%s, dir=%s, cmd=%s", app.c_str(), workingDir.c_str(), cmdLine.c_str());
+  RDCLOG("[rf-rd] Process::LaunchAndInjectIntoProcess, app=%s, dir=%s, cmd=%s", app.c_str(),
+         workingDir.c_str(), cmdLine.c_str());
   GetHookingEnvMods(modifications, opts, capturefile);
 
   for(size_t i = 0; i < modifications.size(); i++)

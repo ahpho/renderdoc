@@ -161,7 +161,8 @@ static bool YyslsInstallDir(const QString &dir, const QString &wrapperSrc, QStri
     // first time: back up the real interposer by renaming it aside.
     if(!QFile::exists(sl))
     {
-      errOut = QCoreApplication::translate("CaptureDialog", "Missing %1 in %2").arg(SlDllName()).arg(dir);
+      errOut =
+          QCoreApplication::translate("CaptureDialog", "Missing %1 in %2").arg(SlDllName()).arg(dir);
       return false;
     }
     if(!QFile::rename(sl, orig))
@@ -181,8 +182,9 @@ static bool YyslsInstallDir(const QString &dir, const QString &wrapperSrc, QStri
   }
   if(!QFile::copy(wrapperSrc, sl))
   {
-    errOut =
-        QCoreApplication::translate("CaptureDialog", "Failed to copy proxy %1 -> %2").arg(wrapperSrc).arg(sl);
+    errOut = QCoreApplication::translate("CaptureDialog", "Failed to copy proxy %1 -> %2")
+                 .arg(wrapperSrc)
+                 .arg(sl);
     return false;
   }
 
@@ -262,7 +264,7 @@ static bool YyslsUninstallWrapper(const QString &exePath, QString &errOut)
   }
   return true;
 }
-#endif // __YYSLS
+#endif    // __YYSLS
 
 static QString GetDescription(const EnvironmentModification &env)
 {
@@ -1060,8 +1062,9 @@ void CaptureDialog::on_toggleGlobal_clicked()
       QString err;
       if(!YyslsInstallWrapper(exe, YyslsWrapperSource(), err))
       {
-        RDDialog::critical(this, tr("Couldn't install yysls capture proxy"),
-                           tr("Aborting. Couldn't install the sl.interposer.dll proxy.\n%1").arg(err));
+        RDDialog::critical(
+            this, tr("Couldn't install yysls capture proxy"),
+            tr("Aborting. Couldn't install the sl.interposer.dll proxy.\n%1").arg(err));
 
         setEnabledMultiple(enableDisableWidgets, true);
         ui->toggleGlobal->setChecked(false);
@@ -1115,8 +1118,9 @@ void CaptureDialog::on_toggleGlobal_clicked()
     {
       QString err;
       if(!YyslsUninstallWrapper(exe, err))
-        RDDialog::critical(this, tr("Couldn't restore yysls files"),
-                           tr("The sl.interposer.dll proxy couldn't be fully rolled back.\n%1").arg(err));
+        RDDialog::critical(
+            this, tr("Couldn't restore yysls files"),
+            tr("The sl.interposer.dll proxy couldn't be fully rolled back.\n%1").arg(err));
     }
 #endif
 

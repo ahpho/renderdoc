@@ -99,8 +99,8 @@ static bool WildcardMatchOrdinal(const wchar_t *path, const wchar_t *pat)
   // try every starting position in path
   for(int start = 0; start <= pathLen; start++)
   {
-    int pi = 0; // pattern index
-    int ti = start; // path index
+    int pi = 0;        // pattern index
+    int ti = start;    // path index
 
     while(pi < patLen)
     {
@@ -135,10 +135,10 @@ static bool WildcardMatchOrdinal(const wchar_t *path, const wchar_t *pat)
             found = true;
             break;
           }
-          next_j:;
+        next_j:;
         }
         if(!found)
-          break; // this start position failed, try next
+          break;    // this start position failed, try next
       }
       else
       {

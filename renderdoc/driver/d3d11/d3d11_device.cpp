@@ -261,8 +261,10 @@ WrappedID3D11Device::WrappedID3D11Device(ID3D11Device *realDevice, D3D11InitPara
 
 WrappedID3D11Device::~WrappedID3D11Device()
 {
-  RDCLOG("[~WrappedID3D11Device=%p] m_pCurrentWrappedDevice==this: %d, m_SwapChains.size=%d, realDevice=%p",
-         this, m_pCurrentWrappedDevice == this, m_SwapChains.size(), m_pDevice);
+  RDCLOG(
+      "[~WrappedID3D11Device=%p] m_pCurrentWrappedDevice==this: %d, m_SwapChains.size=%d, "
+      "realDevice=%p",
+      this, m_pCurrentWrappedDevice == this, m_SwapChains.size(), m_pDevice);
 
   if(m_pCurrentWrappedDevice == this)
     m_pCurrentWrappedDevice = NULL;
@@ -710,7 +712,8 @@ HRESULT WrappedID3D11Device::QueryInterface(REFIID riid, void **ppvObject)
     *ppvObject = NULL;
     return E_NOINTERFACE;
   }
-  else if(riid == D3DInternal_uuid && RenderDoc::Inst().GetDebugIniBool(RFX_SECTION, "disableAllowQueryD3DInternal")) 
+  else if(riid == D3DInternal_uuid &&
+          RenderDoc::Inst().GetDebugIniBool(RFX_SECTION, "disableAllowQueryD3DInternal"))
   {
     RDCWARN("Trying to get internal unsupported D3D interface - not supported.");
     *ppvObject = NULL;
