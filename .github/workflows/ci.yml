@@ -171,6 +171,7 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 5
+        submodules: recursive
 
     - name: Install VSSetup
       run: Install-Module VSSetup -Scope CurrentUser
