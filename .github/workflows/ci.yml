@@ -285,6 +285,36 @@ jobs:
         7z x qrenderdoc_3rdparty.zip
     - name: Set up Visual Studio tools
       uses: microsoft/setup-msbuild@v3
+    - name: Build Detours submodule (generate detours.lib)
+      shell: powershell
+      run: |
+        # Detours ships source only; the prebuilt lib.* dirs are not git-tracked
+        # (they're in the submodule's .gitignore), so build detours.lib for the
+        # target arch before linking DummyDll/Injector against it.
+        $arch = "${{ matrix.platform }}"
+        $vcArch = if ($arch -eq 'x86') { 'x86' } else { 'x64' }
+        $detoursArch = if ($arch -eq 'x86') { 'X86' } else { 'X64' }
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        $vsPath = & $vswhere -latest -property installationPath
+        Write-Host "VS install path: $vsPath"
+        $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvarsall.bat'
+        if (-not (Test-Path $vcvars)) { throw "vcvarsall.bat not found at $vcvars" }
+        $srcDir = Join-Path $PWD 'tools\Detours\src'
+        # Write a temp batch file so vcvarsall + nmake run in one cmd process.
+        $bat = Join-Path $env:TEMP 'build_detours.bat'
+        $lines = @(
+          '@echo on',
+          "call `"$vcvars`" $vcArch",
+          'if errorlevel 1 exit /b 1',
+          "cd /d `"$srcDir`"",
+          "set DETOURS_TARGET_PROCESSOR=$detoursArch",
+          'nmake /NOLOGO'
+        )
+        Set-Content -Path $bat -Value $lines -Encoding ascii
+        & cmd /c $bat
+        if ($LASTEXITCODE -ne 0) { throw "nmake build of Detours failed (exit $LASTEXITCODE)" }
+        $lib = "tools\Detours\lib.$detoursArch\detours.lib"
+        if (Test-Path $lib) { Write-Host "OK: $lib built" } else { throw "FAIL: $lib not produced" }
     - name: Building solution
       run: msbuild.exe renderdoc.sln "/m" "/p:Configuration=${{ matrix.configuration }}" "/p:Platform=${{ matrix.platform }}" "/p:PlatformToolset=${{ matrix.toolset }}"
       shell: powershell
