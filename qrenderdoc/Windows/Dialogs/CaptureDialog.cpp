@@ -43,6 +43,9 @@
 #define JSON_VER 1
 #define __YYSLS 1
 
+#define STRINGIZE2(a) #a
+#define STRINGIZE(a) STRINGIZE2(a)
+
 #if __YYSLS
 // ksh: yysls (the game whose exe is yysls.exe) uses a packed exe + NVIDIA Streamline whose
 // interposer walks the export table manually, defeating RenderDoc's IAT/GetProcAddress hooks. The
