@@ -1,4 +1,4 @@
-/******************************************************************************
+ï»¿/******************************************************************************
  * The MIT License (MIT)
  *
  * Copyright (c) 2018-2026 Baldur Karlsson
@@ -126,7 +126,7 @@ rdcstr GetPlainABIName(ABI abi)
 
 rdcarray<ABI> GetSupportedABIs(const rdcstr &deviceID)
 {
-  // todo.ksh android7.1µÄÄ£ÄâÆ÷£¬¿ÉÒÔÔËĞĞarm°æapk£¿»ØÍ·ÊÔÊÔ²¢·ÖÎöÎªÊ²Ã´
+  // todo.ksh android7.1çš„æ¨¡æ‹Ÿå™¨ï¼Œå¯ä»¥è¿è¡Œarmç‰ˆapkï¼Ÿå›å¤´è¯•è¯•å¹¶åˆ†æä¸ºä»€ä¹ˆ
 #if 1
   rdcstr adbAbi = adbExecCommand(deviceID, "shell getprop ro.product.cpu.abi").strStdout.trimmed();
 #else

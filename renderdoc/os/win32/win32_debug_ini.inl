@@ -1,4 +1,4 @@
-/******************************************************************************
+ï»¿/******************************************************************************
  * The MIT License (MIT)
  *
  * Copyright (c) 2025 Kuangsihao, Juscent
@@ -47,27 +47,27 @@ void ReadDebugIni()
 {
   LOGCAT_D("[rfx-so] ReadRfxDebugIni: \n");
 
-  // »ñÈ¡DLLµÄÄ£¿é¾ä±ú
+  // è·å–DLLçš„æ¨¡å—å¥æŸ„
   HMODULE hModule = GetModuleHandleA(STRINGIZE(RDOC_BASE_NAME) ".dll");
   if(hModule == NULL)
   {
     LOGCAT_D("[rfx-so] GetModuleHandleA failed!\n");
-    return;    // DLLÎ´¼ÓÔØ
+    return;    // DLLæœªåŠ è½½
   }
 
-  // »ñÈ¡DLLµÄÍêÕûÂ·¾¶
+  // è·å–DLLçš„å®Œæ•´è·¯å¾„
   char path[MAX_PATH];
   DWORD result = GetModuleFileNameA(hModule, path, MAX_PATH);
   if(result == 0)
   {
     LOGCAT_D("[rfx-so] GetModuleFileNameA failed!\n");
-    return;    // »ñÈ¡moduleÊ§°Ü
+    return;    // è·å–moduleå¤±è´¥
   }
 
   char *lastSlash = strrchr(path, '\\');
   if(!lastSlash)
     return;
-  *(lastSlash + 1) = '\0';    // È¥µôÎÄ¼şÃû£¬±£ÁôÄ¿Â¼Â·¾¶
+  *(lastSlash + 1) = '\0';    // å»æ‰æ–‡ä»¶åï¼Œä¿ç•™ç›®å½•è·¯å¾„
   strcat_s(path, "debug.ini");
 
   FILE *fpDebugIni = NULL;

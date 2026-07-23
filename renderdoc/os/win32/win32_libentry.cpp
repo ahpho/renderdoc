@@ -1,4 +1,4 @@
-/******************************************************************************
+Ôªø/******************************************************************************
  * The MIT License (MIT)
  *
  * Copyright (c) 2015-2026 Baldur Karlsson
@@ -106,7 +106,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
   {
     case DLL_PROCESS_ATTACH:
       rfx::ReadDebugIni();
-      // «Î∫ÕOUTPUT_LOG_TO_PRINTF≈‰∫œ π”√
+      // ËØ∑ÂíåOUTPUT_LOG_TO_PRINTFÈÖçÂêà‰ΩøÁî®
       if(RenderDoc::Inst().GetDebugIniBool(RFX_SECTION, "enableConsole") || true)    // ksh
         CreateConsole();
       ret = add_hooks();

@@ -1,4 +1,4 @@
-/******************************************************************************
+ï»¿/******************************************************************************
  * The MIT License (MIT)
  *
  * Copyright (c) 2015-2026 Baldur Karlsson
@@ -201,7 +201,7 @@ extern "C" RENDERDOC_API ICamera *RENDERDOC_CC SENDERDOD_InitCamera(CameraType t
 
 extern "C" RENDERDOC_API const char *RENDERDOC_CC SENDERDOD_GetVersionString()
 {
-  // todo.ksh ²âÊÔC#µ÷ÓÃºóÄÚ´æÊÍ·Å:)
+  // todo.ksh æµ‹è¯•C#è°ƒç”¨åå†…å­˜é‡Šæ”¾:)
   // char *result = (char *)malloc(64);
   // strcpy_s(result, 64, MAJOR_MINOR_VERSION_STRING);
   // return result;
