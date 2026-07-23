@@ -56,9 +56,10 @@ inline PyObject *PyWeakref_GetObject_emu(PyObject *ref)
 // ignore warning about redundant declaration of typedef (byte)
 #pragma SWIG nowarn=322
 
-// strip off the RENDERDOC_ namespace prefix, it's unnecessary. We list this first since we want
-// any other subsequent renames to override it.
-%rename("%(strip:[RENDERDOC_])s") "";
+// strip off the RENDERDOC_/SENDERDOD_ namespace prefix, it's unnecessary. We list this first
+// since we want any other subsequent renames to override it. SENDERDOD_ is the desensitized
+// RDOC_BASE_NAME prefix (originally RENDERDOC_).
+%rename("%(regex:/^(?:RENDERDOC_|SENDERDOD_)(.*)$/\\1/)s") "";
 
 // rename the interfaces to remove the I prefix
 %rename("%(regex:/^I([A-Z].*)/\\1/)s", %$isclass) "";

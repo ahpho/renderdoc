@@ -121,7 +121,7 @@ def make_c_type(ret: str, pattern: bool, typelist: List[str]):
             ret = '(const )?rdcpair<{}> ?[&*]?'.format(inner) if pattern else 'rdcpair<{}>'.format(inner)
     elif pattern:
         if ret[-8:] == 'Callback':
-            ret = '(RENDERDOC_)?{}'.format(ret)
+            ret = '(?:RENDERDOC_|SENDERDOD_)?{}'.format(ret)
         else:
             if orig_type not in typelist:
                 typelist.append(orig_type)
@@ -166,7 +166,7 @@ def check_function(parent_name, objname, obj, source, global_func, typelist):
 
     global_pattern = ''
     if global_func:
-        global_pattern = '(RENDERDOC_CC\s*RENDERDOC_)?'
+        global_pattern = '(RENDERDOC_CC\s*(?:RENDERDOC_|SENDERDOD_)?)?'
 
     pattern = '(?s){} ?{}{}\(\s*{}\)'.format(make_c_type(ret, True, typelist), global_pattern, objname, funcargs[0])
     clean = '{} {}({})'.format(make_c_type(ret, False, typelist), objname, funcargs[1])
