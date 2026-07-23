@@ -718,7 +718,7 @@ void CaptureDialog::vulkanLayerWarn_mouseClick()
 #if defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)
         QDir binDir = QFileInfo(qApp->applicationFilePath()).absoluteDir();
 
-        QString cmd = lit(STRINGIZE(RDOC_BASE_NAME)) + lit("cmd");
+        QString cmd = QString::fromLatin1(STRINGIZE(RDOC_BASE_NAME)) + lit("cmd");
 
         if(binDir.exists(cmd))
         {

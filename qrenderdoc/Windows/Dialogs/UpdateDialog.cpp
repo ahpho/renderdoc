@@ -258,8 +258,8 @@ void UpdateDialog::on_update_clicked()
 
       bool success = true;
 
-      QString dll = lit(STRINGIZE(RDOC_BASE_NAME)) + lit(".dll");
-      QString cmd = lit(STRINGIZE(RDOC_BASE_NAME)) + lit("cmd.exe");
+      QString dll = QString::fromLatin1(STRINGIZE(RDOC_BASE_NAME)) + lit(".dll");
+      QString cmd = QString::fromLatin1(STRINGIZE(RDOC_BASE_NAME)) + lit("cmd.exe");
 
       QFile::remove(dir.absoluteFilePath(dll));
       QFile::remove(dir.absoluteFilePath(cmd));
