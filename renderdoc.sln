@@ -107,6 +107,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "d3d11_wrapper", "tools\Fake
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "sl_interposer_wrapper", "tools\FakeD3dDll\sl-interposer-wrapper\sl_interposer_wrapper.vcxproj", "{7A1C3D22-9E4B-4F1A-8C2D-1B7E6F0A5C33}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "dxgi_wrapper", "tools\FakeD3dDll\dxgi-wrapper\dxgi_wrapper.vcxproj", "{C1A3D5E7-8B2F-4C9D-1E6A-3F5B7D9E1C48}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Development|x64 = Development|x64
@@ -343,6 +345,14 @@ Global
 		{7A1C3D22-9E4B-4F1A-8C2D-1B7E6F0A5C33}.Release|x64.Build.0 = Release|x64
 		{7A1C3D22-9E4B-4F1A-8C2D-1B7E6F0A5C33}.Release|x86.ActiveCfg = Release|x64
 		{7A1C3D22-9E4B-4F1A-8C2D-1B7E6F0A5C33}.Release|x86.Build.0 = Release|x64
+		{C1A3D5E7-8B2F-4C9D-1E6A-3F5B7D9E1C48}.Development|x64.ActiveCfg = Release|x64
+		{C1A3D5E7-8B2F-4C9D-1E6A-3F5B7D9E1C48}.Development|x64.Build.0 = Release|x64
+		{C1A3D5E7-8B2F-4C9D-1E6A-3F5B7D9E1C48}.Development|x86.ActiveCfg = Release|x64
+		{C1A3D5E7-8B2F-4C9D-1E6A-3F5B7D9E1C48}.Development|x86.Build.0 = Release|x64
+		{C1A3D5E7-8B2F-4C9D-1E6A-3F5B7D9E1C48}.Release|x64.ActiveCfg = Release|x64
+		{C1A3D5E7-8B2F-4C9D-1E6A-3F5B7D9E1C48}.Release|x64.Build.0 = Release|x64
+		{C1A3D5E7-8B2F-4C9D-1E6A-3F5B7D9E1C48}.Release|x86.ActiveCfg = Release|x64
+		{C1A3D5E7-8B2F-4C9D-1E6A-3F5B7D9E1C48}.Release|x86.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -386,6 +396,7 @@ Global
 		{AF5B9A6B-E6AF-40ED-81C5-890431219A70} = {4C1F3BF1-7370-4E5A-9932-9B62F1AA4819}
 		{2736DB06-E5BA-4C37-BC1C-B8808B626C8F} = {4C1F3BF1-7370-4E5A-9932-9B62F1AA4819}
 		{7A1C3D22-9E4B-4F1A-8C2D-1B7E6F0A5C33} = {4C1F3BF1-7370-4E5A-9932-9B62F1AA4819}
+		{C1A3D5E7-8B2F-4C9D-1E6A-3F5B7D9E1C48} = {4C1F3BF1-7370-4E5A-9932-9B62F1AA4819}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {61DF9B8F-8EF8-492A-97D3-856DF09ED0FB}
