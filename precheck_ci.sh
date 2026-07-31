@@ -1,6 +1,6 @@
 #!/bin/bash
 # renderdoc fork 本地 CI 预检 —— push 前跑一遍，避免 CI 翻车
-# 用法: bash precheck.sh   (在仓库根目录)
+# 用法: bash precheck_ci.sh   (在仓库根目录)
 # 退出码 0 = 全过，可 push；非 0 = 有问题，先修
 
 set -e
