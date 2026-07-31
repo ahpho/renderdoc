@@ -732,8 +732,9 @@ public:
 
           ZeroMemory(paramsAlloc, sizeof(wchar_t) * 512);
 
-          _snwprintf_s(paramsAlloc, 511, 511, L"%s/q" STRINGIZE(RDOC_BASE_NAME) ".exe --crash %s", exepath.c_str(),
-                       destjson.c_str());
+          _snwprintf_s(paramsAlloc, 511, 511,
+                       L"%s/q" STRINGIZE(RDOC_BASE_NAME) ".exe --crash %s", exepath.c_str(),
+                                         destjson.c_str());
 
           PROCESS_INFORMATION pi;
           STARTUPINFOW si;

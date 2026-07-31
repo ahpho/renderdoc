@@ -35,17 +35,17 @@
 #include "core/core.h"
 #include "data/resource.h"
 
-#include <direct.h>			// _getcwd
-#include <cstdio>			// FILE
+#include <direct.h>    // _getcwd
+#include <cstdio>      // FILE
 
 #define LOGCAT_D printf
 #define LOGCAT_E printf
 
 namespace rfx
 {
-  #ifndef RFX_SECTION
-  #define RFX_SECTION "RfxSo"
-  #endif
-    
-  void ReadDebugIni();
+#ifndef RFX_SECTION
+#define RFX_SECTION "RfxSo"
+#endif
+
+void ReadDebugIni();
 }

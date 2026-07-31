@@ -407,7 +407,8 @@ ExecuteResult ReplayManager::ExecuteAndInject(const rdcstr &exe, const rdcstr &w
                                               const rdcstr &capturefile, CaptureOptions opts)
 {
   ExecuteResult ret;
-  printf("[rf-rd] ReplayManager::ExecuteAndInject, exe=%s, dir=%s, cmd=%s\n", exe.c_str(), workingDir.c_str(), cmdLine.c_str());
+  printf("[rf-rd] ReplayManager::ExecuteAndInject, exe=%s, dir=%s, cmd=%s\n", exe.c_str(),
+         workingDir.c_str(), cmdLine.c_str());
 
   if(m_Remote)
   {

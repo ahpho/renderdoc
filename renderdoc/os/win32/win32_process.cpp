@@ -1252,8 +1252,7 @@ RDResult BackupAndChangeRegistry(GlobalHookData &hookdata, const rdcstr &shimpat
         "\n管理员权限打开cmd控制台，运行以下命令:\n"
         "短目录功能查询: fsutil 8dot3name query D:\n"
         "短目录功能启用: fsutil 8dot3name set D: 0\n"
-        "\n此功能启用后只影响新创建的文件、目录，故需把整个RenderDoc目录复制一份。"
-    );
+        "\n此功能启用后只影响新创建的文件、目录，故需把整个RenderDoc目录复制一份。");
   }
 
   if(!shimpathWow32.empty())
@@ -1270,8 +1269,7 @@ RDResult BackupAndChangeRegistry(GlobalHookData &hookdata, const rdcstr &shimpat
           "\n管理员权限打开cmd控制台，运行以下命令:\n"
           "短目录功能查询: fsutil 8dot3name query D:\n"
           "短目录功能启用: fsutil 8dot3name set D: 0\n"
-          "\n此功能启用后只影响新创建的文件、目录，故需把整个RenderDoc目录复制一份。"
-      );
+          "\n此功能启用后只影响新创建的文件、目录，故需把整个RenderDoc目录复制一份。");
     }
   }
 

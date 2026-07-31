@@ -67,7 +67,9 @@ void KeepLayerAlive()
   // would be unloaded. That could cause us to drop target control connections etc.
   // we create our own instance, which increases the refcount on the layer, then leak it to prevent
   // the layer being unloaded.
-  RDCLOG("====> [KeepLayerAlive] dlopen(libvulkan.so) Creating internal instance to bump layer refcount");
+  RDCLOG(
+      "====> [KeepLayerAlive] dlopen(libvulkan.so) Creating internal instance to bump layer "
+      "refcount");
   void *module = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if(!module)
     module = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
@@ -304,7 +306,8 @@ VKAPI_ATTR VkResult VKAPI_CALL hooked_vkCreateInstance(const VkInstanceCreateInf
 VKAPI_ATTR void VKAPI_CALL hooked_vkDestroyInstance(VkInstance instance, const VkAllocationCallbacks *)
 {
   WrappedVulkan *core = CoreDisp(instance);
-  RDCLOG("====> hooked_vkDestroyInstance, WrappedVulkan=%p, instance=%p ......................", core, &instance);
+  RDCLOG("====> hooked_vkDestroyInstance, WrappedVulkan=%p, instance=%p ......................",
+         core, &instance);
   core->vkDestroyInstance(instance, NULL);
   delete core;
 }
@@ -484,7 +487,8 @@ VK_LAYER_SENDERDOD_CaptureGetInstanceProcAddr(VkInstance instance, const char *p
   if(pName == NULL)
     return NULL;
 
-  RDCLOG("====> VK_LAYER_SENDERDOD_CaptureGetInstanceProcAddr, instance=%p, name=%s", instance, pName);
+  RDCLOG("====> VK_LAYER_SENDERDOD_CaptureGetInstanceProcAddr, instance=%p, name=%s", instance,
+         pName);
 
   // a NULL instance can return vkGetInstanceProcAddr or a global function, handle that here
 
@@ -570,7 +574,8 @@ VK_LAYER_SENDERDOD_CaptureGetInstanceProcAddr(VkInstance instance, const char *p
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
 VK_LAYER_SENDERDOD_Capture_layerGetPhysicalDeviceProcAddr(VkInstance instance, const char *pName)
 {
-  RDCLOG("====> VK_LAYER_SENDERDOD_Capture_layerGetPhysicalDeviceProcAddr, instance=%p, name=%s", instance, pName);
+  RDCLOG("====> VK_LAYER_SENDERDOD_Capture_layerGetPhysicalDeviceProcAddr, instance=%p, name=%s",
+         instance, pName);
 
   // GetPhysicalDeviceProcAddr acts like GetInstanceProcAddr but it returns NULL for any functions
   // which are known but aren't physical device functions
@@ -664,7 +669,9 @@ VK_LAYER_SENDERDOD_Capture_layerGetPhysicalDeviceProcAddr(VkInstance instance, c
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 VK_LAYER_SENDERDOD_CaptureNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pVersionStruct)
 {
-  RDCLOG("====> VK_LAYER_SENDERDOD_CaptureNegotiateLoaderLayerInterfaceVersion, sType=%d, version=%d", pVersionStruct->sType, pVersionStruct->loaderLayerInterfaceVersion);
+  RDCLOG(
+      "====> VK_LAYER_SENDERDOD_CaptureNegotiateLoaderLayerInterfaceVersion, sType=%d, version=%d",
+      pVersionStruct->sType, pVersionStruct->loaderLayerInterfaceVersion);
 
   if(pVersionStruct->sType != LAYER_NEGOTIATE_INTERFACE_STRUCT)
     return VK_ERROR_INITIALIZATION_FAILED;

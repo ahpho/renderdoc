@@ -442,8 +442,10 @@ public:
                                                  D3D_FEATURE_LEVEL FeatureLevel, REFIID riid,
                                                  _COM_Outptr_opt_ void **ppvDevice)
   {
-    RDCLOG("[WrappedID3D12DeviceFactory::CreateDevice] CALLED: adapter=%p, FeatureLevel=%x, riid=%s, ppvDevice=%p",
-           adapter, FeatureLevel, ToStr(riid).c_str(), ppvDevice);
+    RDCLOG(
+        "[WrappedID3D12DeviceFactory::CreateDevice] CALLED: adapter=%p, FeatureLevel=%x, riid=%s, "
+        "ppvDevice=%p",
+        adapter, FeatureLevel, ToStr(riid).c_str(), ppvDevice);
 
     if(RenderDoc::Inst().GetCaptureOptions().apiValidation)
     {
@@ -468,8 +470,8 @@ public:
         },
         &devConfig, adapter, FeatureLevel, riid, ppvDevice);
 
-    RDCLOG("[WrappedID3D12DeviceFactory::CreateDevice] ret=%s, ppvDevice=%p",
-           ToStr(ret).c_str(), ppvDevice);
+    RDCLOG("[WrappedID3D12DeviceFactory::CreateDevice] ret=%s, ppvDevice=%p", ToStr(ret).c_str(),
+           ppvDevice);
 
     return ret;
   }
@@ -535,8 +537,10 @@ public:
   virtual HRESULT STDMETHODCALLTYPE CreateDeviceFactory(UINT SDKVersion, _In_ LPCSTR SDKPath,
                                                         REFIID riid, _COM_Outptr_ void **ppvFactory)
   {
-    RDCLOG("[WrappedID3D12SDKConfiguration::CreateDeviceFactory] CALLED: SDKVersion=%u, SDKPath=%s, riid=%s",
-           SDKVersion, SDKPath ? SDKPath : "(null)", ToStr(riid).c_str());
+    RDCLOG(
+        "[WrappedID3D12SDKConfiguration::CreateDeviceFactory] CALLED: SDKVersion=%u, SDKPath=%s, "
+        "riid=%s",
+        SDKVersion, SDKPath ? SDKPath : "(null)", ToStr(riid).c_str());
 
     if(riid != __uuidof(ID3D12DeviceFactory))
     {
@@ -551,8 +555,10 @@ public:
       RDCASSERT(realFactory);
       *ppvFactory = (ID3D12DeviceFactory *)(new WrappedID3D12DeviceFactory(realFactory));
 
-      RDCLOG("[WrappedID3D12SDKConfiguration::CreateDeviceFactory] returned wrapped factory, ppvFactory=%p",
-             ppvFactory ? *ppvFactory : NULL);
+      RDCLOG(
+          "[WrappedID3D12SDKConfiguration::CreateDeviceFactory] returned wrapped factory, "
+          "ppvFactory=%p",
+          ppvFactory ? *ppvFactory : NULL);
 
       return hr;
     }
@@ -595,7 +601,6 @@ public:
     GetD3D11On12On7.Register("d3d11on12.dll", "GetD3D11On12On7Interface",
                              GetD3D11On12On7Interface_hook);
 
-
     // Modern D3D12 uses the Agility SDK: d3d12.dll is a thin forwarding shim; the real
     // implementation lives in D3D12Core.dll. Games resolve D3D12GetInterface /
     // D3D12CreateDevice from D3D12Core.dll via GetProcAddress, so hooks registered only
@@ -624,7 +629,6 @@ public:
     EnableExperimentalFeatures_Interposer.Register("sl.interposer.dll",
                                                    "D3D12EnableExperimentalFeatures",
                                                    D3D12EnableExperimentalFeatures_Interposer_hook);
-
 
     m_RecurseSlot = Threading::AllocateTLSSlot();
     Threading::SetTLSValue(m_RecurseSlot, NULL);
@@ -743,7 +747,6 @@ private:
   HookedFunction<PFN_D3D12_ENABLE_EXPERIMENTAL_FEATURES> EnableExperimentalFeatures;
   HookedFunction<PFNGetD3D11On12On7Interface> GetD3D11On12On7;
 
-
   // ksh: SEPARATE HookedFunction objects for d3d12core.dll. These MUST NOT share the orig pointer
   // with the d3d12.dll ones above. d3d12.dll's exports are forwarding shims that call into
   // D3D12Core.dll; if the shared orig gets filled with the d3d12.dll shim address, our
@@ -770,7 +773,6 @@ private:
   HookedFunction<PFN_D3D12_CREATE_DEVICE> CreateDevice_Interposer;
   HookedFunction<PFN_D3D12_GET_DEBUG_INTERFACE> GetDebugInterface_Interposer;
   HookedFunction<PFN_D3D12_ENABLE_EXPERIMENTAL_FEATURES> EnableExperimentalFeatures_Interposer;
-
 
   // re-entrancy detection (can happen in rare cases with e.g. fraps)
   uint64_t m_RecurseSlot = 0;
@@ -819,7 +821,7 @@ private:
     static LONG s_D3D12CreateCount = 0;
     LONG createIdx = InterlockedIncrement(&s_D3D12CreateCount);
     RDCDEBUG("[D3D12 Create_Internal #%d] ======> Feature Level=%x, riid=%s, pAdapter=%p",
-           createIdx, MinimumFeatureLevel, ToStr(riid).c_str(), pAdapter);
+             createIdx, MinimumFeatureLevel, ToStr(riid).c_str(), pAdapter);
 
     // we should no longer go through here in the replay application
     RDCASSERT(!RenderDoc::Inst().IsReplayApp());
@@ -834,7 +836,7 @@ private:
     HRESULT ret = real(pAdapter, MinimumFeatureLevel, riid, ppDevice);
 
     RDCDEBUG("[D3D12 Create_Internal #%d] Called real createdevice. HRESULT: %s, ppDevice=%p",
-           createIdx, ToStr(ret).c_str(), ppDevice ? *ppDevice : NULL);
+             createIdx, ToStr(ret).c_str(), ppDevice ? *ppDevice : NULL);
 
     if(SUCCEEDED(ret) && ppDevice)
     {
@@ -981,9 +983,10 @@ private:
                                         D3D_FEATURE_LEVEL MinimumFeatureLevel, REFIID riid,
                                         void **ppDevice)
   {
-    RDCLOG("[D3D12CreateDevice_hook:%s] CALLED: pAdapter=%p, FeatureLevel=0x%x, riid=%s, "
-           "ppDevice=%p, createFunc=%p",
-           tag, pAdapter, MinimumFeatureLevel, ToStr(riid).c_str(), ppDevice, createFunc);
+    RDCLOG(
+        "[D3D12CreateDevice_hook:%s] CALLED: pAdapter=%p, FeatureLevel=0x%x, riid=%s, "
+        "ppDevice=%p, createFunc=%p",
+        tag, pAdapter, MinimumFeatureLevel, ToStr(riid).c_str(), ppDevice, createFunc);
 
     if(!createFunc)
     {
@@ -1032,8 +1035,8 @@ private:
   }
 
   static HRESULT EnableExperimentalFeatures_Impl(PFN_D3D12_ENABLE_EXPERIMENTAL_FEATURES realFunc,
-                                                 const char *tag, UINT NumFeatures, const IID *pIIDs,
-                                                 void *pConfigurationStructs,
+                                                 const char *tag, UINT NumFeatures,
+                                                 const IID *pIIDs, void *pConfigurationStructs,
                                                  UINT *pConfigurationStructSizes)
   {
     RDCLOG("[D3D12EnableExperimentalFeatures_hook:%s] CALLED: NumFeatures=%u, realFunc=%p", tag,
@@ -1080,8 +1083,7 @@ private:
   }
 
   static HRESULT WINAPI D3D12EnableExperimentalFeatures_Interposer_hook(
-      UINT NumFeatures, const IID *pIIDs, void *pConfigurationStructs,
-      UINT *pConfigurationStructSizes)
+      UINT NumFeatures, const IID *pIIDs, void *pConfigurationStructs, UINT *pConfigurationStructSizes)
   {
     return EnableExperimentalFeatures_Impl(d3d12hooks.EnableExperimentalFeatures_Interposer(), "sl",
                                            NumFeatures, pIIDs, pConfigurationStructs,
@@ -1098,8 +1100,8 @@ private:
     return S_OK;
   }
 
-  static HRESULT D3D12GetDebugInterface_Impl(PFN_D3D12_GET_DEBUG_INTERFACE realFunc, const char *tag,
-                                             REFIID riid, void **ppvDebug)
+  static HRESULT D3D12GetDebugInterface_Impl(PFN_D3D12_GET_DEBUG_INTERFACE realFunc,
+                                             const char *tag, REFIID riid, void **ppvDebug)
   {
     RDCLOG("[D3D12GetDebugInterface_hook:%s] CALLED: riid=%s, ppvDebug=%p, realFunc=%p", tag,
            ToStr(riid).c_str(), ppvDebug, realFunc);
@@ -1168,8 +1170,8 @@ private:
   static HRESULT D3D12GetInterface_Impl(PFN_D3D12_GET_INTERFACE realFunc, const char *tag,
                                         REFCLSID rclsid, REFIID riid, void **ppvDebug)
   {
-    RDCLOG("[D3D12GetInterface_hook:%s] CALLED: rclsid=%s, riid=%s, ppvDebug=%p, realFunc=%p",
-           tag, ToStr(rclsid).c_str(), ToStr(riid).c_str(), ppvDebug, realFunc);
+    RDCLOG("[D3D12GetInterface_hook:%s] CALLED: rclsid=%s, riid=%s, ppvDebug=%p, realFunc=%p", tag,
+           ToStr(rclsid).c_str(), ToStr(riid).c_str(), ppvDebug, realFunc);
 
     if(riid == CLSID_D3D12StateObjectFactory)
     {
@@ -1196,8 +1198,8 @@ private:
     }
 
     HRESULT hr = GetWrappedInterface(realUnk, riid, ppvDebug);
-	RDCLOG("[D3D12GetInterface_hook:%s] GetWrappedInterface. *ppvDebug=%p, hr=0x%x", tag,
-	       ppvDebug ? *ppvDebug : NULL, hr);
+    RDCLOG("[D3D12GetInterface_hook:%s] GetWrappedInterface. *ppvDebug=%p, hr=0x%x", tag,
+           ppvDebug ? *ppvDebug : NULL, hr);
 
     if(SUCCEEDED(hr))
     {
@@ -1241,8 +1243,7 @@ private:
   static HRESULT WINAPI D3D12GetInterface_Interposer_hook(REFCLSID rclsid, REFIID riid,
                                                           void **ppvDebug)
   {
-    return D3D12GetInterface_Impl(d3d12hooks.GetInterface_Interposer(), "sl", rclsid, riid,
-                                  ppvDebug);
+    return D3D12GetInterface_Impl(d3d12hooks.GetInterface_Interposer(), "sl", rclsid, riid, ppvDebug);
   }
 };
 

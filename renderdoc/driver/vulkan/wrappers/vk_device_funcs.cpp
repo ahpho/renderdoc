@@ -4616,7 +4616,8 @@ VkResult WrappedVulkan::vkCreateDevice(VkPhysicalDevice physicalDevice,
                                        const VkDeviceCreateInfo *pCreateInfo,
                                        const VkAllocationCallbacks *, VkDevice *pDevice)
 {
-  RDCLOG("====> WrappedVulkan::vkCreateDevice, VkPhysicalDevice=%p, VkDevice=%p", physicalDevice, pDevice);
+  RDCLOG("====> WrappedVulkan::vkCreateDevice, VkPhysicalDevice=%p, VkDevice=%p", physicalDevice,
+         pDevice);
 
   VkDeviceCreateInfo createInfo = *pCreateInfo;
 

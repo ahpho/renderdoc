@@ -3483,7 +3483,8 @@ void WrappedVulkan::Present(DeviceOwnedWindow devWnd)
 
   if(RenderDoc::Inst().ShouldTriggerCapture(m_FrameCounter) && IsBackgroundCapturing(m_State))
   {
-    RDCLOG("[rf-rd] vk_core.cpp, ShouldTriggerCapture! isBackground=%d", IsBackgroundCapturing(m_State));
+    RDCLOG("[rf-rd] vk_core.cpp, ShouldTriggerCapture! isBackground=%d",
+           IsBackgroundCapturing(m_State));
     RenderDoc::Inst().StartFrameCapture(devWnd);
 
     m_AppControlledCapture = false;

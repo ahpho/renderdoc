@@ -116,17 +116,24 @@ private:
                   pSwapChainDesc, ppSwapChain, ppDevice, pFeatureLevel, ppImmediateContext);
     }
 
-	//ksh
+    // ksh
     static LONG s_D3D11CreateCount = 0;
     LONG createIdx = InterlockedIncrement(&s_D3D11CreateCount);
-    RDCLOG("[Create_Internal #%d] ======> Call to Create_Internal, static Flags=%x", createIdx, Flags);
+    RDCLOG("[Create_Internal #%d] ======> Call to Create_Internal, static Flags=%x", createIdx,
+           Flags);
 
     if(ppSwapChain && *ppSwapChain)
-      RDCLOG("[Create_Internal #%d] ======> ppSwapChain=%p *ppSwapChain=%p", createIdx, ppSwapChain, *ppSwapChain);
+      RDCLOG("[Create_Internal #%d] ======> ppSwapChain=%p *ppSwapChain=%p", createIdx, ppSwapChain,
+             *ppSwapChain);
     else if(ppSwapChain && *ppSwapChain == NULL)
-      RDCLOG("[Create_Internal #%d] ======> ppSwapChain=%p *ppSwapChain=%p (will NOT wrap SwapChain)", createIdx, ppSwapChain, NULL);
+      RDCLOG(
+          "[Create_Internal #%d] ======> ppSwapChain=%p *ppSwapChain=%p (will NOT wrap SwapChain)",
+          createIdx, ppSwapChain, NULL);
     else if(ppSwapChain == NULL)
-      RDCLOG("[Create_Internal #%d] ======> ppSwapChain=NULL (will NOT wrap SwapChain, device-only create)", createIdx);
+      RDCLOG(
+          "[Create_Internal #%d] ======> ppSwapChain=NULL (will NOT wrap SwapChain, device-only "
+          "create)",
+          createIdx);
 
     // we should no longer go through here in the replay application
     RDCASSERT(!RenderDoc::Inst().IsReplayApp());
@@ -193,7 +200,7 @@ private:
           memcpy(params.FeatureLevels, pFeatureLevels, sizeof(D3D_FEATURE_LEVEL) * FeatureLevels);
 
         WrappedID3D11Device *wrap = new WrappedID3D11Device(*ppDevice, params);
-		//ksh
+        // ksh
         RDCLOG("[Create_Internal #%d] NEW WrappedID3D11Device=%p (real=%p, ppSwapChain=%p)",
                createIdx, wrap, *ppDevice, ppSwapChain ? *ppSwapChain : NULL);
 
@@ -227,7 +234,7 @@ private:
     EndRecurse();
 
     RDCLOG("[Create_Internal] <====== ends.");
-    
+
     return ret;
   }
 

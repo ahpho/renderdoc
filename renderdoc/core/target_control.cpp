@@ -34,14 +34,14 @@
 #include "strings/string_utils.h"
 
 #if defined(__ANDROID__) || ENABLED(RDOC_ANDROID)
+#include <dlfcn.h>
 #include <errno.h>
-#include <string.h>
+#include <fcntl.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <fcntl.h>
-#include <dlfcn.h>
-#include <unistd.h> // getcwd
+#include <unistd.h>    // getcwd
 #endif
 
 static const uint32_t TargetControlProtocolVersion = 9;
@@ -495,7 +495,7 @@ rdcstr RenderDoc::GetWritableDir()
   rdcstr result = "";
   result.reserve(512);
 
-  char cwd[1024] = { 0 };
+  char cwd[1024] = {0};
 #if defined(__ANDROID__) || ENABLED(RDOC_ANDROID)
   if(getcwd(cwd, sizeof(cwd)) != NULL)
     RDCLOG("[rf-rd] getcwd success, cwd=%s", cwd);
@@ -541,7 +541,8 @@ bool RenderDoc::CheckNamedPipeToCapture()
     int mk = mkfifo(strFifo.c_str(), S_IRUSR | S_IWUSR | S_IWGRP);
     if(mk == -1)
     {
-      RDCLOG("[rf-rd] fifo_r_u create failed:%s, errno=%d, err=%s", strFifo.c_str(), errno, strerror(errno));
+      RDCLOG("[rf-rd] fifo_r_u create failed:%s, errno=%d, err=%s", strFifo.c_str(), errno,
+             strerror(errno));
       return false;
     }
     RenderDoc::Inst().fd_fifo = open(strFifo.c_str(), O_RDONLY | O_NONBLOCK);

@@ -44,7 +44,7 @@ void trim(char *str)
 }
 
 void ReadDebugIni()
-{  
+{
   LOGCAT_D("[rfx-so] ReadRfxDebugIni: \n");
 
   // 获取DLL的模块句柄
@@ -61,13 +61,13 @@ void ReadDebugIni()
   if(result == 0)
   {
     LOGCAT_D("[rfx-so] GetModuleFileNameA failed!\n");
-    return; // 获取module失败
+    return;    // 获取module失败
   }
 
   char *lastSlash = strrchr(path, '\\');
   if(!lastSlash)
     return;
-  *(lastSlash + 1) = '\0'; // 去掉文件名，保留目录路径
+  *(lastSlash + 1) = '\0';    // 去掉文件名，保留目录路径
   strcat_s(path, "debug.ini");
 
   FILE *fpDebugIni = NULL;
@@ -78,7 +78,7 @@ void ReadDebugIni()
 
   char line[512] = {0};
   bool in_section = false;
-  #define VALUE_LEN_ 256
+#define VALUE_LEN_ 256
   char section_header[VALUE_LEN_] = {0};
   snprintf(section_header, sizeof(section_header), "[%s]", RFX_SECTION);
   char pair_value[VALUE_LEN_] = {0}, section_and_key[512] = {0};
@@ -114,13 +114,13 @@ void ReadDebugIni()
       rdcstr key(line, key_len);
       snprintf(section_and_key, sizeof(section_and_key), "%s/%s", RFX_SECTION, key.c_str());
       RenderDoc::Inst().SetDebugIniValue(RFX_SECTION, key, pair_value);
-      //s_DebugIni.m_iniValues[section_and_key] = pair_value;
+      // s_DebugIni.m_iniValues[section_and_key] = pair_value;
       LOGCAT_D("[rfx-so] %s=%s.\n", key.c_str(), pair_value);
     }
   }
   LOGCAT_D("[rfx-so] fpDebugIni closed.\n");
   fclose(fpDebugIni);
-  #undef VALUE_LEN_
+#undef VALUE_LEN_
 }
 
 }
