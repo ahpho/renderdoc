@@ -264,6 +264,265 @@ static bool YyslsUninstallWrapper(const QString &exePath, QString &errOut)
   }
   return true;
 }
+
+// ksh: yysls extra dlls — copy d3d11.dll, dxgi.dll, senderdod.dll from the RenderDoc tools
+// folder to the game's Engine/Binaries/Win64r/ and Win64rh/ dirs so the game loads our hook DLLs.
+static QString YyslsExtraSourceDir()
+{
+  return QDir(qApp->applicationDirPath()).absoluteFilePath(lit("工具在这里/《燕云十六声》PC版"));
+}
+
+static QStringList YyslsExtraDllNames()
+{
+  return {lit("d3d11.dll"), lit("dxgi.dll"), lit("senderdod.dll")};
+}
+
+// ksh: back up the real system d3d11.dll / dxgi.dll into the game dirs as *orig.dll so our
+// proxy DLLs can forward to them. We read from GetSystemDirectory() which returns the real
+// System32 (qrenderdoc is built 64-bit, so no WOW64 redirection).
+static QList<QPair<QString, QString>> YyslsSysDllPairs()
+{
+  return {
+      {lit("d3d11.dll"), lit("d3d11orig.dll")},
+      {lit("dxgi.dll"), lit("dxgiorig.dll")},
+  };
+}
+
+static QString YyslsSystem32Path()
+{
+  QString sysRoot = QString::fromLocal8Bit(qgetenv("SystemRoot"));
+  if(sysRoot.isEmpty())
+    sysRoot = QString::fromLatin1("C:/Windows");
+  return QDir(sysRoot).absoluteFilePath(QString::fromLatin1("System32"));
+}
+
+// Game target dirs derived from the exe path's Engine/Binaries/ anchor — same root logic as
+// YyslsStreamlineDirs but without the Streamline suffix.
+static QList<QString> YyslsGameTargetDirs(const QString &exePath)
+{
+  QList<QString> dirs;
+
+  QString normalPath = exePath;
+  normalPath.replace(QLatin1Char('\\'), QLatin1Char('/'));
+  QString lowerPath = normalPath.toLower();
+  int anchorPos = lowerPath.indexOf(QString::fromLatin1("/engine/binaries/"));
+  if(anchorPos < 0)
+  {
+    qWarning() << "[yysls] can't find Engine/Binaries/ anchor in exe path:" << exePath;
+    return dirs;
+  }
+
+  QString root = normalPath.left(anchorPos);
+
+  for(const char *sub : {
+          "Engine/Binaries/Win64r",
+          "Engine/Binaries/Win64rh",
+      })
+  {
+    QString path = QDir(root).absoluteFilePath(QString::fromLatin1(sub));
+    dirs.push_back(path);
+  }
+
+  return dirs;
+}
+
+// ksh: back up the real system d3d11.dll / dxgi.dll into the game dirs as *orig.dll so our
+// proxy DLLs can forward to them. We read from SystemRoot env var (always available on Windows).
+static bool YyslsInstallSysDllBackups(const QString &exePath, QString &errOut)
+{
+  QString sys32 = YyslsSystem32Path();
+  QList<QPair<QString, QString>> pairs = YyslsSysDllPairs();
+  QList<QString> targetDirs = YyslsGameTargetDirs(exePath);
+
+  if(targetDirs.isEmpty())
+  {
+    errOut = QCoreApplication::translate("CaptureDialog",
+        "Cannot determine game target directories from exe path.");
+    return false;
+  }
+
+  // Verify all source files exist before touching any target.
+  for(const auto &pair : pairs)
+  {
+    QString src = QDir(sys32).absoluteFilePath(pair.first);
+    if(!QFile::exists(src))
+    {
+      errOut = QCoreApplication::translate("CaptureDialog",
+          "Missing system file:\n%1").arg(src);
+      return false;
+    }
+  }
+
+  for(const QString &targetDir : targetDirs)
+  {
+    QDir d(targetDir);
+    if(!d.exists())
+    {
+      if(!d.mkpath(lit(".")))
+      {
+        errOut = QCoreApplication::translate("CaptureDialog",
+            "Failed to create target directory:\n%1").arg(targetDir);
+        return false;
+      }
+    }
+
+    for(const auto &pair : pairs)
+    {
+      QString src = QDir(sys32).absoluteFilePath(pair.first);
+      QString dst = d.absoluteFilePath(pair.second);
+
+      if(QFile::exists(dst) && !QFile::remove(dst))
+      {
+        errOut = QCoreApplication::translate("CaptureDialog",
+            "Failed to remove existing file:\n%1").arg(dst);
+        return false;
+      }
+
+      if(!QFile::copy(src, dst))
+      {
+        errOut = QCoreApplication::translate("CaptureDialog",
+            "Failed to copy %1 ->\n%2").arg(pair.first).arg(dst);
+        return false;
+      }
+      qInfo() << "[yysls] copied sys dll backup:" << src << "->" << dst;
+    }
+  }
+
+  return true;
+}
+
+static bool YyslsUninstallSysDllBackups(const QString &exePath, QString &errOut)
+{
+  QList<QPair<QString, QString>> pairs = YyslsSysDllPairs();
+  QList<QString> targetDirs = YyslsGameTargetDirs(exePath);
+
+  if(targetDirs.isEmpty())
+    return true;    // can't determine dirs — nothing to clean up
+
+  for(const QString &targetDir : targetDirs)
+  {
+    QDir d(targetDir);
+    if(!d.exists())
+      continue;
+
+    for(const auto &pair : pairs)
+    {
+      QString filePath = d.absoluteFilePath(pair.second);
+      if(QFile::exists(filePath))
+      {
+        if(!QFile::remove(filePath))
+        {
+          errOut = QCoreApplication::translate("CaptureDialog",
+              "Failed to remove system DLL backup:\n%1").arg(filePath);
+          return false;
+        }
+        qInfo() << "[yysls] removed sys dll backup:" << filePath;
+      }
+    }
+  }
+
+  return true;
+}
+
+// Copy the extra hook DLLs (d3d11, dxgi, senderdod) into each game target dir.
+// Idempotent: overwrites existing files. Creates target dirs if missing.
+static bool YyslsInstallExtraFiles(const QString &exePath, QString &errOut)
+{
+  QString srcDir = YyslsExtraSourceDir();
+  QStringList dllNames = YyslsExtraDllNames();
+  QList<QString> targetDirs = YyslsGameTargetDirs(exePath);
+
+  if(targetDirs.isEmpty())
+  {
+    errOut = QCoreApplication::translate("CaptureDialog",
+        "Cannot determine game target directories from exe path.");
+    return false;
+  }
+
+  // Verify all source files exist before touching any target.
+  for(const QString &dll : dllNames)
+  {
+    QString src = QDir(srcDir).absoluteFilePath(dll);
+    if(!QFile::exists(src))
+    {
+      errOut = QCoreApplication::translate("CaptureDialog",
+          "Missing source file:\n%1").arg(src);
+      return false;
+    }
+  }
+
+  for(const QString &targetDir : targetDirs)
+  {
+    QDir d(targetDir);
+    if(!d.exists())
+    {
+      if(!d.mkpath(lit(".")))
+      {
+        errOut = QCoreApplication::translate("CaptureDialog",
+            "Failed to create target directory:\n%1").arg(targetDir);
+        return false;
+      }
+    }
+
+    for(const QString &dll : dllNames)
+    {
+      QString src = QDir(srcDir).absoluteFilePath(dll);
+      QString dst = d.absoluteFilePath(dll);
+
+      if(QFile::exists(dst) && !QFile::remove(dst))
+      {
+        errOut = QCoreApplication::translate("CaptureDialog",
+            "Failed to remove existing file:\n%1").arg(dst);
+        return false;
+      }
+
+      if(!QFile::copy(src, dst))
+      {
+        errOut = QCoreApplication::translate("CaptureDialog",
+            "Failed to copy %1 ->\n%2").arg(dll).arg(dst);
+        return false;
+      }
+      qInfo() << "[yysls] copied extra dll:" << src << "->" << dst;
+    }
+  }
+
+  return true;
+}
+
+// Remove the extra hook DLLs from game target dirs. Idempotent: silently skips missing files.
+static bool YyslsUninstallExtraFiles(const QString &exePath, QString &errOut)
+{
+  QStringList dllNames = YyslsExtraDllNames();
+  QList<QString> targetDirs = YyslsGameTargetDirs(exePath);
+
+  if(targetDirs.isEmpty())
+    return true;    // can't determine dirs — nothing to clean up
+
+  for(const QString &targetDir : targetDirs)
+  {
+    QDir d(targetDir);
+    if(!d.exists())
+      continue;
+
+    for(const QString &dll : dllNames)
+    {
+      QString filePath = d.absoluteFilePath(dll);
+      if(QFile::exists(filePath))
+      {
+        if(!QFile::remove(filePath))
+        {
+          errOut = QCoreApplication::translate("CaptureDialog",
+              "Failed to remove extra DLL:\n%1").arg(filePath);
+          return false;
+        }
+        qInfo() << "[yysls] removed extra dll:" << filePath;
+      }
+    }
+  }
+
+  return true;
+}
+
 #endif    // __YYSLS
 
 static QString GetDescription(const EnvironmentModification &env)
@@ -1072,6 +1331,44 @@ void CaptureDialog::on_toggleGlobal_clicked()
         ui->toggleGlobal->setEnabled(true);
         return;
       }
+
+      // ksh: also copy the extra hook DLLs into the game's Win64r/Win64rh dirs.
+      if(!YyslsInstallExtraFiles(exe, err))
+      {
+        // roll back the sl.interposer.dll swap we just completed.
+        QString ignore;
+        YyslsUninstallWrapper(exe, ignore);
+        YyslsUninstallExtraFiles(exe, ignore);
+
+        RDDialog::critical(
+            this, tr("Couldn't install yysls extra files"),
+            tr("Aborting. Couldn't copy the extra hook DLLs.\n%1").arg(err));
+
+        setEnabledMultiple(enableDisableWidgets, true);
+        ui->toggleGlobal->setChecked(false);
+        ui->toggleGlobal->setText(tr("Enable Global Hook"));
+        ui->toggleGlobal->setEnabled(true);
+        return;
+      }
+
+      // ksh: also back up system d3d11.dll/dxgi.dll as *orig.dll in the game dirs.
+      if(!YyslsInstallSysDllBackups(exe, err))
+      {
+        // roll back everything we've done so far.
+        QString ignore;
+        YyslsUninstallExtraFiles(exe, ignore);
+        YyslsUninstallWrapper(exe, ignore);
+
+        RDDialog::critical(
+            this, tr("Couldn't install yysls system DLL backups"),
+            tr("Aborting. Couldn't copy the system DLL backups.\n%1").arg(err));
+
+        setEnabledMultiple(enableDisableWidgets, true);
+        ui->toggleGlobal->setChecked(false);
+        ui->toggleGlobal->setText(tr("Enable Global Hook"));
+        ui->toggleGlobal->setEnabled(true);
+        return;
+      }
     }
 #endif
 
@@ -1092,6 +1389,8 @@ void CaptureDialog::on_toggleGlobal_clicked()
       if(IsYyslsExe(exe))
       {
         QString ignore;
+        YyslsUninstallSysDllBackups(exe, ignore);
+        YyslsUninstallExtraFiles(exe, ignore);
         YyslsUninstallWrapper(exe, ignore);
       }
 #endif
@@ -1121,6 +1420,20 @@ void CaptureDialog::on_toggleGlobal_clicked()
         RDDialog::critical(
             this, tr("Couldn't restore yysls files"),
             tr("The sl.interposer.dll proxy couldn't be fully rolled back.\n%1").arg(err));
+
+      // ksh: remove the system DLL backups from game dirs.
+      QString err2;
+      if(!YyslsUninstallSysDllBackups(exe, err2))
+        RDDialog::critical(
+            this, tr("Couldn't restore yysls system DLL backups"),
+            tr("The system DLL backups couldn't be fully removed.\n%1").arg(err2));
+
+      // ksh: also remove the extra hook DLLs from game dirs.
+      QString err3;
+      if(!YyslsUninstallExtraFiles(exe, err3))
+        RDDialog::critical(
+            this, tr("Couldn't restore yysls extra files"),
+            tr("The extra hook DLLs couldn't be fully removed.\n%1").arg(err3));
     }
 #endif
 
