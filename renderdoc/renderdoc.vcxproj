@@ -187,6 +187,7 @@
     <ClInclude Include="api\app\renderdoc_app.h" />
     <ClInclude Include="api\replay\apidefs.h" />
     <ClInclude Include="api\replay\rdcdatetime.h" />
+    <ClInclude Include="api\replay\capture_hooking.h" />
     <ClInclude Include="api\replay\capture_options.h" />
     <ClInclude Include="api\replay\common_pipestate.h" />
     <ClInclude Include="api\replay\control_types.h" />

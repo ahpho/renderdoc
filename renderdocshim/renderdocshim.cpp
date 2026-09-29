@@ -53,9 +53,9 @@ typedef void(__cdecl *pINTERNAL_SetDebugLogFile)(const char *logfile);
   } while(0)
 #endif
 
-#define __YYSLS 1
+#define ENABLE_WILDCARD_GLOBAL_HOOK_MATCH 1
 
-#if __YYSLS
+#if ENABLE_WILDCARD_GLOBAL_HOOK_MATCH
 // no-CRT wildcard substring match (case-insensitive).
 // Pattern uses '*' which matches any characters including path separators.
 // Returns true if 'pat' matches some substring of 'path'.
@@ -207,8 +207,8 @@ void CheckHook()
 
     GetModuleFileNameW(NULL, exepath, exepathLen - 1);
 
-#if __YYSLS
-    // ksh: Wildcard match, falls back to plain substring if no '*' in pattern
+#if ENABLE_WILDCARD_GLOBAL_HOOK_MATCH
+    // Wildcard match, falling back to a plain substring if the pattern has no '*'.
     int find = WildcardMatchOrdinal(exepath, data->pathmatchstring) ? 0 : -1;
 #else
     // no str*cmp functions

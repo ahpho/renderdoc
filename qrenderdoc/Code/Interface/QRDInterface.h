@@ -117,6 +117,13 @@ struct CaptureSettings
 :type: bool
 )");
   bool autoStart;
+  DOCUMENT(R"(``True`` to preload the Windows graphics modules and redirect their export tables
+before the launched application starts. This compatibility mode only applies when launching a
+Windows executable.
+
+:type: bool
+)");
+  bool earlyExportTableHooks;
   DOCUMENT(R"(The path to the executable to run.
 
 :type: str

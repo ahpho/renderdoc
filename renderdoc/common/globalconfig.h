@@ -203,7 +203,7 @@ enum
 #define OUTPUT_LOG_TO_DEBUG_OUT OPTION_ON
 
 // logs go to printf
-#define OUTPUT_LOG_TO_PRINTF OPTION_OFF
+#define OUTPUT_LOG_TO_PRINTF OPTION_ON
 
 // logs go to disk
 #define OUTPUT_LOG_TO_DISK OPTION_ON

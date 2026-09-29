@@ -73,6 +73,7 @@ CaptureSettings::CaptureSettings()
 {
   inject = false;
   autoStart = false;
+  earlyExportTableHooks = false;
   queuedFrameCap = 0;
   numQueuedFrames = 0;
   SENDERDOD_GetDefaultCaptureOptions(&options);
@@ -84,6 +85,7 @@ CaptureSettings::operator QVariant() const
 
   ret[lit("inject")] = inject;
   ret[lit("autoStart")] = autoStart;
+  ret[lit("earlyExportTableHooks")] = earlyExportTableHooks;
 
   ret[lit("executable")] = executable;
   ret[lit("workingDir")] = workingDir;
@@ -121,6 +123,7 @@ CaptureSettings::CaptureSettings(const QVariant &v)
 
   inject = data[lit("inject")].toBool();
   autoStart = data[lit("autoStart")].toBool();
+  earlyExportTableHooks = data[lit("earlyExportTableHooks")].toBool();
 
   executable = data[lit("executable")].toString();
   workingDir = data[lit("workingDir")].toString();

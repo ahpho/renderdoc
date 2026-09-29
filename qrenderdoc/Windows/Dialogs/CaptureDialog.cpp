@@ -31,6 +31,7 @@
 #include <QStandardPaths>
 #include "Code/QRDUtils.h"
 #include "Code/qprocessinfo.h"
+#include "capture_hooking.h"
 #include "Windows/Dialogs/EnvironmentEditor.h"
 #include "Windows/Dialogs/VirtualFileDialog.h"
 #include "Windows/MainWindow.h"
@@ -41,16 +42,19 @@
 
 #define JSON_ID "rdocCaptureSettings"
 #define JSON_VER 1
-#define __YYSLS 1
+#define ENABLE_PROXY_CAPTURE 1
 
-#if __YYSLS
-// ksh: yysls (the game whose exe is yysls.exe) uses a packed exe + NVIDIA Streamline whose
-// interposer walks the export table manually, defeating RenderDoc's IAT/GetProcAddress hooks. The
-// only way we found to capture it is to replace the game's sl.interposer.dll with our
-// proxy DLL (which forwards D3D12/DXGI through normal GetProcAddress so our hooks fire).
-// These helpers automate the manual "rename + copy" we validated by hand, driven from the
-// Enable/Disable Global Hook button. See tools/FakeD3dDll/sl-interposer-wrapper.
+#if ENABLE_PROXY_CAPTURE
+// Some packed games resolve D3D/DXGI entry points through NVIDIA Streamline, bypassing RenderDoc's
+// normal IAT/GetProcAddress hooks. The legacy global-hook proxy set handles the known target here.
+// See tools/FakeD3dDll for the legacy proxy implementation.
 // (lit()/QStringLiteral needs a literal, so these are functions not char* constants.)
+enum class ProxyCaptureMode
+{
+  Disabled,
+  FullGraphicsProxy,
+};
+
 static QString SlDllName()
 {
   return lit("sl.interposer.dll");
@@ -73,7 +77,7 @@ static bool WildcardMatch(const QString &text, const QString &pattern)
     if(c.unicode() == '*')
       rx.append(QLatin1String(".*"));
     else if(c.unicode() == '?')
-      rx.append(QLatin1Char('?'));
+      rx.append(QLatin1Char('.'));
     else
       rx.append(QRegularExpression::escape(QString(c)));
   }
@@ -81,50 +85,94 @@ static bool WildcardMatch(const QString &text, const QString &pattern)
   return re.match(text).hasMatch();
 }
 
-// True if exePath's filename is yysls.exe (case-insensitive).
-// Supports '*' in the filename portion of the path (e.g. "yysl*.exe").
-static bool IsYyslsExe(const QString &exePath)
+// Locate the game root for the supported legacy proxy layout.
+// The path may contain a wildcard in a directory component when it is used for global hooking.
+static QString ProxyCaptureGameRoot(const QString &exePath)
+{
+  QString normalPath = exePath;
+  normalPath.replace(QLatin1Char('\\'), QLatin1Char('/'));
+  QString lowerPath = normalPath.toLower();
+
+  int anchorPos = lowerPath.indexOf(QString::fromLatin1("/engine/binaries/"));
+  if(anchorPos >= 0)
+    return normalPath.left(anchorPos);
+
+  return QString();
+}
+
+// Select the capture workaround for a known target.
+// Supports '*' and '?' in the filename portion of a global-hook path.
+static ProxyCaptureMode ProxyCaptureModeForTarget(const QString &exePath)
 {
   QString fn = QFileInfo(exePath).fileName();
-  if(fn.contains(QLatin1Char('*')))
-    return WildcardMatch(fn, QString::fromLatin1("yysls.exe"));
-  return fn.compare(QString::fromLatin1("yysls.exe"), Qt::CaseInsensitive) == 0;
+  bool hasWildcard = fn.contains(QLatin1Char('*')) || fn.contains(QLatin1Char('?'));
+  bool fullProxyTarget =
+      hasWildcard ? WildcardMatch(QString::fromLatin1("yysls.exe"), fn)
+                  : fn.compare(QString::fromLatin1("yysls.exe"), Qt::CaseInsensitive) == 0;
+
+  if(fullProxyTarget)
+    return ProxyCaptureMode::FullGraphicsProxy;
+
+  return ProxyCaptureMode::Disabled;
+}
+
+static bool IsProxyCaptureTarget(const QString &exePath)
+{
+  return ProxyCaptureModeForTarget(exePath) != ProxyCaptureMode::Disabled;
+}
+
+static bool ProxyCaptureUsesStreamlineProxy(ProxyCaptureMode mode)
+{
+  return mode == ProxyCaptureMode::FullGraphicsProxy;
+}
+
+static bool ProxyCaptureUsesFullGraphicsProxy(ProxyCaptureMode mode)
+{
+  return mode == ProxyCaptureMode::FullGraphicsProxy;
+}
+
+static bool ProxyCaptureUsesSenderDODBootstrap(ProxyCaptureMode mode)
+{
+  return mode == ProxyCaptureMode::FullGraphicsProxy;
+}
+
+static const char *ProxyCaptureModeName(ProxyCaptureMode mode)
+{
+  switch(mode)
+  {
+    case ProxyCaptureMode::FullGraphicsProxy: return "full-graphics-proxy";
+    default: break;
+  }
+
+  return "disabled";
 }
 
 // Absolute path to our proxy sl.interposer.dll shipped alongside qrenderdoc, under the
 // per-game tool folder. This source file is saved as UTF-8 with BOM so MSVC parses the
 // Chinese literal correctly. Edit the folder name here directly if the layout changes.
-static QString YyslsWrapperSource()
+static QString ProxyCaptureWrapperSource()
 {
   QString src = QDir(qApp->applicationDirPath())
                     .absoluteFilePath(lit("工具在这里/《燕云十六声》PC版/") + SlDllName());
-  qInfo() << "[yysls] wrapper source:" << src << "exists=" << QFile::exists(src);
+  qInfo() << "[proxy-capture] wrapper source:" << src << "exists=" << QFile::exists(src);
   return src;
 }
 
-// Candidate Streamline dirs under the yysls game root, derived from the exe path.
-// Handles '*' wildcards in the exe path by locating the "Engine/Binaries/" anchor
-// to derive the game root, instead of relying on cdUp().
-static QList<QString> YyslsStreamlineDirs(const QString &exePath)
+// Candidate Streamline dirs under the game root, derived from the executable path.
+static QList<QString> ProxyCaptureStreamlineDirs(const QString &exePath)
 {
   QList<QString> dirs;
 
-  // Find the game root by locating "Engine/Binaries/" in the exe path (case-insensitive).
-  // This works even when the path contains wildcards like "Win64r*".
-  QString normalPath = exePath;
-  normalPath.replace(QLatin1Char('\\'), QLatin1Char('/'));
-  QString lowerPath = normalPath.toLower();
-  int anchorPos = lowerPath.indexOf(QString::fromLatin1("/engine/binaries/"));
-  if(anchorPos < 0)
+  QString root = ProxyCaptureGameRoot(exePath);
+  if(root.isEmpty())
   {
-    qWarning() << "[yysls] can't find Engine/Binaries/ anchor in exe path:" << exePath;
+    qWarning() << "[proxy-capture] can't find Engine/Binaries anchor in exe path:" << exePath;
     return dirs;
   }
 
-  QString root = normalPath.left(anchorPos);
-  qInfo() << "[yysls] game root:" << root;
+  qInfo() << "[proxy-capture] game root:" << root;
 
-  // Four known Streamline dirs (two runtime + two BinPatch). Only existing dirs are used.
+  // Only existing directories are used.
   for(const char *sub : {
           "Engine/Binaries/Win64r/Streamline",
           "Engine/Binaries/Win64rh/Streamline",
@@ -134,7 +182,7 @@ static QList<QString> YyslsStreamlineDirs(const QString &exePath)
   {
     QString path = QDir(root).absoluteFilePath(QString::fromLatin1(sub));
     bool exists = QDir(path).exists();
-    qInfo() << "[yysls] streamline dir:" << path << "exists=" << exists;
+    qInfo() << "[proxy-capture] streamline dir:" << path << "exists=" << exists;
     if(exists)
       dirs.push_back(path);
   }
@@ -147,13 +195,14 @@ static QList<QString> YyslsStreamlineDirs(const QString &exePath)
 //     (previous enable / crash) -> do NOT rename again (would clobber the real backup);
 //     just overwrite sl.interposer.dll with our proxy.
 //   - otherwise rename the real sl.interposer.dll -> slinterposerorig.dll, then copy proxy in.
-static bool YyslsInstallDir(const QString &dir, const QString &wrapperSrc, QString &errOut)
+static bool ProxyCaptureInstallDir(const QString &dir, const QString &wrapperSrc, QString &errOut)
 {
   QDir d(dir);
   const QString sl = d.absoluteFilePath(SlDllName());
   const QString orig = d.absoluteFilePath(SlOrigName());
 
-  qInfo() << "[yysls] install into" << dir << "; orig-backup exists=" << QFile::exists(orig)
+  qInfo() << "[proxy-capture] install into" << dir
+          << "; orig-backup exists=" << QFile::exists(orig)
           << "; sl exists=" << QFile::exists(sl);
 
   if(!QFile::exists(orig))
@@ -171,7 +220,7 @@ static bool YyslsInstallDir(const QString &dir, const QString &wrapperSrc, QStri
           QCoreApplication::translate("CaptureDialog", "Failed to rename %1 -> %2").arg(sl).arg(orig);
       return false;
     }
-    qInfo() << "[yysls] backed up real interposer ->" << orig;
+    qInfo() << "[proxy-capture] backed up real interposer ->" << orig;
   }
 
   // (over)write our proxy as sl.interposer.dll
@@ -188,12 +237,12 @@ static bool YyslsInstallDir(const QString &dir, const QString &wrapperSrc, QStri
     return false;
   }
 
-  qInfo() << "[yysls] copied proxy ->" << sl;
+  qInfo() << "[proxy-capture] copied proxy ->" << sl;
   return true;
 }
 
 // Roll back one Streamline dir (idempotent): delete our proxy, restore the real interposer.
-static bool YyslsUninstallDir(const QString &dir, QString &errOut)
+static bool ProxyCaptureUninstallDir(const QString &dir, QString &errOut)
 {
   QDir d(dir);
   const QString sl = d.absoluteFilePath(SlDllName());
@@ -220,7 +269,8 @@ static bool YyslsUninstallDir(const QString &dir, QString &errOut)
 
 // Install the proxy into all existing Streamline dirs. On failure, rolls back the dirs
 // already done. Returns false + errOut on error.
-static bool YyslsInstallWrapper(const QString &exePath, const QString &wrapperSrc, QString &errOut)
+static bool ProxyCaptureInstallWrapper(const QString &exePath, const QString &wrapperSrc,
+                                       QString &errOut)
 {
   if(!QFile::exists(wrapperSrc))
   {
@@ -228,23 +278,23 @@ static bool YyslsInstallWrapper(const QString &exePath, const QString &wrapperSr
     return false;
   }
 
-  QList<QString> dirs = YyslsStreamlineDirs(exePath);
+  QList<QString> dirs = ProxyCaptureStreamlineDirs(exePath);
   if(dirs.isEmpty())
   {
-    errOut = QCoreApplication::translate(
-        "CaptureDialog", "No Streamline directory found under the yysls game folder.");
+    errOut = QCoreApplication::translate("CaptureDialog",
+                                         "No supported Streamline directory found under the game folder.");
     return false;
   }
 
   QList<QString> done;
   for(const QString &dir : dirs)
   {
-    if(!YyslsInstallDir(dir, wrapperSrc, errOut))
+    if(!ProxyCaptureInstallDir(dir, wrapperSrc, errOut))
     {
       // roll back the ones we already changed
       QString ignore;
       for(const QString &d : done)
-        YyslsUninstallDir(d, ignore);
+        ProxyCaptureUninstallDir(d, ignore);
       return false;
     }
     done.push_back(dir);
@@ -254,41 +304,46 @@ static bool YyslsInstallWrapper(const QString &exePath, const QString &wrapperSr
 }
 
 // Roll back the proxy in all existing Streamline dirs.
-static bool YyslsUninstallWrapper(const QString &exePath, QString &errOut)
+static bool ProxyCaptureUninstallWrapper(const QString &exePath, QString &errOut)
 {
-  QList<QString> dirs = YyslsStreamlineDirs(exePath);
+  QList<QString> dirs = ProxyCaptureStreamlineDirs(exePath);
   for(const QString &dir : dirs)
   {
-    if(!YyslsUninstallDir(dir, errOut))
+    if(!ProxyCaptureUninstallDir(dir, errOut))
       return false;
   }
   return true;
 }
 
-// ksh: yysls extra dlls — copy d3d11.dll, dxgi.dll, senderdod.dll from the RenderDoc tools
-// folder to the game's Engine/Binaries/Win64r/ and Win64rh/ dirs so the game loads our hook DLLs.
-static QString YyslsExtraSourceDir()
+// Shared proxy binaries currently live in the original tool package for compatibility with
+// existing installations.
+static QString ProxyCaptureExtraSourceDir()
 {
   return QDir(qApp->applicationDirPath()).absoluteFilePath(lit("工具在这里/《燕云十六声》PC版"));
 }
 
-static QStringList YyslsExtraDllNames()
+static QStringList ProxyCaptureExtraDllNames(ProxyCaptureMode mode)
 {
-  return {lit("d3d11.dll"), lit("dxgi.dll"), lit("senderdod.dll")};
+  if(mode == ProxyCaptureMode::FullGraphicsProxy)
+    return {lit("d3d11.dll"), lit("dxgi.dll"), lit("senderdod.dll")};
+
+  return {};
 }
 
-// ksh: back up the real system d3d11.dll / dxgi.dll into the game dirs as *orig.dll so our
-// proxy DLLs can forward to them. We read from GetSystemDirectory() which returns the real
-// System32 (qrenderdoc is built 64-bit, so no WOW64 redirection).
-static QList<QPair<QString, QString>> YyslsSysDllPairs()
+// Back up the system DLLs used by the selected proxy set as *orig.dll. GetSystemDirectory()
+// resolves the native System32 because qrenderdoc is 64-bit.
+static QList<QPair<QString, QString>> ProxyCaptureSysDllPairs(ProxyCaptureMode mode)
 {
-  return {
-      {lit("d3d11.dll"), lit("d3d11orig.dll")},
-      {lit("dxgi.dll"), lit("dxgiorig.dll")},
-  };
+  if(mode == ProxyCaptureMode::FullGraphicsProxy)
+    return {
+        {lit("d3d11.dll"), lit("d3d11orig.dll")},
+        {lit("dxgi.dll"), lit("dxgiorig.dll")},
+    };
+
+  return {};
 }
 
-static QString YyslsSystem32Path()
+static QString ProxyCaptureSystem32Path()
 {
   QString sysRoot = QString::fromLocal8Bit(qgetenv("SystemRoot"));
   if(sysRoot.isEmpty())
@@ -296,23 +351,17 @@ static QString YyslsSystem32Path()
   return QDir(sysRoot).absoluteFilePath(QString::fromLatin1("System32"));
 }
 
-// Game target dirs derived from the exe path's Engine/Binaries/ anchor — same root logic as
-// YyslsStreamlineDirs but without the Streamline suffix.
-static QList<QString> YyslsGameTargetDirs(const QString &exePath)
+// Directories selected by the Windows loader for the legacy d3d11.dll/dxgi.dll proxy set.
+static QList<QString> ProxyCaptureTargetDirs(const QString &exePath)
 {
   QList<QString> dirs;
 
-  QString normalPath = exePath;
-  normalPath.replace(QLatin1Char('\\'), QLatin1Char('/'));
-  QString lowerPath = normalPath.toLower();
-  int anchorPos = lowerPath.indexOf(QString::fromLatin1("/engine/binaries/"));
-  if(anchorPos < 0)
+  QString root = ProxyCaptureGameRoot(exePath);
+  if(root.isEmpty())
   {
-    qWarning() << "[yysls] can't find Engine/Binaries/ anchor in exe path:" << exePath;
+    qWarning() << "[proxy-capture] can't find Engine/Binaries anchor in exe path:" << exePath;
     return dirs;
   }
-
-  QString root = normalPath.left(anchorPos);
 
   for(const char *sub : {
           "Engine/Binaries/Win64r",
@@ -326,13 +375,12 @@ static QList<QString> YyslsGameTargetDirs(const QString &exePath)
   return dirs;
 }
 
-// ksh: back up the real system d3d11.dll / dxgi.dll into the game dirs as *orig.dll so our
-// proxy DLLs can forward to them. We read from SystemRoot env var (always available on Windows).
-static bool YyslsInstallSysDllBackups(const QString &exePath, QString &errOut)
+static bool ProxyCaptureInstallSysDllBackups(const QString &exePath, ProxyCaptureMode mode,
+                                             QString &errOut)
 {
-  QString sys32 = YyslsSystem32Path();
-  QList<QPair<QString, QString>> pairs = YyslsSysDllPairs();
-  QList<QString> targetDirs = YyslsGameTargetDirs(exePath);
+  QString sys32 = ProxyCaptureSystem32Path();
+  QList<QPair<QString, QString>> pairs = ProxyCaptureSysDllPairs(mode);
+  QList<QString> targetDirs = ProxyCaptureTargetDirs(exePath);
 
   if(targetDirs.isEmpty())
   {
@@ -384,17 +432,19 @@ static bool YyslsInstallSysDllBackups(const QString &exePath, QString &errOut)
             "Failed to copy %1 ->\n%2").arg(pair.first).arg(dst);
         return false;
       }
-      qInfo() << "[yysls] copied sys dll backup:" << src << "->" << dst;
+      qInfo() << "[proxy-capture] copied sys dll backup:" << src << "->" << dst;
     }
   }
 
   return true;
 }
 
-static bool YyslsUninstallSysDllBackups(const QString &exePath, QString &errOut)
+static bool ProxyCaptureUninstallSysDllBackups(const QString &exePath, QString &errOut)
 {
-  QList<QPair<QString, QString>> pairs = YyslsSysDllPairs();
-  QList<QString> targetDirs = YyslsGameTargetDirs(exePath);
+  // Use the full list so this also removes files left by an older, broader proxy profile.
+  QList<QPair<QString, QString>> pairs =
+      ProxyCaptureSysDllPairs(ProxyCaptureMode::FullGraphicsProxy);
+  QList<QString> targetDirs = ProxyCaptureTargetDirs(exePath);
 
   if(targetDirs.isEmpty())
     return true;    // can't determine dirs — nothing to clean up
@@ -416,7 +466,7 @@ static bool YyslsUninstallSysDllBackups(const QString &exePath, QString &errOut)
               "Failed to remove system DLL backup:\n%1").arg(filePath);
           return false;
         }
-        qInfo() << "[yysls] removed sys dll backup:" << filePath;
+        qInfo() << "[proxy-capture] removed sys dll backup:" << filePath;
       }
     }
   }
@@ -424,13 +474,13 @@ static bool YyslsUninstallSysDllBackups(const QString &exePath, QString &errOut)
   return true;
 }
 
-// Copy the extra hook DLLs (d3d11, dxgi, senderdod) into each game target dir.
-// Idempotent: overwrites existing files. Creates target dirs if missing.
-static bool YyslsInstallExtraFiles(const QString &exePath, QString &errOut)
+// Copy the selected hook DLLs into each game target dir. Idempotent: overwrites existing files.
+static bool ProxyCaptureInstallExtraFiles(const QString &exePath, ProxyCaptureMode mode,
+                                          QString &errOut)
 {
-  QString srcDir = YyslsExtraSourceDir();
-  QStringList dllNames = YyslsExtraDllNames();
-  QList<QString> targetDirs = YyslsGameTargetDirs(exePath);
+  QString srcDir = ProxyCaptureExtraSourceDir();
+  QStringList dllNames = ProxyCaptureExtraDllNames(mode);
+  QList<QString> targetDirs = ProxyCaptureTargetDirs(exePath);
 
   if(targetDirs.isEmpty())
   {
@@ -482,7 +532,7 @@ static bool YyslsInstallExtraFiles(const QString &exePath, QString &errOut)
             "Failed to copy %1 ->\n%2").arg(dll).arg(dst);
         return false;
       }
-      qInfo() << "[yysls] copied extra dll:" << src << "->" << dst;
+      qInfo() << "[proxy-capture] copied extra dll:" << src << "->" << dst;
     }
   }
 
@@ -490,10 +540,10 @@ static bool YyslsInstallExtraFiles(const QString &exePath, QString &errOut)
 }
 
 // Remove the extra hook DLLs from game target dirs. Idempotent: silently skips missing files.
-static bool YyslsUninstallExtraFiles(const QString &exePath, QString &errOut)
+static bool ProxyCaptureUninstallExtraFiles(const QString &exePath, QString &errOut)
 {
-  QStringList dllNames = YyslsExtraDllNames();
-  QList<QString> targetDirs = YyslsGameTargetDirs(exePath);
+  QStringList dllNames = ProxyCaptureExtraDllNames(ProxyCaptureMode::FullGraphicsProxy);
+  QList<QString> targetDirs = ProxyCaptureTargetDirs(exePath);
 
   if(targetDirs.isEmpty())
     return true;    // can't determine dirs — nothing to clean up
@@ -515,7 +565,7 @@ static bool YyslsUninstallExtraFiles(const QString &exePath, QString &errOut)
               "Failed to remove extra DLL:\n%1").arg(filePath);
           return false;
         }
-        qInfo() << "[yysls] removed extra dll:" << filePath;
+        qInfo() << "[proxy-capture] removed extra dll:" << filePath;
       }
     }
   }
@@ -523,7 +573,7 @@ static bool YyslsUninstallExtraFiles(const QString &exePath, QString &errOut)
   return true;
 }
 
-#endif    // __YYSLS
+#endif    // ENABLE_PROXY_CAPTURE
 
 static QString GetDescription(const EnvironmentModification &env)
 {
@@ -725,6 +775,7 @@ CaptureDialog::~CaptureDialog()
 void CaptureDialog::SetInjectMode(bool inject)
 {
   m_Inject = inject;
+  ui->EarlyExportTableHooks->setEnabled(!inject);
 
   if(inject)
   {
@@ -1257,6 +1308,18 @@ void CaptureDialog::on_toggleGlobal_clicked()
 
   if(ui->toggleGlobal->isChecked())
   {
+    if(ui->EarlyExportTableHooks->isChecked())
+    {
+      RDDialog::information(
+          this, tr("Use Launch for early export table hooks"),
+          tr("Early export table hooks require RenderDoc to launch and inject into the process "
+             "while it is still suspended."));
+
+      ui->toggleGlobal->setChecked(false);
+      ui->toggleGlobal->setEnabled(true);
+      return;
+    }
+
     if(!IsRunningAsAdmin())
     {
       QMessageBox::StandardButton res = RDDialog::question(
@@ -1311,18 +1374,20 @@ void CaptureDialog::on_toggleGlobal_clicked()
 
     QString exe = ui->exePath->text();
 
-#if __YYSLS
-    // ksh: for yysls, swap in our proxy sl.interposer.dll before starting the hook. This runs
-    // after the admin-elevation check above, so we have the rights to write into the game dir.
-    qInfo() << "[yysls] Enable: exe=" << exe << "isYysls=" << IsYyslsExe(exe)
-            << "admin=" << IsRunningAsAdmin();
-    if(IsYyslsExe(exe))
+#if ENABLE_PROXY_CAPTURE
+    // Install the proxy set before starting the global hook. This runs after the admin-elevation
+    // check above, so the game directories are writable.
+    ProxyCaptureMode proxyMode = ProxyCaptureModeForTarget(exe);
+    qInfo() << "[proxy-capture] Enable: exe=" << exe
+            << "mode=" << ProxyCaptureModeName(proxyMode) << "admin=" << IsRunningAsAdmin();
+    if(proxyMode != ProxyCaptureMode::Disabled)
     {
       QString err;
-      if(!YyslsInstallWrapper(exe, YyslsWrapperSource(), err))
+      if(ProxyCaptureUsesStreamlineProxy(proxyMode) &&
+         !ProxyCaptureInstallWrapper(exe, ProxyCaptureWrapperSource(), err))
       {
         RDDialog::critical(
-            this, tr("Couldn't install yysls capture proxy"),
+            this, tr("Couldn't install graphics capture proxy"),
             tr("Aborting. Couldn't install the sl.interposer.dll proxy.\n%1").arg(err));
 
         setEnabledMultiple(enableDisableWidgets, true);
@@ -1332,16 +1397,17 @@ void CaptureDialog::on_toggleGlobal_clicked()
         return;
       }
 
-      // ksh: also copy the extra hook DLLs into the game's Win64r/Win64rh dirs.
-      if(!YyslsInstallExtraFiles(exe, err))
+      // The legacy full-proxy profile also needs D3D/DXGI DLLs in its runtime directories.
+      if(ProxyCaptureUsesSenderDODBootstrap(proxyMode) &&
+         !ProxyCaptureInstallExtraFiles(exe, proxyMode, err))
       {
         // roll back the sl.interposer.dll swap we just completed.
         QString ignore;
-        YyslsUninstallWrapper(exe, ignore);
-        YyslsUninstallExtraFiles(exe, ignore);
+        ProxyCaptureUninstallWrapper(exe, ignore);
+        ProxyCaptureUninstallExtraFiles(exe, ignore);
 
         RDDialog::critical(
-            this, tr("Couldn't install yysls extra files"),
+            this, tr("Couldn't install graphics capture proxy files"),
             tr("Aborting. Couldn't copy the extra hook DLLs.\n%1").arg(err));
 
         setEnabledMultiple(enableDisableWidgets, true);
@@ -1351,16 +1417,17 @@ void CaptureDialog::on_toggleGlobal_clicked()
         return;
       }
 
-      // ksh: also back up system d3d11.dll/dxgi.dll as *orig.dll in the game dirs.
-      if(!YyslsInstallSysDllBackups(exe, err))
+      // Back up the system DLLs needed by the full proxy set.
+      if(ProxyCaptureUsesFullGraphicsProxy(proxyMode) &&
+         !ProxyCaptureInstallSysDllBackups(exe, proxyMode, err))
       {
         // roll back everything we've done so far.
         QString ignore;
-        YyslsUninstallExtraFiles(exe, ignore);
-        YyslsUninstallWrapper(exe, ignore);
+        ProxyCaptureUninstallExtraFiles(exe, ignore);
+        ProxyCaptureUninstallWrapper(exe, ignore);
 
         RDDialog::critical(
-            this, tr("Couldn't install yysls system DLL backups"),
+            this, tr("Couldn't install graphics capture system DLL backups"),
             tr("Aborting. Couldn't copy the system DLL backups.\n%1").arg(err));
 
         setEnabledMultiple(enableDisableWidgets, true);
@@ -1384,14 +1451,14 @@ void CaptureDialog::on_toggleGlobal_clicked()
                             "%1")
                              .arg(success.Message()));
 
-#if __YYSLS
-      // ksh: roll back the yysls proxy swap we just did, so we don't leave a half-installed state.
-      if(IsYyslsExe(exe))
+#if ENABLE_PROXY_CAPTURE
+      // Roll back the proxy deployment so a failed hook never leaves a half-installed state.
+      if(IsProxyCaptureTarget(exe))
       {
         QString ignore;
-        YyslsUninstallSysDllBackups(exe, ignore);
-        YyslsUninstallExtraFiles(exe, ignore);
-        YyslsUninstallWrapper(exe, ignore);
+        ProxyCaptureUninstallSysDllBackups(exe, ignore);
+        ProxyCaptureUninstallExtraFiles(exe, ignore);
+        ProxyCaptureUninstallWrapper(exe, ignore);
       }
 #endif
 
@@ -1410,29 +1477,31 @@ void CaptureDialog::on_toggleGlobal_clicked()
     if(SENDERDOD_IsGlobalHookActive())
       SENDERDOD_StopGlobalHook();
 
-#if __YYSLS
-    // ksh: restore the original sl.interposer.dll for yysls when disabling.
+#if ENABLE_PROXY_CAPTURE
+    // Restore the original DLLs when proxy capture is disabled.
     QString exe = ui->exePath->text();
-    if(IsYyslsExe(exe))
+    if(IsProxyCaptureTarget(exe))
     {
       QString err;
-      if(!YyslsUninstallWrapper(exe, err))
+      // Always try this during cleanup so upgrades restore a Streamline proxy installed by an
+      // older profile, even if the current profile no longer uses it.
+      if(!ProxyCaptureUninstallWrapper(exe, err))
         RDDialog::critical(
-            this, tr("Couldn't restore yysls files"),
+            this, tr("Couldn't restore graphics capture proxy files"),
             tr("The sl.interposer.dll proxy couldn't be fully rolled back.\n%1").arg(err));
 
-      // ksh: remove the system DLL backups from game dirs.
+      // Remove the system DLL backups from game dirs.
       QString err2;
-      if(!YyslsUninstallSysDllBackups(exe, err2))
+      if(!ProxyCaptureUninstallSysDllBackups(exe, err2))
         RDDialog::critical(
-            this, tr("Couldn't restore yysls system DLL backups"),
+            this, tr("Couldn't restore graphics capture system DLL backups"),
             tr("The system DLL backups couldn't be fully removed.\n%1").arg(err2));
 
-      // ksh: also remove the extra hook DLLs from game dirs.
+      // Remove the extra hook DLLs from game dirs.
       QString err3;
-      if(!YyslsUninstallExtraFiles(exe, err3))
+      if(!ProxyCaptureUninstallExtraFiles(exe, err3))
         RDDialog::critical(
-            this, tr("Couldn't restore yysls extra files"),
+            this, tr("Couldn't restore graphics capture proxy files"),
             tr("The extra hook DLLs couldn't be fully removed.\n%1").arg(err3));
     }
 #endif
@@ -1503,6 +1572,7 @@ void CaptureDialog::SetSettings(CaptureSettings settings)
 
   ui->AllowFullscreen->setChecked(settings.options.allowFullscreen);
   ui->AllowVSync->setChecked(settings.options.allowVSync);
+  ui->EarlyExportTableHooks->setChecked(settings.earlyExportTableHooks);
   ui->HookIntoChildren->setChecked(settings.options.hookIntoChildren);
   ui->CaptureCallstacks->setChecked(settings.options.captureCallstacks);
   ui->CaptureCallstacksOnlyActions->setChecked(settings.options.captureCallstacksOnlyActions);
@@ -1543,6 +1613,7 @@ CaptureSettings CaptureDialog::Settings()
   ret.inject = IsInjectMode();
 
   ret.autoStart = ui->AutoStart->isChecked();
+  ret.earlyExportTableHooks = ui->EarlyExportTableHooks->isChecked();
 
   ret.executable = ui->exePath->text();
   ret.workingDir = ui->workDirPath->text();
@@ -1802,6 +1873,21 @@ void CaptureDialog::TriggerCapture()
                 .arg(exe));
         return;
       }
+
+#if ENABLE_PROXY_CAPTURE
+      ProxyCaptureMode proxyMode = ProxyCaptureModeForTarget(exe);
+      if(ProxyCaptureUsesStreamlineProxy(proxyMode))
+      {
+        RDDialog::information(
+            this, tr("Use Global Hook for this game"),
+            tr("This game's packed graphics startup bypasses normal Launch injection. The target "
+               "control connection can be established, but no graphics API will be captured.\n\n"
+               "Click 'Enable Global Hook' instead, then start the game normally. This installs "
+               "the required graphics proxy set before the game starts. Disable Global "
+               "Hook after the game exits to restore the original files."));
+        return;
+      }
+#endif
     }
 
     QString workingDir = ui->workDirPath->text();
@@ -1840,7 +1926,13 @@ void CaptureDialog::TriggerCapture()
       }
     }
 
-    m_CaptureCallback(exe, workingDir, cmdLine, Settings().environment, Settings().options,
+    CaptureSettings settings = Settings();
+    settings.environment.push_back(EnvironmentModification(
+        EnvMod::Set, EnvSep::NoSep, CaptureHooking::StrategyEnvironmentVariable,
+        settings.earlyExportTableHooks ? CaptureHooking::EarlyExportTableStrategy
+                                       : CaptureHooking::StandardStrategy));
+
+    m_CaptureCallback(exe, workingDir, cmdLine, settings.environment, settings.options,
                       [this](LiveCapture *live) {
                         if(ui->queueFrameCap->isChecked())
                           live->QueueCapture((int)ui->queuedFrame->value(),

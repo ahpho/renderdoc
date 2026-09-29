@@ -29,6 +29,7 @@
 #include <Psapi.h>
 #include <tchar.h>
 #include <tlhelp32.h>
+#include "api/replay/capture_hooking.h"
 #include "common/formatting.h"
 #include "core/core.h"
 #include "os/os_specific.h"
@@ -396,6 +397,57 @@ uintptr_t FindRemoteDLL(DWORD pid, rdcstr libName)
   CloseHandle(hModuleSnap);
 
   return ret;
+}
+
+static bool EarlyExportTableHooksRequested(
+    const rdcarray<EnvironmentModification> &environmentModifications)
+{
+  for(size_t i = environmentModifications.size(); i > 0; --i)
+  {
+    const EnvironmentModification &modification = environmentModifications[i - 1];
+    if(_stricmp(modification.name.c_str(), CaptureHooking::StrategyEnvironmentVariable) != 0)
+      continue;
+
+    return modification.mod == EnvMod::Set &&
+           _stricmp(modification.value.c_str(), CaptureHooking::EarlyExportTableStrategy) == 0;
+  }
+
+  return false;
+}
+
+static void PreloadEarlyExportTableHookModules(HANDLE hProcess, DWORD pid)
+{
+  wchar_t systemDirectory[MAX_PATH + 1] = {};
+  UINT systemDirectoryLength = GetSystemDirectoryW(systemDirectory, ARRAY_COUNT(systemDirectory));
+  if(systemDirectoryLength == 0 || systemDirectoryLength >= ARRAY_COUNT(systemDirectory))
+  {
+    RDCERR("[export-hook] Couldn't locate System32 for early module loading: 0x%08x",
+           GetLastError());
+    return;
+  }
+
+  const wchar_t *moduleNames[] = {L"dxgi.dll", L"d3d12.dll"};
+  for(const wchar_t *moduleName : moduleNames)
+  {
+    wchar_t fullPath[MAX_PATH + 1] = {};
+    const wchar_t *separator =
+        systemDirectory[systemDirectoryLength - 1] == L'\\' ? L"" : L"\\";
+    int pathLength = swprintf_s(fullPath, ARRAY_COUNT(fullPath), L"%ls%ls%ls", systemDirectory,
+                                separator, moduleName);
+    if(pathLength < 0)
+    {
+      RDCERR("[export-hook] System module path is too long for %ls", moduleName);
+      continue;
+    }
+
+    InjectDLL(hProcess, rdcwstr(fullPath));
+
+    uintptr_t module = FindRemoteDLL(pid, StringFormat::Wide2UTF8(moduleName));
+    if(module)
+      RDCLOG("[export-hook] Early-loaded %ls into PID %u at %p", moduleName, pid, (void *)module);
+    else
+      RDCERR("[export-hook] Couldn't early-load %ls into PID %u", moduleName, pid);
+  }
 }
 
 void InjectFunctionCall(HANDLE hProcess, uintptr_t renderdoc_remote, const char *funcName,
@@ -1154,6 +1206,8 @@ rdcpair<RDResult, uint32_t> Process::LaunchAndInjectIntoProcess(
     return {result, 0};
   }
 
+  const bool earlyExportTableHooks = EarlyExportTableHooksRequested(env);
+
   PROCESS_INFORMATION pi = RunProcess(app, workingDir, cmdLine, env, false, NULL, NULL);
 
   if(pi.dwProcessId == 0)
@@ -1162,6 +1216,9 @@ rdcpair<RDResult, uint32_t> Process::LaunchAndInjectIntoProcess(
     SET_ERROR_RESULT(result, ResultCode::InjectionFailed, "Failed to launch process.");
     return {result, 0};
   }
+
+  if(earlyExportTableHooks)
+    PreloadEarlyExportTableHookModules(pi.hProcess, pi.dwProcessId);
 
   rdcpair<RDResult, uint32_t> ret = InjectIntoProcess(pi.dwProcessId, {}, capturefile, opts, false);
 

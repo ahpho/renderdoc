@@ -101,6 +101,7 @@ endif()
 set(sources
     api/app/renderdoc_app.h
     api/replay/apidefs.h
+    api/replay/capture_hooking.h
     api/replay/capture_options.h
     api/replay/common_pipestate.h
     api/replay/pipestate.h

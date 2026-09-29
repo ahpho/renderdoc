@@ -380,6 +380,16 @@
        </widget>
       </item>
       <item>
+       <widget class="QCheckBox" name="EarlyExportTableHooks">
+        <property name="toolTip">
+         <string>On Windows, preload the graphics modules and redirect their export tables before the application starts. Enable only when normal hooking does not capture the graphics API.</string>
+        </property>
+        <property name="text">
+         <string>Early Export Table Hooks</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QFrame" name="DebuggerDelayFrame">
         <property name="sizePolicy">
          <sizepolicy hsizetype="Fixed" vsizetype="Preferred">

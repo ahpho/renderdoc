@@ -31,6 +31,7 @@
 #include <functional>
 #include <map>
 #include <set>
+#include "api/replay/capture_hooking.h"
 #include "common/common.h"
 #include "common/threading.h"
 #include "hooks/hooks.h"
@@ -41,6 +42,18 @@
 
 // map from address of IAT entry, to original contents
 std::map<void **, void *> s_InstalledHooks;
+// map from address of EAT entry, to its original relative virtual address. These hooks are only
+// enabled for targets whose loader walks export tables directly and therefore bypasses both IAT
+// patching and Hooked_GetProcAddress.
+std::map<DWORD *, DWORD> s_InstalledExportHooks;
+
+struct ExportRelayBlock
+{
+  void *memory = NULL;
+  SIZE_T size = 0;
+};
+
+rdcarray<ExportRelayBlock> s_ExportRelayBlocks;
 Threading::CriticalSection installedLock;
 
 bool ApplyHook(FunctionHook &hook, void **IATentry, bool &already)
@@ -145,6 +158,237 @@ struct DllHookset
     }
   }
 };
+
+static bool EarlyExportTableHooksEnabled()
+{
+  static const bool enabled = []() {
+    char strategy[64] = {};
+    DWORD length = GetEnvironmentVariableA(CaptureHooking::StrategyEnvironmentVariable, strategy,
+                                           ARRAY_COUNT(strategy));
+    bool requested = length > 0 && length < ARRAY_COUNT(strategy) &&
+                     _stricmp(strategy, CaptureHooking::EarlyExportTableStrategy) == 0;
+
+    // This is a launch-only strategy. Do not let child processes inherit it when child-process
+    // hooking is enabled.
+    SetEnvironmentVariableA(CaptureHooking::StrategyEnvironmentVariable, NULL);
+    return requested;
+  }();
+
+  return enabled;
+}
+
+static bool SupportsEarlyExportTableHooks(const char *moduleName)
+{
+  return !_stricmp(moduleName, "d3d12.dll") || !_stricmp(moduleName, "d3d12core.dll") ||
+         !_stricmp(moduleName, "dxgi.dll") || !_stricmp(moduleName, "sl.interposer.dll");
+}
+
+static void *AllocateExportRelayBlock(HMODULE module, SIZE_T requestedSize, SIZE_T &allocatedSize)
+{
+  SYSTEM_INFO sysInfo = {};
+  GetSystemInfo(&sysInfo);
+
+  allocatedSize =
+      (requestedSize + sysInfo.dwPageSize - 1) & ~(SIZE_T(sysInfo.dwPageSize) - 1);
+
+#if ENABLED(RDOC_X64)
+  // An EAT entry is a 32-bit unsigned RVA, so the relay must be at or above the image base and no
+  // more than 4GB away. Search free regions explicitly instead of relying on VirtualAlloc's hint.
+  const uintptr_t moduleBase = (uintptr_t)module;
+  const uintptr_t maxApplicationAddress = (uintptr_t)sysInfo.lpMaximumApplicationAddress;
+  const uintptr_t maxRVAAddress = moduleBase + uintptr_t(~DWORD(0));
+  const uintptr_t maxAddress = RDCMIN(maxApplicationAddress, maxRVAAddress);
+  uintptr_t search = moduleBase;
+
+  while(search < maxAddress && search + allocatedSize > search)
+  {
+    MEMORY_BASIC_INFORMATION memory = {};
+    if(VirtualQuery((void *)search, &memory, sizeof(memory)) == 0)
+      break;
+
+    uintptr_t regionBase = (uintptr_t)memory.BaseAddress;
+    uintptr_t regionEnd = regionBase + memory.RegionSize;
+    if(regionEnd <= search)
+      break;
+
+    if(memory.State == MEM_FREE)
+    {
+      uintptr_t candidate =
+          (regionBase + sysInfo.dwAllocationGranularity - 1) &
+          ~(uintptr_t(sysInfo.dwAllocationGranularity) - 1);
+
+      if(candidate >= moduleBase && candidate <= maxAddress &&
+         candidate + allocatedSize > candidate && candidate + allocatedSize <= regionEnd &&
+         candidate + allocatedSize - 1 <= maxAddress)
+      {
+        void *relay = VirtualAlloc((void *)candidate, allocatedSize, MEM_RESERVE | MEM_COMMIT,
+                                   PAGE_READWRITE);
+        if(relay)
+          return relay;
+      }
+    }
+
+    search = regionEnd;
+  }
+
+  return NULL;
+#else
+  // A 32-bit RVA can address the complete 32-bit process address space (with wrapping arithmetic).
+  return VirtualAlloc(NULL, allocatedSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+#endif
+}
+
+static void WriteExportRelay(byte *relay, void *hook)
+{
+#if ENABLED(RDOC_X64)
+  // ENDBR64; jmp qword ptr [rip+0]; <absolute 64-bit hook address>. The ENDBR instruction keeps the
+  // relay compatible with indirect-branch tracking and the jump preserves all registers.
+  const byte code[] = {0xf3, 0x0f, 0x1e, 0xfa, 0xff, 0x25, 0, 0, 0, 0};
+  memcpy(relay, code, sizeof(code));
+  memcpy(relay + sizeof(code), &hook, sizeof(hook));
+#else
+  // ENDBR32; mov eax, <hook>; jmp eax. EAX is volatile in the x86 ABI.
+  const byte code[] = {0xf3, 0x0f, 0x1e, 0xfb, 0xb8};
+  memcpy(relay, code, sizeof(code));
+  memcpy(relay + sizeof(code), &hook, sizeof(hook));
+  relay[sizeof(code) + sizeof(hook)] = 0xff;
+  relay[sizeof(code) + sizeof(hook) + 1] = 0xe0;
+#endif
+}
+
+static void ApplyExportTableHooks(const char *moduleName, HMODULE module, DllHookset &hookset)
+{
+  if(!EarlyExportTableHooksEnabled() || !SupportsEarlyExportTableHooks(moduleName))
+    return;
+
+  byte *baseAddress = (byte *)module;
+  PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)baseAddress;
+  if(dosHeader->e_magic != IMAGE_DOS_SIGNATURE)
+    return;
+
+  PIMAGE_NT_HEADERS ntHeader = (PIMAGE_NT_HEADERS)(baseAddress + dosHeader->e_lfanew);
+  if(ntHeader->Signature != IMAGE_NT_SIGNATURE)
+    return;
+
+  const IMAGE_DATA_DIRECTORY &exportData =
+      ntHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+  if(exportData.VirtualAddress == 0 || exportData.Size < sizeof(IMAGE_EXPORT_DIRECTORY))
+    return;
+
+  IMAGE_EXPORT_DIRECTORY *exports =
+      (IMAGE_EXPORT_DIRECTORY *)(baseAddress + exportData.VirtualAddress);
+  DWORD *names = (DWORD *)(baseAddress + exports->AddressOfNames);
+  WORD *ordinals = (WORD *)(baseAddress + exports->AddressOfNameOrdinals);
+  DWORD *functions = (DWORD *)(baseAddress + exports->AddressOfFunctions);
+
+  struct ExportHookTarget
+  {
+    DWORD *entry = NULL;
+    void *hook = NULL;
+    const char *name = NULL;
+  };
+
+  rdcarray<ExportHookTarget> targets;
+  for(DWORD nameIndex = 0; nameIndex < exports->NumberOfNames; nameIndex++)
+  {
+    WORD ordinal = ordinals[nameIndex];
+    if(ordinal >= exports->NumberOfFunctions)
+      continue;
+
+    const char *exportName = (const char *)(baseAddress + names[nameIndex]);
+    for(FunctionHook &hook : hookset.FunctionHooks)
+    {
+      if(hook.function == exportName)
+      {
+        DWORD *entry = functions + ordinal;
+        bool installed = false;
+        {
+          SCOPED_LOCK(installedLock);
+          installed = s_InstalledExportHooks.find(entry) != s_InstalledExportHooks.end();
+        }
+
+        if(!installed)
+          targets.push_back({entry, hook.hook, exportName});
+        break;
+      }
+    }
+  }
+
+  if(targets.empty())
+    return;
+
+  const SIZE_T relayStride = 32;
+  SIZE_T relayBlockSize = 0;
+  byte *relayBlock =
+      (byte *)AllocateExportRelayBlock(module, targets.size() * relayStride, relayBlockSize);
+  if(!relayBlock)
+  {
+    RDCERR("[export-hook] Couldn't allocate an EAT relay block near %s (%p)", moduleName, module);
+    return;
+  }
+
+  for(size_t i = 0; i < targets.size(); i++)
+    WriteExportRelay(relayBlock + i * relayStride, targets[i].hook);
+
+  DWORD oldRelayProtection = 0;
+  if(!VirtualProtect(relayBlock, relayBlockSize, PAGE_EXECUTE_READ, &oldRelayProtection))
+  {
+    RDCERR("[export-hook] Couldn't make the relay block executable for %s", moduleName);
+    VirtualFree(relayBlock, 0, MEM_RELEASE);
+    return;
+  }
+  FlushInstructionCache(GetCurrentProcess(), relayBlock, relayBlockSize);
+
+  bool anyInstalled = false;
+  for(size_t i = 0; i < targets.size(); i++)
+  {
+    byte *relay = relayBlock + i * relayStride;
+    uintptr_t relayDelta = (uintptr_t)relay - (uintptr_t)module;
+#if ENABLED(RDOC_X64)
+    if(relay < baseAddress || relayDelta > uintptr_t(~DWORD(0)))
+    {
+      RDCERR("[export-hook] Relay for %s!%s is outside EAT range", moduleName, targets[i].name);
+      continue;
+    }
+#endif
+
+    DWORD oldProtection = 0;
+    if(!VirtualProtect(targets[i].entry, sizeof(DWORD), PAGE_READWRITE, &oldProtection))
+    {
+      RDCERR("[export-hook] Couldn't make the EAT entry writable for %s!%s", moduleName,
+             targets[i].name);
+      continue;
+    }
+
+    bool install = false;
+    {
+      SCOPED_LOCK(installedLock);
+      if(s_InstalledExportHooks.find(targets[i].entry) == s_InstalledExportHooks.end())
+      {
+        s_InstalledExportHooks[targets[i].entry] = *targets[i].entry;
+        *targets[i].entry = (DWORD)relayDelta;
+        install = true;
+      }
+    }
+
+    VirtualProtect(targets[i].entry, sizeof(DWORD), oldProtection, &oldProtection);
+
+    if(install)
+    {
+      anyInstalled = true;
+      RDCLOG("[export-hook] Redirected %s!%s through relay %p", moduleName, targets[i].name,
+             relay);
+    }
+  }
+
+  if(anyInstalled)
+  {
+    SCOPED_LOCK(installedLock);
+    s_ExportRelayBlocks.push_back({relayBlock, relayBlockSize});
+  }
+  else
+    VirtualFree(relayBlock, 0, MEM_RELEASE);
+}
 
 struct CachedHookData
 {
@@ -261,6 +505,8 @@ struct CachedHookData
             it->second.module = module;
           }
         }
+
+        ApplyExportTableHooks(modName, module, it->second);
       }
     }
 
@@ -964,6 +1210,12 @@ void LibraryHooks::EndHookRegistration()
 
   HookAllModules();
 
+  // Resolving forwarded exports during the first pass can load D3D12Core after the module snapshot
+  // was taken. A second pass ensures its EAT is redirected before the application can obtain and
+  // cache a device creation pointer from it.
+  if(EarlyExportTableHooksEnabled())
+    HookAllModules();
+
   if(s_HookData->missedOrdinals)
   {
 #if ENABLED(VERBOSE_DEBUG_HOOK)
@@ -990,6 +1242,39 @@ void LibraryHooks::ReplayInitialise()
 void LibraryHooks::RemoveHooks()
 {
   LibraryHooks::RemoveHookCallbacks();
+
+  bool allExportHooksRestored = true;
+  for(auto it = s_InstalledExportHooks.begin(); it != s_InstalledExportHooks.end(); ++it)
+  {
+    DWORD oldProtection = PAGE_EXECUTE;
+    DWORD *EATentry = it->first;
+
+    BOOL success = VirtualProtect(EATentry, sizeof(DWORD), PAGE_READWRITE, &oldProtection);
+    if(!success)
+    {
+      RDCERR("Failed to make EAT entry writeable 0x%p", EATentry);
+      allExportHooksRestored = false;
+      continue;
+    }
+
+    *EATentry = it->second;
+
+    success = VirtualProtect(EATentry, sizeof(DWORD), oldProtection, &oldProtection);
+    if(!success)
+    {
+      RDCERR("Failed to restore EAT entry protection 0x%p", EATentry);
+      allExportHooksRestored = false;
+    }
+  }
+
+  s_InstalledExportHooks.clear();
+
+  // If an EAT entry couldn't be restored, keep its relay memory alive. Leaking a few pages during
+  // shutdown is safer than leaving an export pointing at freed memory.
+  if(allExportHooksRestored)
+    for(const ExportRelayBlock &block : s_ExportRelayBlocks)
+      VirtualFree(block.memory, 0, MEM_RELEASE);
+  s_ExportRelayBlocks.clear();
 
   for(auto it = s_InstalledHooks.begin(); it != s_InstalledHooks.end(); ++it)
   {

@@ -38,6 +38,7 @@ CaptureSettings::CaptureSettings()
 {
   inject = false;
   autoStart = false;
+  earlyExportTableHooks = false;
   queuedFrameCap = 0;
   numQueuedFrames = 0;
   SENDERDOD_GetDefaultCaptureOptions(&options);
