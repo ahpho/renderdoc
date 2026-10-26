@@ -382,7 +382,7 @@
       <item>
        <widget class="QCheckBox" name="EarlyExportTableHooks">
         <property name="toolTip">
-         <string>On Windows, preload the graphics modules and redirect their export tables before the application starts. Enable only when normal hooking does not capture the graphics API.</string>
+         <string>On Windows, preload the graphics modules and redirect their export tables before the application starts. Also applies to Global Hook, where the strategy is installed by the injected shim as each matched process starts. Enable only when normal hooking does not capture the graphics API.</string>
         </property>
         <property name="text">
          <string>Early Export Table Hooks</string>

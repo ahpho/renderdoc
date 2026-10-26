@@ -2059,6 +2059,10 @@ This function must be called when the process is running with administrator/supe
 :param CaptureOptions opts: The capture options to use when injecting into the program.
 :return: The result of the operation, if the result succeeded the hook is now active.
 :rtype: ResultDetails
+
+If the capture options have ``earlyExportTableHooks`` set, each injected process uses the early
+export table hook strategy. The strategy is installed by the shim before the graphics modules are
+used, so exports that the program resolves itself can still be redirected.
 )");
 extern "C" RENDERDOC_API ResultDetails RENDERDOC_CC SENDERDOD_StartGlobalHook(
     const rdcstr &pathmatch, const rdcstr &logfile, const CaptureOptions &opts);

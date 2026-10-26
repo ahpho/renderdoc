@@ -168,8 +168,9 @@ static bool EarlyExportTableHooksEnabled()
     bool requested = length > 0 && length < ARRAY_COUNT(strategy) &&
                      _stricmp(strategy, CaptureHooking::EarlyExportTableStrategy) == 0;
 
-    // This is a launch-only strategy. Do not let child processes inherit it when child-process
-    // hooking is enabled.
+    // This strategy is decided once, when we are injected. Do not let child processes inherit it
+    // when child-process hooking is enabled - the injector or the global hook shim sets it again
+    // for each process that should use it.
     SetEnvironmentVariableA(CaptureHooking::StrategyEnvironmentVariable, NULL);
     return requested;
   }();

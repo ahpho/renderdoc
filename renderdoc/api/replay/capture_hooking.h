@@ -26,8 +26,9 @@
 
 namespace CaptureHooking
 {
-// CaptureOptions are installed after the injected DLL has registered hooks. This launch-time
-// marker is inherited early enough for both module preloading and initial hook registration.
+// CaptureOptions are installed after the injected DLL has registered hooks. This process-start
+// marker is set before the DLL initialises instead: either in the environment of a process that
+// RenderDoc launches, or by the global hook shim before it loads the DLL.
 static const char StrategyEnvironmentVariable[] = "RENDERDOC_WIN32_HOOK_STRATEGY";
 static const char StandardStrategy[] = "standard";
 static const char EarlyExportTableStrategy[] = "early-export-table";

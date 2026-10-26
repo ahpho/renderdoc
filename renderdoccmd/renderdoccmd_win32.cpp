@@ -780,6 +780,8 @@ private:
   std::string capfile;
   std::string debuglog;
   std::string opts;
+  std::string hookstrategyvar;
+  std::string hookstrategy;
 
 public:
   GlobalHookCommand() {}
@@ -789,6 +791,8 @@ public:
     parser.add<std::string>("capfile", 0, "");
     parser.add<std::string>("debuglog", 0, "");
     parser.add<std::string>("capopts", 0, "");
+    parser.add<std::string>("hookstrategyvar", 0, "");
+    parser.add<std::string>("hookstrategy", 0, "");
   }
   virtual const char *Description() { return "Internal use only!"; }
   virtual bool IsInternalOnly() { return true; }
@@ -799,6 +803,8 @@ public:
     capfile = parser.get<std::string>("capfile");
     debuglog = parser.get<std::string>("debuglog");
     opts = parser.get<std::string>("capopts");
+    hookstrategyvar = parser.get<std::string>("hookstrategyvar");
+    hookstrategy = parser.get<std::string>("hookstrategy");
     return true;
   }
   virtual int Execute(const CaptureOptions &)
@@ -866,6 +872,8 @@ public:
         wcsncpy_s(shimdata->rdocpath, rdocpath, _TRUNCATE);
         strncpy_s(shimdata->capfile, capfile.c_str(), _TRUNCATE);
         strncpy_s(shimdata->debuglog, debuglog.c_str(), _TRUNCATE);
+        strncpy_s(shimdata->hookstrategyvar, hookstrategyvar.c_str(), _TRUNCATE);
+        strncpy_s(shimdata->hookstrategy, hookstrategy.c_str(), _TRUNCATE);
         memcpy(shimdata->opts, &cmdopts, sizeof(CaptureOptions));
 
         static_assert(sizeof(CaptureOptions) <= sizeof(shimdata->opts),

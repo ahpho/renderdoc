@@ -119,7 +119,7 @@ struct CaptureSettings
   bool autoStart;
   DOCUMENT(R"(``True`` to preload the Windows graphics modules and redirect their export tables
 before the launched application starts. This compatibility mode only applies when launching a
-Windows executable.
+Windows executable, or when global hooking injects into each matching process as it starts.
 
 :type: bool
 )");

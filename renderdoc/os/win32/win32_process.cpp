@@ -1206,9 +1206,21 @@ rdcpair<RDResult, uint32_t> Process::LaunchAndInjectIntoProcess(
     return {result, 0};
   }
 
-  const bool earlyExportTableHooks = EarlyExportTableHooksRequested(env);
+  // The strategy can be requested directly via the capture options, in which case the process
+  // environment has to select it too since that is what the injected DLL reads on startup.
+  rdcarray<EnvironmentModification> launchEnv = env;
 
-  PROCESS_INFORMATION pi = RunProcess(app, workingDir, cmdLine, env, false, NULL, NULL);
+  if(opts.earlyExportTableHooks)
+  {
+    launchEnv.push_back(EnvironmentModification(EnvMod::Set, EnvSep::NoSep,
+                                                CaptureHooking::StrategyEnvironmentVariable,
+                                                CaptureHooking::EarlyExportTableStrategy));
+  }
+
+  const bool earlyExportTableHooks =
+      opts.earlyExportTableHooks || EarlyExportTableHooksRequested(env);
+
+  PROCESS_INFORMATION pi = RunProcess(app, workingDir, cmdLine, launchEnv, false, NULL, NULL);
 
   if(pi.dwProcessId == 0)
   {
@@ -1632,10 +1644,23 @@ RDResult Process::StartGlobalHook(const rdcstr &pathmatch, const rdcstr &capture
   rdcstr optstr = opts.EncodeAsString();
   rdcstr debugLogfile = RDCGETLOGFILE();
 
+  // The matched processes are started by the user or by a launcher, so RenderDoc can't place the
+  // launch-time hook strategy in their environment itself. Hand it to the shim instead, which
+  // installs it in each matched process before renderdoc.dll is loaded.
+  rdcstr hookStrategyArgs;
+  if(opts.earlyExportTableHooks)
+  {
+    hookStrategyArgs = StringFormat::Fmt(" --hookstrategyvar \"%s\" --hookstrategy \"%s\"",
+                                         CaptureHooking::StrategyEnvironmentVariable,
+                                         CaptureHooking::EarlyExportTableStrategy);
+
+    RDCLOG("Global hook is using the '%s' hook strategy", CaptureHooking::EarlyExportTableStrategy);
+  }
+
   rdcstr params = StringFormat::Fmt(
-      "\"%s\" globalhook --match \"%s\" --capfile \"%s\" --debuglog \"%s\" --capopts \"%s\"",
+      "\"%s\" globalhook --match \"%s\" --capfile \"%s\" --debuglog \"%s\" --capopts \"%s\"%s",
       cmdpathNative.c_str(), pathmatch.c_str(), capturefile.c_str(), debugLogfile.c_str(),
-      optstr.c_str());
+      optstr.c_str(), hookStrategyArgs.c_str());
 
   rdcwstr paramsAlloc = StringFormat::UTF82Wide(params);
 
@@ -1707,9 +1732,9 @@ RDResult Process::StartGlobalHook(const rdcstr &pathmatch, const rdcstr &capture
 // repeat the process for the Wow32 renderdoccmd
 #if ENABLED(RDOC_X64)
   params = StringFormat::Fmt(
-      "\"%s\" globalhook --match \"%s\" --capfile \"%s\" --debuglog \"%s\" --capopts \"%s\"",
+      "\"%s\" globalhook --match \"%s\" --capfile \"%s\" --debuglog \"%s\" --capopts \"%s\"%s",
       cmdpathWow32.c_str(), pathmatch.c_str(), capturefile.c_str(), debugLogfile.c_str(),
-      optstr.c_str());
+      optstr.c_str(), hookStrategyArgs.c_str());
 
   paramsAlloc = StringFormat::UTF82Wide(params);
 

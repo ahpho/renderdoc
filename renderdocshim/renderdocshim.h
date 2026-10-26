@@ -30,6 +30,13 @@ struct ShimData
   char capfile[2048];
 
   unsigned char opts[512];
+
+  // Optional hook strategy that the shim installs into the process environment before
+  // renderdoc.dll is loaded. RenderDoc normally passes this in the environment of a process it
+  // launches itself, but a global hook injects into processes started by someone else. Both strings
+  // are empty to keep the default strategy.
+  char hookstrategyvar[64];
+  char hookstrategy[64];
 };
 
 #ifdef WIN64

@@ -819,6 +819,11 @@ void CaptureDialog::on_CaptureCallstacks_toggled(bool checked)
   }
 }
 
+void CaptureDialog::on_EarlyExportTableHooks_toggled(bool)
+{
+  UpdateGlobalHook();
+}
+
 void CaptureDialog::on_processFilter_textChanged(const QString &filter)
 {
   QSortFilterProxyModel *model = (QSortFilterProxyModel *)ui->processList->model();
@@ -1308,18 +1313,6 @@ void CaptureDialog::on_toggleGlobal_clicked()
 
   if(ui->toggleGlobal->isChecked())
   {
-    if(ui->EarlyExportTableHooks->isChecked())
-    {
-      RDDialog::information(
-          this, tr("Use Launch for early export table hooks"),
-          tr("Early export table hooks require RenderDoc to launch and inject into the process "
-             "while it is still suspended."));
-
-      ui->toggleGlobal->setChecked(false);
-      ui->toggleGlobal->setEnabled(true);
-      return;
-    }
-
     if(!IsRunningAsAdmin())
     {
       QMessageBox::StandardButton res = RDDialog::question(
@@ -1632,6 +1625,7 @@ CaptureSettings CaptureDialog::Settings()
   ret.options.delayForDebugger = (uint32_t)ui->DelayForDebugger->value();
   ret.options.verifyBufferAccess = ui->VerifyBufferAccess->isChecked();
   ret.options.softMemoryLimit = (uint32_t)ui->SoftMemoryLimit->value();
+  ret.options.earlyExportTableHooks = ui->EarlyExportTableHooks->isChecked();
 
   if(ui->queueFrameCap->isChecked())
   {
@@ -1786,6 +1780,9 @@ void CaptureDialog::UpdateGlobalHook()
 
     if(ui->toggleGlobal->isChecked())
       text += tr("\nEmergency restore @ %TEMP%\\RenderDoc_RestoreGlobalHook.reg");
+
+    if(ui->EarlyExportTableHooks->isChecked())
+      text += tr("\nEarly export table hooks apply as each matched process starts.");
 
     ui->globalLabel->setText(text);
   }

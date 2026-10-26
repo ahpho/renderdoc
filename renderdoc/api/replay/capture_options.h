@@ -246,6 +246,25 @@ Default - 0 Megabytes
 :type: int
 )");
   uint32_t softMemoryLimit;
+
+  DOCUMENT(R"(On Windows, preload the graphics modules and redirect their export tables before the
+application is allowed to run, so exports that the program resolves itself can still be hooked.
+
+This is a launch-time option: it must be set before the target process is created or injected into,
+and it has no effect once that process has started. It is therefore not exposed through the
+``RENDERDOC_CaptureOption`` setter API, and is instead passed along with the capture options when
+starting a capture. When global hooking is used the option is installed into each matching process
+as it starts.
+
+Default - disabled
+
+``True`` - Use the early export table hooking strategy.
+
+``False`` - Use the normal hooking strategy.
+
+:type: bool
+)");
+  bool earlyExportTableHooks;
 };
 
 DECLARE_REFLECTION_STRUCT(CaptureOptions);

@@ -329,6 +329,30 @@ private:
     return ret;
   }
 
+  // Some children must never be hooked even when child hooking is enabled:
+  //  - anti-cheat binaries, which may treat any foreign module in themselves as an attack
+  //  - Qt WebEngine/Chromium renderers, whose sandbox rejects the injection and which launchers
+  //    only use for their own UI
+  //  - Unity's crash handler, which would then also try to capture
+  static bool IsExcludedChild(const rdcstr &path)
+  {
+    if(path.empty())
+      return false;
+
+    const char *name = path.c_str();
+    for(const char *c = name; *c; c++)
+    {
+      if(*c == '\\' || *c == '/')
+        name = c + 1;
+    }
+
+    rdcstr lower = strlower(rdcstr(name));
+
+    return lower == "ace-setup64.exe" || lower == "ace-service64.exe" ||
+           lower == "qtwebengineprocess.exe" || lower == "unitycrashhandler64.exe" ||
+           lower == "unitycrashhandler32.exe";
+  }
+
   static bool ShouldInject(LPCWSTR lpApplicationName, LPCWSTR lpCommandLine)
   {
     if(!RenderDoc::Inst().GetCaptureOptions().hookIntoChildren)
@@ -355,6 +379,40 @@ private:
       if(cmd.contains(STRINGIZE(RDOC_BASE_NAME) "cmd.exe") ||
                       cmd.contains("q" STRINGIZE(RDOC_BASE_NAME) ".exe"))
       {
+        inject = false;
+      }
+    }
+
+    if(inject)
+    {
+      // the child's executable is either the application name, or the first token of the command
+      // line (which may be quoted)
+      rdcstr child = lpApplicationName ? StringFormat::Wide2UTF8(lpApplicationName) : rdcstr();
+
+      if(child.empty() && lpCommandLine && lpCommandLine[0])
+      {
+        const wchar_t *start = lpCommandLine;
+        if(*start == L'"')
+          start++;
+
+        const wchar_t *end = start;
+        if(*lpCommandLine == L'"')
+        {
+          while(*end && *end != L'"')
+            end++;
+        }
+        else
+        {
+          while(*end && *end != L' ')
+            end++;
+        }
+
+        child = StringFormat::Wide2UTF8(rdcwstr(start, end - start));
+      }
+
+      if(IsExcludedChild(child))
+      {
+        RDCDEBUG("Not hooking excluded child %s", child.c_str());
         inject = false;
       }
     }

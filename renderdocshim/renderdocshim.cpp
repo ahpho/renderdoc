@@ -161,6 +161,149 @@ static bool WildcardMatchOrdinal(const wchar_t *path, const wchar_t *pat)
 }
 #endif
 
+// The shim has no CRT and no logging of its own, which makes a global hook that silently fails to
+// inject impossible to diagnose from outside. These helpers append a few short lines to the debug
+// log that the injector supplies, so the target process itself records how far it got. They are
+// best effort: a failure to write the log must never change the behaviour of the target.
+static void TraceAppendText(char *buffer, int &length, int capacity, const char *text)
+{
+  while(*text && length < capacity - 1)
+    buffer[length++] = *text++;
+  buffer[length] = 0;
+}
+
+static void TraceAppendWide(char *buffer, int &length, int capacity, const wchar_t *text)
+{
+  // no CRT: this stays well under one page so the compiler does not emit a stack probe
+  char converted[2048];
+  int count =
+      WideCharToMultiByte(CP_UTF8, 0, text, -1, converted, (int)sizeof(converted), NULL, NULL);
+  if(count <= 0)
+  {
+    buffer[length] = 0;
+    return;
+  }
+
+  // count includes the terminating null
+  for(int i = 0; i < count - 1 && length < capacity - 1; i++)
+    buffer[length++] = converted[i];
+  buffer[length] = 0;
+}
+
+static void TraceAppendNumber(char *buffer, int &length, int capacity, unsigned int value)
+{
+  char digits[16];
+  int count = 0;
+
+  do
+  {
+    digits[count++] = char('0' + (value % 10));
+    value /= 10;
+  } while(value > 0 && count < (int)sizeof(digits));
+
+  while(count > 0 && length < capacity - 1)
+    buffer[length++] = digits[--count];
+  buffer[length] = 0;
+}
+
+static void TraceAppendPadded(char *buffer, int &length, int capacity, unsigned int value)
+{
+  if(value < 10 && length < capacity - 1)
+    buffer[length++] = '0';
+  TraceAppendNumber(buffer, length, capacity, value);
+}
+
+static void TraceAppendPrefix(char *buffer, int &length, int capacity)
+{
+  SYSTEMTIME now;
+  GetLocalTime(&now);
+
+  TraceAppendText(buffer, length, capacity, "[shim] ");
+  TraceAppendPadded(buffer, length, capacity, now.wHour);
+  TraceAppendText(buffer, length, capacity, ":");
+  TraceAppendPadded(buffer, length, capacity, now.wMinute);
+  TraceAppendText(buffer, length, capacity, ":");
+  TraceAppendPadded(buffer, length, capacity, now.wSecond);
+  TraceAppendText(buffer, length, capacity, " ");
+}
+
+static void TraceWrite(const char *path, const char *line)
+{
+  if(path == NULL || path[0] == 0)
+    return;
+
+  int length = 0;
+  while(line[length])
+    length++;
+
+  if(length == 0)
+    return;
+
+  HANDLE file = CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if(file == INVALID_HANDLE_VALUE)
+    return;
+
+  DWORD written = 0;
+  WriteFile(file, line, (DWORD)length, &written, NULL);
+  CloseHandle(file);
+}
+
+static void TraceProcess(const char *path, const wchar_t *exepath, bool matched)
+{
+  const int capacity = 1024;
+  char line[capacity];
+  int length = 0;
+
+  line[0] = 0;
+
+  TraceAppendPrefix(line, length, capacity);
+  TraceAppendWide(line, length, capacity, exepath);
+  TraceAppendText(line, length, capacity, matched ? " matched\n" : " not matched\n");
+  TraceWrite(path, line);
+}
+
+static void TraceEnvironment(const char *path, const char *name, const char *value)
+{
+  const int capacity = 512;
+  char line[capacity];
+  int length = 0;
+
+  line[0] = 0;
+
+  TraceAppendPrefix(line, length, capacity);
+  TraceAppendText(line, length, capacity, "environment ");
+  TraceAppendText(line, length, capacity, name);
+  TraceAppendText(line, length, capacity, "=");
+  TraceAppendText(line, length, capacity, value);
+  TraceAppendText(line, length, capacity, "\n");
+  TraceWrite(path, line);
+}
+
+static void TraceLoadResult(const char *path, HMODULE module, DWORD error)
+{
+  const int capacity = 256;
+  char line[capacity];
+  int length = 0;
+
+  line[0] = 0;
+
+  TraceAppendPrefix(line, length, capacity);
+  TraceAppendText(line, length, capacity, "renderdoc.dll ");
+  if(module)
+  {
+    TraceAppendText(line, length, capacity, "loaded\n");
+  }
+  else
+  {
+    TraceAppendText(line, length, capacity, "load failed err=");
+    TraceAppendNumber(line, length, capacity, error);
+    TraceAppendText(line, length, capacity, "\n");
+  }
+
+  TraceWrite(path, line);
+}
+
 void CheckHook()
 {
   ShimData *data = NULL;
@@ -215,6 +358,8 @@ void CheckHook()
     int find = FindStringOrdinal(FIND_FROMSTART, exepath, -1, data->pathmatchstring, -1, TRUE);
 #endif
 
+    TraceProcess(data->debuglog, exepath, find >= 0);
+
     if(find >= 0)
     {
       LOGPRINT(L"renderdocshim: Hooking into '");
@@ -223,7 +368,21 @@ void CheckHook()
       LOGPRINT(data->pathmatchstring);
       LOGPRINT(L"'\n");
 
+      // renderdoc.dll reads the hook strategy exactly once while it initialises inside the
+      // LoadLibrary below, so the strategy requested by the injector has to be visible in the
+      // process environment first. This is the only way to select e.g. early export table hooks
+      // when the target was not launched by RenderDoc.
+      if(data->hookstrategyvar[0] && data->hookstrategy[0])
+      {
+        SetEnvironmentVariableA(data->hookstrategyvar, data->hookstrategy);
+        TraceEnvironment(data->debuglog, data->hookstrategyvar, data->hookstrategy);
+      }
+
+      SetLastError(0);
       HMODULE mod = LoadLibraryW(data->rdocpath);
+      DWORD loadError = GetLastError();
+
+      TraceLoadResult(data->debuglog, mod, loadError);
 
       if(mod)
       {
