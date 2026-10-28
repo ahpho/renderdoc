@@ -1,3 +1,12 @@
+.cache/
+.crush/
+.gemini/
+.kilo/
+.reasonix/
+.vs/
+.vscode/
+pet-runs/
+
 _install/
 Debug/
 Documentation/
@@ -12,7 +21,6 @@ build/
 build-*/
 build_*/
 /compile_commands.json
-.cache/
 /dist/
 /package/
 util/buildscripts/support
@@ -27,10 +35,9 @@ x64/
 bin/
 obj/
 .obj/
+*.ib_preset
 *.opensdf
 *.VC.*db
-.vs/
-.vscode/
 *.pdb
 *.sln.ide/
 *.so
