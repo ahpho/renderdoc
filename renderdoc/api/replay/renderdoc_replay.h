@@ -2062,7 +2062,9 @@ This function must be called when the process is running with administrator/supe
 
 If the capture options have ``earlyExportTableHooks`` set, each injected process uses the early
 export table hook strategy. The strategy is installed by the shim before the graphics modules are
-used, so exports that the program resolves itself can still be redirected.
+used, so exports that the program resolves itself can still be redirected. Unlike launching, this
+is best-effort: the shim can only run once the process has finished its loader initialisation, so a
+program that resolves the graphics exports at the very start of its entry point may do so first.
 )");
 extern "C" RENDERDOC_API ResultDetails RENDERDOC_CC SENDERDOD_StartGlobalHook(
     const rdcstr &pathmatch, const rdcstr &logfile, const CaptureOptions &opts);

@@ -81,7 +81,23 @@ QProcessList QProcessInfo::enumerate(bool includeWindowTitles)
     {
       QProcessInfo info;
       info.setPid((uint32_t)pe.th32ProcessID);
+      info.setParentPid((uint32_t)pe.th32ParentProcessID);
       info.setName(QString::fromStdWString(std::wstring(pe.szExeFile)));
+
+      // remember where the process was loaded from, so a process can be recognised by its location
+      // and not just by its name
+      HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pe.th32ProcessID);
+
+      if(proc)
+      {
+        wchar_t path[1024];
+        DWORD size = 1024;
+
+        if(QueryFullProcessImageNameW(proc, 0, path, &size))
+          info.setExePath(QString::fromStdWString(std::wstring(path, size)));
+
+        CloseHandle(proc);
+      }
 
       ret.push_back(info);
     } while(Process32Next(h, &pe));
@@ -150,6 +166,7 @@ QProcessList QProcessInfo::enumerate(bool includeWindowTitles)
       QFileInfo exe(processDir.absoluteFilePath(QStringLiteral("exe")));
       exe = QFileInfo(exe.symLinkTarget());
       info.setName(exe.completeBaseName());
+      info.setExePath(exe.absoluteFilePath());
 
       // if we didn't get a name from the symlink, check in the status file
       if(info.name().isEmpty())
@@ -352,6 +369,7 @@ QProcessList QProcessInfo::enumerate(bool includeWindowTitles)
 QProcessInfo::QProcessInfo()
 {
   m_pid = 0;
+  m_parentPid = 0;
 }
 
 uint32_t QProcessInfo::pid() const
@@ -392,4 +410,24 @@ const QString &QProcessInfo::commandLine() const
 void QProcessInfo::setCommandLine(const QString &cmd)
 {
   m_cmdLine = cmd;
+}
+
+uint32_t QProcessInfo::parentPid() const
+{
+  return m_parentPid;
+}
+
+void QProcessInfo::setParentPid(uint32_t pid)
+{
+  m_parentPid = pid;
+}
+
+const QString &QProcessInfo::exePath() const
+{
+  return m_exePath;
+}
+
+void QProcessInfo::setExePath(const QString &path)
+{
+  m_exePath = path;
 }

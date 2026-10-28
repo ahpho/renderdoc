@@ -22,8 +22,22 @@
  * THE SOFTWARE.
  ******************************************************************************/
 
+#include <stdint.h>
+
+// The shared memory is a fixed size, larger than the struct, so that adding fields later does not
+// change the mapping size. Both sides map the whole object and use the header below to check that
+// the layout matches, instead of failing to map at all.
+#define SHIM_DATA_SIZE 16384
+
+// Identifies the layout below. A shim and a senderdodcmd built from different versions of this
+// header must refuse to use each other's data rather than read fields at the wrong offsets.
+#define SHIM_DATA_MAGIC 0x5344484Du
+
 struct ShimData
 {
+  uint32_t magic;
+  uint32_t structSize;
+
   wchar_t pathmatchstring[2048];
   wchar_t rdocpath[2048];
   char debuglog[2048];
@@ -38,6 +52,8 @@ struct ShimData
   char hookstrategyvar[64];
   char hookstrategy[64];
 };
+
+static_assert(sizeof(ShimData) <= SHIM_DATA_SIZE, "ShimData does not fit in the shared memory");
 
 #ifdef WIN64
 #define GLOBAL_HOOK_DATA_NAME "SenderDodGlobalHookData64"

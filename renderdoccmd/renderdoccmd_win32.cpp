@@ -791,8 +791,9 @@ public:
     parser.add<std::string>("capfile", 0, "");
     parser.add<std::string>("debuglog", 0, "");
     parser.add<std::string>("capopts", 0, "");
-    parser.add<std::string>("hookstrategyvar", 0, "");
-    parser.add<std::string>("hookstrategy", 0, "");
+    // optional: only sent when an early hook strategy is requested, so they must not be required
+    parser.add<std::string>("hookstrategyvar", 0, "", false);
+    parser.add<std::string>("hookstrategy", 0, "", false);
   }
   virtual const char *Description() { return "Internal use only!"; }
   virtual bool IsInternalOnly() { return true; }
@@ -856,17 +857,20 @@ public:
       return 1;
     }
 
-    datahandle = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(ShimData),
+    datahandle = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, SHIM_DATA_SIZE,
                                     GLOBAL_HOOK_DATA_NAME);
 
     if(datahandle)
     {
       ShimData *shimdata = (ShimData *)MapViewOfFile(datahandle, FILE_MAP_WRITE | FILE_MAP_READ, 0,
-                                                     0, sizeof(ShimData));
+                                                     0, SHIM_DATA_SIZE);
 
       if(shimdata)
       {
-        memset(shimdata, 0, sizeof(ShimData));
+        memset(shimdata, 0, SHIM_DATA_SIZE);
+
+        shimdata->magic = SHIM_DATA_MAGIC;
+        shimdata->structSize = sizeof(ShimData);
 
         wcsncpy_s(shimdata->pathmatchstring, wpathmatch.c_str(), _TRUNCATE);
         wcsncpy_s(shimdata->rdocpath, rdocpath, _TRUNCATE);

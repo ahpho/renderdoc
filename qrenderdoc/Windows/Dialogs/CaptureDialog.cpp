@@ -24,7 +24,10 @@
 
 #include "CaptureDialog.h"
 #include <QDebug>
+#include <QDir>
+#include <QFileInfo>
 #include <QKeyEvent>
+#include <QMultiHash>
 #include <QMouseEvent>
 #include <QSortFilterProxyModel>
 #include <QStandardItemModel>
@@ -751,6 +754,14 @@ CaptureDialog::CaptureDialog(ICaptureContext &ctx, OnCaptureMethod captureCallba
   m_CaptureCallback = captureCallback;
   m_InjectCallback = injectCallback;
 
+  // while the process list is on screen, keep it up to date so that a launcher started after the
+  // dialog was opened still shows up without having to press refresh
+  m_ProcessRefreshTimer.setInterval(2000);
+  QObject::connect(&m_ProcessRefreshTimer, &QTimer::timeout, this, [this]() {
+    if(m_Inject && isVisible())
+      fillProcessList();
+  });
+
   SetSettings(CaptureSettings());
 
   UpdateGlobalHook();
@@ -788,7 +799,17 @@ void CaptureDialog::SetInjectMode(bool inject)
 
     fillProcessList();
 
+    m_ProcessRefreshTimer.start();
+
+    // the switch stays where it is, but now it takes the dialog back out of inject mode
+    ui->injectRunning->setText(tr("Back to Launch"));
+    ui->injectRunning->setToolTip(
+        tr("Switch back to launching a program from here. The selection above is ignored while "
+           "launching."));
+    ui->injectRunning->setVisible(true);
     ui->launch->setText(lit("Inject"));
+    ui->launch->setToolTip(tr("Inject RenderDoc into the selected process so that its frames can be "
+                              "captured."));
     this->setWindowTitle(lit("Inject into Process"));
   }
   else
@@ -801,7 +822,17 @@ void CaptureDialog::SetInjectMode(bool inject)
 
     ui->globalGroup->setVisible(m_Ctx.Config().AllowGlobalHook);
 
+    m_ProcessRefreshTimer.stop();
+
+    ui->injectRunning->setText(tr("Inject into"));
+    ui->injectRunning->setToolTip(
+        tr("Inject into a program that is already running rather than launching it here. This is "
+           "the reliable way to capture a game started by a launcher: start the launcher normally, "
+           "inject into the launcher's window process (Capture Child Processes is enabled for "
+           "you), then start the game from the launcher."));
+    ui->injectRunning->setVisible(true);
     ui->launch->setText(lit("Launch"));
+    ui->launch->setToolTip(tr("Launch the selected program with RenderDoc enabled for capture"));
     this->setWindowTitle(lit("Launch Application"));
   }
 }
@@ -1548,6 +1579,26 @@ void CaptureDialog::on_launch_clicked()
   TriggerCapture();
 }
 
+void CaptureDialog::on_injectRunning_clicked()
+{
+  if(IsInjectMode())
+  {
+    SetInjectMode(false);
+    return;
+  }
+
+  SetInjectMode(true);
+
+  // a launcher only passes the capture on to the game if the processes it starts are hooked too,
+  // so enable that for this entry point. It can still be turned off by hand afterwards.
+  ui->HookIntoChildren->setChecked(true);
+
+  // land on the process that the executable path points at, if it's already running
+  selectProcessRow(findProcessForExecutable());
+
+  ui->processList->setFocus();
+}
+
 void CaptureDialog::on_processList_activated(const QModelIndex &index)
 {
   TriggerCapture();
@@ -1654,8 +1705,6 @@ void CaptureDialog::SaveSettings(const rdcstr &filename)
 
 void CaptureDialog::fillProcessList()
 {
-  m_ProcessModel->removeRows(0, m_ProcessModel->rowCount());
-
   QProcessList processes = QProcessInfo::enumerate();
 
   for(int i = 0; i < processes.count(); i++)
@@ -1666,6 +1715,44 @@ void CaptureDialog::fillProcessList()
       break;
     }
   }
+
+  m_Processes = processes;
+
+  QSortFilterProxyModel *proxy = (QSortFilterProxyModel *)ui->processList->model();
+
+  // this is called periodically while the list is on screen, so leave everything alone if nothing
+  // has changed to avoid disturbing the selection or scroll position
+  if(processes.size() == m_ProcessModel->rowCount())
+  {
+    bool same = true;
+
+    for(int i = 0; i < processes.size() && same; i++)
+    {
+      same = m_ProcessModel->data(m_ProcessModel->index(i, 1)).toUInt() == processes[i].pid() &&
+             m_ProcessModel->data(m_ProcessModel->index(i, 0)).toString() == processes[i].name();
+    }
+
+    if(same)
+      return;
+  }
+
+  // remember the selection so it survives a refresh
+  uint32_t selectedPid = 0;
+
+  if(proxy && ui->processList->selectionModel())
+  {
+    QModelIndexList sel = ui->processList->selectionModel()->selectedRows();
+
+    if(sel.size() == 1)
+    {
+      const QModelIndex item = proxy->mapToSource(sel[0]);
+
+      if(item.isValid())
+        selectedPid = m_ProcessModel->data(m_ProcessModel->index(item.row(), 1)).toUInt();
+    }
+  }
+
+  m_ProcessModel->removeRows(0, m_ProcessModel->rowCount());
 
   // no way of listing processes in Qt, fill with dummy data
   m_ProcessModel->insertRows(0, processes.size());
@@ -1678,6 +1765,143 @@ void CaptureDialog::fillProcessList()
     m_ProcessModel->setData(m_ProcessModel->index(n, 2), process.windowTitle());
     n++;
   }
+
+  // nothing chosen yet, so default to the executable path if it is running now
+  if(selectedPid == 0)
+  {
+    selectProcessRow(findProcessForExecutable());
+    return;
+  }
+
+  if(proxy && ui->processList->selectionModel())
+  {
+    for(int i = 0; i < m_ProcessModel->rowCount(); i++)
+    {
+      if(m_ProcessModel->data(m_ProcessModel->index(i, 1)).toUInt() == selectedPid)
+      {
+        const QModelIndex idx = proxy->mapFromSource(m_ProcessModel->index(i, 0));
+
+        ui->processList->selectionModel()->select(
+            idx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        break;
+      }
+    }
+  }
+}
+
+// The process to inject is whatever is selected in the list, but when the executable path points at
+// a program that is already running that row is picked out for the user.
+//
+// The program in the path is often only a bootstrapper: it starts the process with the actual
+// window and then exits. So a descendant with a window is preferred over the program itself, and if
+// the program has already exited a windowed process installed under the same directory is used.
+int CaptureDialog::findProcessForExecutable() const
+{
+  const QString exe = ui->exePath->text().trimmed();
+
+  if(exe.isEmpty() || m_Processes.isEmpty())
+    return -1;
+
+  const QFileInfo exeInfo(exe);
+  const QString exeName = exeInfo.fileName();
+
+  if(exeName.isEmpty())
+    return -1;
+
+  // index the process tree, so the children of the configured program can be followed
+  QMultiHash<uint32_t, int> children;
+
+  for(int i = 0; i < m_Processes.count(); i++)
+    children.insert(m_Processes[i].parentPid(), i);
+
+  QList<int> roots;
+
+  for(int i = 0; i < m_Processes.count(); i++)
+  {
+    if(m_Processes[i].name().compare(exeName, Qt::CaseInsensitive) == 0)
+      roots.append(i);
+  }
+
+  // the closest descendant with a window - that is the window the user interacts with
+  QList<int> level;
+
+  for(int root : roots)
+    level.append(children.values(m_Processes[root].pid()));
+
+  while(!level.isEmpty())
+  {
+    for(int i : level)
+    {
+      if(!m_Processes[i].windowTitle().isEmpty())
+        return i;
+    }
+
+    QList<int> next;
+
+    for(int i : level)
+      next.append(children.values(m_Processes[i].pid()));
+
+    level = next;
+  }
+
+  // otherwise the program itself, if it has a window
+  for(int root : roots)
+  {
+    if(!m_Processes[root].windowTitle().isEmpty())
+      return root;
+  }
+
+  // the bootstrapper may have exited already and left its window behind, so fall back to a windowed
+  // process from the same directory, preferring the one closest to it
+  const QString exeDir = QDir::toNativeSeparators(exeInfo.absolutePath());
+  int best = -1;
+  int bestDepth = 0;
+
+  for(int i = 0; i < m_Processes.count(); i++)
+  {
+    const QString path = QDir::toNativeSeparators(m_Processes[i].exePath());
+
+    if(path.isEmpty() || m_Processes[i].windowTitle().isEmpty())
+      continue;
+
+    if(!path.startsWith(exeDir, Qt::CaseInsensitive) || path.length() <= exeDir.length() ||
+       path[exeDir.length()] != QDir::separator())
+      continue;
+
+    const int depth = path.count(QDir::separator());
+
+    if(best == -1 || depth < bestDepth)
+    {
+      best = i;
+      bestDepth = depth;
+    }
+  }
+
+  if(best >= 0)
+    return best;
+
+  // finally a matching program without a window
+  if(!roots.isEmpty())
+    return roots.first();
+
+  return -1;
+}
+
+void CaptureDialog::selectProcessRow(int row)
+{
+  QSortFilterProxyModel *proxy = (QSortFilterProxyModel *)ui->processList->model();
+
+  if(row < 0 || proxy == NULL || ui->processList->selectionModel() == NULL)
+    return;
+
+  const QModelIndex item = proxy->mapFromSource(m_ProcessModel->index(row, 0));
+
+  if(!item.isValid())
+    return;
+
+  ui->processList->selectionModel()->select(
+      item, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+  ui->processList->scrollTo(item);
 }
 
 void CaptureDialog::SetExecutableFilename(const rdcstr &filename, bool remoteSelection)

@@ -25,8 +25,10 @@
 #pragma once
 
 #include <QFrame>
+#include <QTimer>
 #include <functional>
 #include "Code/Interface/QRDInterface.h"
+#include "Code/qprocessinfo.h"
 
 namespace Ui
 {
@@ -100,6 +102,7 @@ private slots:
   void on_loadLastCapture_clicked();
 
   void on_launch_clicked();
+  void on_injectRunning_clicked();
 
   void on_toggleGlobal_clicked();
 
@@ -126,7 +129,11 @@ private:
 
   rdcarray<EnvironmentModification> m_EnvModifications;
   bool m_Inject;
+  QTimer m_ProcessRefreshTimer;
   void fillProcessList();
+  int findProcessForExecutable() const;
+  void selectProcessRow(int row);
+  QProcessList m_Processes;
   void initWarning(RDLabel *label);
 
   QString mostRecentFilename();

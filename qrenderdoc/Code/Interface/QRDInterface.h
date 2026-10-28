@@ -121,6 +121,10 @@ struct CaptureSettings
 before the launched application starts. This compatibility mode only applies when launching a
 Windows executable, or when global hooking injects into each matching process as it starts.
 
+With global hooking the strategy is installed by the shim after the process has started, so it is
+best-effort rather than the guarantee that launching gives. Processes hooked through child-process
+hooking use the default strategy.
+
 :type: bool
 )");
   bool earlyExportTableHooks;

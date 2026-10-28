@@ -151,7 +151,11 @@ enum
 };
 
 #define RENDERDOC_VULKAN_LAYER_NAME "VK_LAYER_SENDERDOD_Capture"
-#define RENDERDOC_VULKAN_LAYER_VAR "ENABLE_VULKAN_RENDERDOC_CAPTURE"
+// This must match the enable_environment of the implicit layer JSON that renderdoc.vcxproj
+// generates from $(TargetName) (see @VULKAN_ENABLE_VAR@), since that is what the loader checks
+// before enabling the layer. All the code that sets, clears or scrubs the variable uses this
+// constant, so keeping the two names in sync is what makes turning the layer off work.
+#define RENDERDOC_VULKAN_LAYER_VAR "ENABLE_VULKAN_SENDERDOD_CAPTURE"
 
 #define RENDERDOC_ANDROID_LIBRARY "libVkLayer_GLES_RenderDoc.so"
 

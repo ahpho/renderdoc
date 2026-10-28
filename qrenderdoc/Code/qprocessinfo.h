@@ -30,9 +30,17 @@ public:
   const QString &commandLine() const;
   void setCommandLine(const QString &cmd);
 
+  uint32_t parentPid() const;
+  void setParentPid(uint32_t pid);
+
+  const QString &exePath() const;
+  void setExePath(const QString &path);
+
 private:
   uint32_t m_pid;
+  uint32_t m_parentPid;
   QString m_name;
   QString m_title;
   QString m_cmdLine;
+  QString m_exePath;
 };

@@ -175,15 +175,15 @@
    <item>
     <widget class="QGroupBox" name="injectGroup">
      <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+      <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
        <horstretch>0</horstretch>
-       <verstretch>100</verstretch>
+       <verstretch>0</verstretch>
       </sizepolicy>
      </property>
      <property name="minimumSize">
       <size>
        <width>250</width>
-       <height>260</height>
+       <height>150</height>
       </size>
      </property>
      <property name="title">
@@ -245,7 +245,7 @@
       <item row="1" column="0" colspan="2">
        <widget class="QTreeView" name="processList">
         <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+         <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
           <horstretch>0</horstretch>
           <verstretch>0</verstretch>
          </sizepolicy>
@@ -253,7 +253,13 @@
         <property name="minimumSize">
          <size>
           <width>0</width>
-          <height>100</height>
+          <height>80</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>220</height>
          </size>
         </property>
         <property name="editTriggers">
@@ -382,7 +388,7 @@
       <item>
        <widget class="QCheckBox" name="EarlyExportTableHooks">
         <property name="toolTip">
-         <string>On Windows, preload the graphics modules and redirect their export tables before the application starts. Also applies to Global Hook, where the strategy is installed by the injected shim as each matched process starts. Enable only when normal hooking does not capture the graphics API.</string>
+         <string>On Windows, preload the graphics modules and redirect their export tables before the application starts. Also applies to Global Hook, where the injected shim installs the strategy as each matched process starts: that is best-effort, because the process may already be running by the time the shim can load RenderDoc. Enable only when normal hooking does not capture the graphics API.</string>
         </property>
         <property name="text">
          <string>Early Export Table Hooks</string>
@@ -502,7 +508,7 @@
       <item>
        <widget class="QCheckBox" name="HookIntoChildren">
         <property name="toolTip">
-         <string>Hook into child processes - useful with launchers or similar intermediate processes</string>
+         <string>Hook into child processes - useful with launchers or similar intermediate processes. Also covers processes that a launcher starts through the shell, including elevated ones when RenderDoc is running as administrator.</string>
         </property>
         <property name="text">
          <string>Capture Child Processes</string>
@@ -881,6 +887,16 @@
          </size>
         </property>
        </spacer>
+      </item>
+      <item>
+       <widget class="QPushButton" name="injectRunning">
+        <property name="toolTip">
+         <string>Inject into a program that is already running rather than launching it here. This is the reliable way to capture a game started by a launcher: start the launcher normally, inject into the launcher's window process (Capture Child Processes is enabled for you), then start the game from the launcher.</string>
+        </property>
+        <property name="text">
+         <string>Inject into</string>
+        </property>
+       </widget>
       </item>
       <item>
        <widget class="QPushButton" name="launch">

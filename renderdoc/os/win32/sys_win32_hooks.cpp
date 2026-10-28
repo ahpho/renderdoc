@@ -23,6 +23,7 @@
  * THE SOFTWARE.
  ******************************************************************************/
 
+#include <shellapi.h>
 #include <winsock2.h>
 #include "core/core.h"
 #include "hooks/hooks.h"
@@ -70,6 +71,14 @@ typedef BOOL(WINAPI *PFN_CREATE_PROCESS_WITH_LOGON_W)(LPCWSTR lpUsername, LPCWST
                                                       LPSTARTUPINFOW lpStartupInfo,
                                                       LPPROCESS_INFORMATION lpProcessInformation);
 
+typedef HINSTANCE(WINAPI *PFN_SHELL_EXECUTE_A)(HWND hwnd, LPCSTR lpOperation, LPCSTR lpFile,
+                                               LPCSTR lpParameters, LPCSTR lpDirectory, INT nShowCmd);
+typedef HINSTANCE(WINAPI *PFN_SHELL_EXECUTE_W)(HWND hwnd, LPCWSTR lpOperation, LPCWSTR lpFile,
+                                               LPCWSTR lpParameters, LPCWSTR lpDirectory,
+                                               INT nShowCmd);
+typedef BOOL(WINAPI *PFN_SHELL_EXECUTE_EX_A)(LPSHELLEXECUTEINFOA lpExecInfo);
+typedef BOOL(WINAPI *PFN_SHELL_EXECUTE_EX_W)(LPSHELLEXECUTEINFOW lpExecInfo);
+
 class SysHook : LibraryHook
 {
 public:
@@ -97,12 +106,20 @@ public:
     // wish)
     CreateProcessA.Register("kernel32.dll", "CreateProcessA", CreateProcessA_hook);
     CreateProcessW.Register("kernel32.dll", "CreateProcessW", CreateProcessW_hook);
-
     CreateProcessAsUserA.Register("advapi32.dll", "CreateProcessAsUserA", CreateProcessAsUserA_hook);
     CreateProcessAsUserW.Register("advapi32.dll", "CreateProcessAsUserW", CreateProcessAsUserW_hook);
 
     CreateProcessWithLogonW.Register("advapi32.dll", "CreateProcessWithLogonW",
                                      CreateProcessWithLogonW_hook);
+
+    // The shell creates processes inside its own implementation, so the hooks above never see a
+    // launcher that hands off through ShellExecute. Hook those entry points too, so that child
+    // hooking also covers shell-launched processes.
+    LibraryHooks::RegisterLibraryHook("shell32.dll", NULL);
+    ShellExecuteA.Register("shell32.dll", "ShellExecuteA", ShellExecuteA_hook);
+    ShellExecuteW.Register("shell32.dll", "ShellExecuteW", ShellExecuteW_hook);
+    ShellExecuteExA.Register("shell32.dll", "ShellExecuteExA", ShellExecuteExA_hook);
+    ShellExecuteExW.Register("shell32.dll", "ShellExecuteExW", ShellExecuteExW_hook);
 
     // handle API set exports if they exist. These don't really exist so we don't have to worry
     // about double hooking, and also they call into the 'real' implementation in kernelbase.dll
@@ -171,6 +188,11 @@ private:
   HookedFunction<PFN_CREATE_PROCESS_AS_USER_W> API112CreateProcessAsUserW;
 
   HookedFunction<PFN_CREATE_PROCESS_WITH_LOGON_W> CreateProcessWithLogonW;
+
+  HookedFunction<PFN_SHELL_EXECUTE_A> ShellExecuteA;
+  HookedFunction<PFN_SHELL_EXECUTE_W> ShellExecuteW;
+  HookedFunction<PFN_SHELL_EXECUTE_EX_A> ShellExecuteExA;
+  HookedFunction<PFN_SHELL_EXECUTE_EX_W> ShellExecuteExW;
 
   HookedFunction<PFN_WSASTARTUP> WSAStartup;
   HookedFunction<PFN_WSACLEANUP> WSACleanup;
@@ -348,9 +370,19 @@ private:
 
     rdcstr lower = strlower(rdcstr(name));
 
-    return lower == "ace-setup64.exe" || lower == "ace-service64.exe" ||
-           lower == "qtwebengineprocess.exe" || lower == "unitycrashhandler64.exe" ||
+    // all of the AntiCheatExpert executables share this prefix, including the ones that are not
+    // listed explicitly
+    if(lower.beginsWith("ace-"))
+      return true;
+
+    return lower == "qtwebengineprocess.exe" || lower == "unitycrashhandler64.exe" ||
            lower == "unitycrashhandler32.exe";
+  }
+
+  // ASCII-only case-insensitive comparison, to avoid pulling in towlower from the CRT
+  static bool LowerEquals(wchar_t c, wchar_t lower)
+  {
+    return c == lower || c == wchar_t(lower - L'a' + L'A');
   }
 
   static bool ShouldInject(LPCWSTR lpApplicationName, LPCWSTR lpCommandLine)
@@ -395,16 +427,39 @@ private:
         if(*start == L'"')
           start++;
 
-        const wchar_t *end = start;
+        const wchar_t *end = NULL;
         if(*lpCommandLine == L'"')
         {
+          end = start;
           while(*end && *end != L'"')
             end++;
         }
         else
         {
-          while(*end && *end != L' ')
-            end++;
+          // the path is not quoted, so it may contain spaces. Take everything up to the
+          // executable extension rather than stopping at the first space, which would turn
+          // "C:\\Program Files\\Game\\ace-setup64.exe" into "C:\\Program".
+          for(const wchar_t *p = start; *p; p++)
+          {
+            if(p[0] == L'.' && p[1] && p[2] && p[3] && LowerEquals(p[1], L'e') &&
+               LowerEquals(p[2], L'x') && LowerEquals(p[3], L'e'))
+            {
+              const wchar_t next = p[4];
+              if(next == 0 || next == L' ' || next == L'\t' || next == L'"')
+              {
+                end = p + 4;
+                break;
+              }
+            }
+          }
+
+          // no extension, fall back to the first token
+          if(end == NULL)
+          {
+            end = start;
+            while(*end && *end != L' ')
+              end++;
+          }
         }
 
         child = StringFormat::Wide2UTF8(rdcwstr(start, end - start));
@@ -427,6 +482,280 @@ private:
 
     return ShouldInject(lpApplicationName ? StringFormat::UTF82Wide(lpApplicationName).c_str() : NULL,
                         lpCommandLine ? StringFormat::UTF82Wide(lpCommandLine).c_str() : NULL);
+  }
+
+  static bool ProcessIsElevated()
+  {
+    static int cached = -1;
+
+    if(cached < 0)
+    {
+      cached = 0;
+
+      HANDLE token = NULL;
+      if(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+      {
+        TOKEN_ELEVATION elevation = {};
+        DWORD size = sizeof(elevation);
+
+        if(GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size))
+          cached = elevation.TokenIsElevated ? 1 : 0;
+
+        CloseHandle(token);
+      }
+    }
+
+    return cached == 1;
+  }
+
+  // True when a shell call is a plain "run this program" request that we can handle ourselves.
+  // Other verbs are left to the real shell, except "runas" which we can honour when we are already
+  // elevated, otherwise the shell has to show the elevation prompt.
+  static bool IsShellExecuteOperation(LPCWSTR lpOperation)
+  {
+    if(lpOperation == NULL || lpOperation[0] == 0)
+      return true;
+
+    if(_wcsicmp(lpOperation, L"open") == 0)
+      return true;
+
+    if(_wcsicmp(lpOperation, L"runas") == 0)
+      return ProcessIsElevated();
+
+    return false;
+  }
+
+  // Resolve what the shell was asked to run to an existing .exe. A relative path is resolved
+  // against the directory passed to ShellExecute, since that is what the shell would do.
+  // Documents, URLs and directories are rejected and left to the real shell.
+  static bool ResolveShellExecuteTarget(LPCWSTR lpFile, LPCWSTR lpDirectory, std::wstring &outPath)
+  {
+    if(lpFile == NULL || lpFile[0] == 0)
+      return false;
+
+    // don't touch URLs or shell namespace objects
+    if(wcsstr(lpFile, L"://") != NULL)
+      return false;
+
+    auto isExecutable = [&outPath](const std::wstring &candidate) -> bool {
+      wchar_t full[1024];
+      const DWORD len = GetFullPathNameW(candidate.c_str(), ARRAY_COUNT(full), full, NULL);
+
+      if(len == 0 || len >= ARRAY_COUNT(full))
+        return false;
+
+      const size_t nameLen = wcslen(full);
+
+      if(nameLen < 4 || !LowerEquals(full[nameLen - 4], L'.') ||
+         !LowerEquals(full[nameLen - 3], L'e') || !LowerEquals(full[nameLen - 2], L'x') ||
+         !LowerEquals(full[nameLen - 1], L'e'))
+        return false;
+
+      const DWORD attrs = GetFileAttributesW(full);
+
+      if(attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY))
+        return false;
+
+      outPath = full;
+      return true;
+    };
+
+    if(isExecutable(lpFile))
+      return true;
+
+    if(lpDirectory && lpDirectory[0])
+      return isExecutable(std::wstring(lpDirectory) + L"\\" + lpFile);
+
+    return false;
+  }
+
+  // Run the executable the shell was asked to launch via CreateProcess, so that it goes through
+  // the same suspend/inject/resume path as any other child process.
+  static BOOL RunShellExecuteTarget(LPCWSTR lpFile, LPCWSTR lpParameters, LPCWSTR lpDirectory,
+                                    int nShowCmd, PROCESS_INFORMATION *outPi)
+  {
+    std::wstring cmdline = L"\"";
+    cmdline += lpFile;
+    cmdline += L"\"";
+
+    if(lpParameters && lpParameters[0])
+    {
+      cmdline += L" ";
+      cmdline += lpParameters;
+    }
+
+    STARTUPINFOW si;
+    RDCEraseEl(si);
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = (WORD)nShowCmd;
+
+    PROCESS_INFORMATION pi;
+    RDCEraseEl(pi);
+
+    // CreateProcessW may modify the command line, so it needs a writable buffer
+    std::wstring mutableCmd = cmdline;
+
+    const BOOL ret = Hooked_CreateProcess(
+        "CreateProcessW",
+        [&](DWORD flags, LPVOID env, LPPROCESS_INFORMATION out) {
+          return syshooks.CreateProcessW()(lpFile, &mutableCmd[0], NULL, NULL, FALSE, flags, env,
+                                           lpDirectory, &si, out);
+        },
+        0, ShouldInject(lpFile, cmdline.c_str()), NULL, &pi, GetProcessDesc(lpFile, cmdline.c_str()));
+
+    if(outPi)
+      *outPi = pi;
+
+    return ret;
+  }
+
+  static HINSTANCE WINAPI ShellExecuteW_hook(HWND hwnd, LPCWSTR lpOperation, LPCWSTR lpFile,
+                                             LPCWSTR lpParameters, LPCWSTR lpDirectory, INT nShowCmd)
+  {
+    std::wstring target;
+
+    if(RenderDoc::Inst().GetCaptureOptions().hookIntoChildren &&
+       IsShellExecuteOperation(lpOperation) && ResolveShellExecuteTarget(lpFile, lpDirectory, target))
+    {
+      PROCESS_INFORMATION pi;
+
+      if(RunShellExecuteTarget(target.c_str(), lpParameters, lpDirectory, nShowCmd, &pi))
+      {
+        RDCLOG("ShellExecuteW: ran '%s' directly so that it can be injected",
+               StringFormat::Wide2UTF8(target.c_str()).c_str());
+
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+
+        // success, reported the same way the shell would
+        return (HINSTANCE)42;
+      }
+    }
+
+    return syshooks.ShellExecuteW()(hwnd, lpOperation, lpFile, lpParameters, lpDirectory, nShowCmd);
+  }
+
+  static HINSTANCE WINAPI ShellExecuteA_hook(HWND hwnd, LPCSTR lpOperation, LPCSTR lpFile,
+                                             LPCSTR lpParameters, LPCSTR lpDirectory, INT nShowCmd)
+  {
+    std::wstring target;
+
+    if(RenderDoc::Inst().GetCaptureOptions().hookIntoChildren && lpFile)
+    {
+      const std::wstring operation = lpOperation ? StringFormat::UTF82Wide(lpOperation).c_str() : L"";
+      const std::wstring file = StringFormat::UTF82Wide(lpFile).c_str();
+      const std::wstring parameters =
+          lpParameters ? StringFormat::UTF82Wide(lpParameters).c_str() : L"";
+      const std::wstring directory = lpDirectory ? StringFormat::UTF82Wide(lpDirectory).c_str() : L"";
+
+      if(IsShellExecuteOperation(operation.empty() ? NULL : operation.c_str()) &&
+         ResolveShellExecuteTarget(file.c_str(), directory.empty() ? NULL : directory.c_str(), target))
+      {
+        PROCESS_INFORMATION pi;
+
+        if(RunShellExecuteTarget(target.c_str(), parameters.empty() ? NULL : parameters.c_str(),
+                                 directory.empty() ? NULL : directory.c_str(), nShowCmd, &pi))
+        {
+          RDCLOG("ShellExecuteA: ran '%s' directly so that it can be injected", lpFile);
+
+          CloseHandle(pi.hProcess);
+          CloseHandle(pi.hThread);
+
+          return (HINSTANCE)42;
+        }
+      }
+    }
+
+    return syshooks.ShellExecuteA()(hwnd, lpOperation, lpFile, lpParameters, lpDirectory, nShowCmd);
+  }
+
+  // flags that mean the shell has to do more than just create a process
+  static const UINT ShellExecuteExUnsupportedFlags = SEE_MASK_CLASSNAME | SEE_MASK_CLASSKEY |
+                                                     SEE_MASK_IDLIST | SEE_MASK_INVOKEIDLIST |
+                                                     SEE_MASK_HOTKEY | SEE_MASK_HMONITOR;
+
+  static BOOL WINAPI ShellExecuteExW_hook(LPSHELLEXECUTEINFOW lpExecInfo)
+  {
+    std::wstring target;
+
+    if(lpExecInfo && lpExecInfo->cbSize == sizeof(SHELLEXECUTEINFOW) &&
+       RenderDoc::Inst().GetCaptureOptions().hookIntoChildren &&
+       (lpExecInfo->fMask & ShellExecuteExUnsupportedFlags) == 0 &&
+       IsShellExecuteOperation(lpExecInfo->lpVerb) &&
+       ResolveShellExecuteTarget(lpExecInfo->lpFile, lpExecInfo->lpDirectory, target))
+    {
+      PROCESS_INFORMATION pi;
+
+      if(RunShellExecuteTarget(target.c_str(), lpExecInfo->lpParameters, lpExecInfo->lpDirectory,
+                               lpExecInfo->nShow, &pi))
+      {
+        RDCLOG("ShellExecuteExW: ran '%s' directly so that it can be injected",
+               StringFormat::Wide2UTF8(target.c_str()).c_str());
+
+        if(lpExecInfo->fMask & SEE_MASK_NOCLOSEPROCESS)
+        {
+          lpExecInfo->hProcess = pi.hProcess;
+          CloseHandle(pi.hThread);
+        }
+        else
+        {
+          CloseHandle(pi.hProcess);
+          CloseHandle(pi.hThread);
+        }
+
+        lpExecInfo->hInstApp = (HINSTANCE)42;
+        return TRUE;
+      }
+    }
+
+    return syshooks.ShellExecuteExW()(lpExecInfo);
+  }
+
+  static BOOL WINAPI ShellExecuteExA_hook(LPSHELLEXECUTEINFOA lpExecInfo)
+  {
+    std::wstring target;
+
+    if(lpExecInfo && lpExecInfo->cbSize == sizeof(SHELLEXECUTEINFOA) &&
+       RenderDoc::Inst().GetCaptureOptions().hookIntoChildren &&
+       (lpExecInfo->fMask & ShellExecuteExUnsupportedFlags) == 0 && lpExecInfo->lpFile)
+    {
+      const std::wstring operation =
+          lpExecInfo->lpVerb ? StringFormat::UTF82Wide(lpExecInfo->lpVerb).c_str() : L"";
+      const std::wstring file = StringFormat::UTF82Wide(lpExecInfo->lpFile).c_str();
+      const std::wstring parameters =
+          lpExecInfo->lpParameters ? StringFormat::UTF82Wide(lpExecInfo->lpParameters).c_str() : L"";
+      const std::wstring directory =
+          lpExecInfo->lpDirectory ? StringFormat::UTF82Wide(lpExecInfo->lpDirectory).c_str() : L"";
+
+      if(IsShellExecuteOperation(operation.empty() ? NULL : operation.c_str()) &&
+         ResolveShellExecuteTarget(file.c_str(), directory.empty() ? NULL : directory.c_str(), target))
+      {
+        PROCESS_INFORMATION pi;
+
+        if(RunShellExecuteTarget(target.c_str(), parameters.empty() ? NULL : parameters.c_str(),
+                                 directory.empty() ? NULL : directory.c_str(), lpExecInfo->nShow, &pi))
+        {
+          RDCLOG("ShellExecuteExA: ran '%s' directly so that it can be injected", lpExecInfo->lpFile);
+
+          if(lpExecInfo->fMask & SEE_MASK_NOCLOSEPROCESS)
+          {
+            lpExecInfo->hProcess = pi.hProcess;
+            CloseHandle(pi.hThread);
+          }
+          else
+          {
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+          }
+
+          lpExecInfo->hInstApp = (HINSTANCE)42;
+          return TRUE;
+        }
+      }
+    }
+
+    return syshooks.ShellExecuteExA()(lpExecInfo);
   }
 
   static rdcstr GetProcessDesc(LPCWSTR lpApplicationName, LPCWSTR lpCommandLine)

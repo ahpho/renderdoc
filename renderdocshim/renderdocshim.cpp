@@ -239,7 +239,14 @@ static void TraceWrite(const char *path, const char *line)
   if(length == 0)
     return;
 
-  HANDLE file = CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+  // the injector hands the path over as UTF-8, so convert instead of relying on the ANSI codepage
+  // (a %TEMP% with non-ANSI characters in it would otherwise fail to open)
+  wchar_t widePath[1024];
+  if(MultiByteToWideChar(CP_UTF8, 0, path, -1, widePath,
+                         (int)(sizeof(widePath) / sizeof(widePath[0]))) <= 0)
+    return;
+
+  HANDLE file = CreateFileW(widePath, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
                             OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
   if(file == INVALID_HANDLE_VALUE)
     return;
@@ -247,6 +254,35 @@ static void TraceWrite(const char *path, const char *line)
   DWORD written = 0;
   WriteFile(file, line, (DWORD)length, &written, NULL);
   CloseHandle(file);
+}
+
+// True when the executable is not the one being matched, but looks like it: the file name of the
+// pattern (with any wildcard characters removed) appears in the executable path. Non-matches are
+// only logged in that case, so an active global hook does not fill the log with every process on
+// the system while still recording the near misses that explain a failed injection.
+static bool IsNearMatch(const wchar_t *exepath, const wchar_t *pathmatch)
+{
+  const wchar_t *name = pathmatch;
+  for(const wchar_t *p = pathmatch; *p; p++)
+  {
+    if(*p == L'\\' || *p == L'/')
+      name = p + 1;
+  }
+
+  wchar_t fragment[256];
+  int count = 0;
+  for(const wchar_t *p = name; *p && count < (int)(sizeof(fragment) / sizeof(fragment[0])) - 1; p++)
+  {
+    if(*p != L'*' && *p != L'?')
+      fragment[count++] = *p;
+  }
+  fragment[count] = 0;
+
+  // nothing literal to compare against, so don't filter anything out
+  if(count == 0)
+    return true;
+
+  return FindStringOrdinal(FIND_FROMSTART, exepath, -1, fragment, -1, TRUE) >= 0;
 }
 
 static void TraceProcess(const char *path, const wchar_t *exepath, bool matched)
@@ -280,23 +316,32 @@ static void TraceEnvironment(const char *path, const char *name, const char *val
   TraceWrite(path, line);
 }
 
-static void TraceLoadResult(const char *path, HMODULE module, DWORD error)
+static void TraceLoadResult(const char *path, const wchar_t *dllpath, HMODULE module, DWORD error)
 {
-  const int capacity = 256;
+  const int capacity = 512;
   char line[capacity];
   int length = 0;
 
   line[0] = 0;
 
   TraceAppendPrefix(line, length, capacity);
-  TraceAppendText(line, length, capacity, "renderdoc.dll ");
+
+  // name the DLL that was actually injected rather than a hardcoded one
+  const wchar_t *name = dllpath;
+  for(const wchar_t *p = dllpath; *p; p++)
+  {
+    if(*p == L'\\' || *p == L'/')
+      name = p + 1;
+  }
+  TraceAppendWide(line, length, capacity, name);
+
   if(module)
   {
-    TraceAppendText(line, length, capacity, "loaded\n");
+    TraceAppendText(line, length, capacity, " loaded\n");
   }
   else
   {
-    TraceAppendText(line, length, capacity, "load failed err=");
+    TraceAppendText(line, length, capacity, " load failed err=");
     TraceAppendNumber(line, length, capacity, error);
     TraceAppendText(line, length, capacity, "\n");
   }
@@ -316,12 +361,27 @@ void CheckHook()
     return;
   }
 
-  data = (ShimData *)MapViewOfFile(datahandle, FILE_MAP_READ, 0, 0, sizeof(ShimData));
+  // map the whole object rather than sizeof(ShimData): the mapping has a fixed size that may not
+  // match this build's struct exactly, and the header below tells us which layout it has
+  data = (ShimData *)MapViewOfFile(datahandle, FILE_MAP_READ, 0, 0, 0);
 
   if(data == NULL)
   {
     CloseHandle(datahandle);
     LOGPRINT(L"renderdocshim: can't map global data\n");
+    return;
+  }
+
+  if(data->magic != SHIM_DATA_MAGIC || data->structSize < sizeof(ShimData))
+  {
+    // written by a different version of the header: refuse instead of reading the fields at the
+    // wrong offsets
+    LOGPRINT(
+        L"renderdocshim: global data layout doesn't match, rebuild the shim and "
+        L"senderdodcmd together\n");
+
+    UnmapViewOfFile(data);
+    CloseHandle(datahandle);
     return;
   }
 
@@ -358,7 +418,8 @@ void CheckHook()
     int find = FindStringOrdinal(FIND_FROMSTART, exepath, -1, data->pathmatchstring, -1, TRUE);
 #endif
 
-    TraceProcess(data->debuglog, exepath, find >= 0);
+    if(find >= 0 || IsNearMatch(exepath, data->pathmatchstring))
+      TraceProcess(data->debuglog, exepath, find >= 0);
 
     if(find >= 0)
     {
@@ -382,7 +443,7 @@ void CheckHook()
       HMODULE mod = LoadLibraryW(data->rdocpath);
       DWORD loadError = GetLastError();
 
-      TraceLoadResult(data->debuglog, mod, loadError);
+      TraceLoadResult(data->debuglog, data->rdocpath, mod, loadError);
 
       if(mod)
       {
